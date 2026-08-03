@@ -373,8 +373,8 @@ function stRenderList(){
       <span class="st-card-time">${e.allDay?'Ganztägig':e.from+' – '+e.to+' Uhr'}</span>
       <span class="st-card-bar"></span>
       <div class="st-card-act">
-        <button class="st-edit" onclick="stOpenForm(${e.id})">Ändern</button>
-        <button class="st-del" onclick="stOpenDel(${e.id})">Löschen</button>
+        <button class="st-edit" onclick="stOpenForm('${e.id}')">Ändern</button>
+        <button class="st-del" onclick="stOpenDel('${e.id}')">Löschen</button>
       </div>
     </div>`).join('');
 }
