@@ -31,8 +31,15 @@ Tara/Asmita/Alea/Stephanie/Maxine rekonstruiert):
   Blocker (09:00–ab-Zeit UND bis-Zeit–23:00), Mitte bleibt frei — kommt in
   der Praxis vor (Alea, Jen); die ursprüngliche Drei-Fälle-Annahme war zu
   einfach
+- **Mehrtägige Ganztages-Einträge** (z. B. "Asmita" 06.–08.08., Google-Format
+  mit exklusivem Enddatum) gelten für **jeden Tag in der Spanne** — nicht
+  nur den Start-Tag. (Eigener Analysefehler am 03.08. korrigiert: fälschlich
+  als Lücke am 07.08. gemeldet, war aber korrekt kein Block nötig.)
 - Amelia schreibt echte Buchungen direkt in denselben Hilfskalender (z. B.
   "2,5h (Asmita)" mit Kundendaten) — kein Konflikt mit der Blocker-Logik
+- **Bestätigt vom Nutzer:** Team trägt positive Anwesenheit ein; die
+  Amelia/Hilfskalender-Mechanik selbst liest "immer frei, außer explizit
+  geblockt" — die Inversion beim Übersetzen ist genau die Brücke dazwischen
 
 **Nutzt die Team-App:** Tara, Asmita, Amila, Sarah, Dominik, Konstantin,
 Alea, Stephanie, Karen, Maxine (10 Personen).
@@ -47,35 +54,51 @@ das nativ. Die fachliche Logik (Geschlechter-Filter, Angebots-Zuordnung,
 Puffer-Regeln) bleibt nur als Referenz stehen, falls sie mal in Amelia
 nachgebildet werden muss.
 
-## Offene Punkte / gefundene Probleme (per Live-Check 03.08.2026)
+## Offene Punkte / gefundene Probleme (Stand 03.08.2026)
 
-1. **Login-Fix noch nicht von dir live getestet** (Stand Notion-Doc
-   31.07.2026) — PIN-Login, Eintragen/Ändern/Löschen, Ganztägig-Checkbox.
-2. **Lücke bei Asmita:** Für den 07.08. existiert weder ein
-   Verfügbarkeits-Eintrag noch ein Blocker im Hilfskalender. Nach der
-   geltenden Regel müsste der Tag komplett blockiert sein — aktuell wäre
-   Asmita an dem Tag in Amelia fälschlich buchbar.
-3. **Unsauberes Bookkeeping bei Asmita/Maxine:** einzelne Blocker haben ein
+1. **Team-App-Live-Code war nie mit dem Backend verbunden.** Der am
+   31.07. laut Notion-Doku "behobene" Login/Fetch-Fix wurde nie ins
+   Elementor-HTML-Widget eingespielt — die live Seite lief noch mit
+   hartcodierten Test-PINs (`1234`/`5678`) und erfundenen Browser-Testdaten,
+   kein einziger `fetch()`-Aufruf an `/wp-json/st/v1/cal`. Bestätigt durch
+   direkten Blick in den Live-Code am 03.08.2026.
+   **→ Korrigierte Version liegt bereit:** `team-app/team-kalender-widget.html`
+   in diesem Repo — echte Backend-Anbindung (Login, Eintragen, Ändern,
+   Löschen) **plus neue Ganztägig-Checkbox** (blendet die Uhrzeit-Felder
+   aus, sendet `allDay:true` ohne Zeiten). Muss noch von dir ins Elementor-
+   Widget eingefügt und live getestet werden.
+   **Offene Annahme:** Die von `list` zurückgegebenen `entries[]` haben
+   vermutlich dieselben Felder wie `create`/`update` (`id`, `date`, `from`,
+   `to`, `allDay`) — nicht 100% bestätigt, da der Apps-Script-Quellcode
+   nicht vorliegt. Falls nach dem Einspielen Einträge falsch/leer
+   angezeigt werden, brauche ich den `getByPin`/`list`-Teil des Apps
+   Scripts, um die Feldnamen abzugleichen.
+2. **Unsauberes Bookkeeping bei Asmita/Maxine:** einzelne Blocker haben ein
    falsches `sourceDate` in der Beschreibung (das Event selbst liegt am
    richtigen Tag, nur das Label stimmt nicht), dazu harmlose Duplikate
-   (derselbe Blocker zweimal angelegt). Kein akutes Live-Risiko, zeigt aber:
-   der manuelle Prozess prüft nicht, was schon existiert, bevor er neu
-   anlegt.
-4. **Kernproblem:** Die Übersetzung läuft manuell durch Claude-Chat-
-   Sitzungen statt automatisiert — fehleranfällig (siehe 2+3) und
-   erfordert jedes Mal einen neuen Chat.
+   (derselbe Blocker zweimal angelegt, u. a. am 06.08. bei Asmita zeitgleich
+   mit einer echten Buchung). Kein akutes Live-Risiko, zeigt aber: der
+   manuelle Prozess prüft nicht, was schon existiert, bevor er neu anlegt.
+3. **Kernproblem:** Die Übersetzung Verfügbarkeit → Hilfskalender läuft
+   manuell durch Claude-Chat-Sitzungen statt automatisiert — fehleranfällig
+   (siehe Punkt 2) und erfordert jedes Mal einen neuen Chat.
+
+(Der zuvor hier vermerkte "fehlende Blocker bei Asmita am 07.08." war ein
+eigener Analysefehler — siehe Regel-Ergänzung "mehrtägige Ganztages-
+Einträge" oben. Es besteht dort keine Lücke, nichts zu tun.)
 
 ## Empfehlung für die nächsten Schritte
 
-1. Lücke bei Asmita (07.08.) schließen — ein einzelner, klar begründeter
-   Kalender-Eintrag. Da das in ein Live-Buchungssystem schreibt: **auf
-   dein Go warten**, bevor ich das anlege.
-2. Übersetzung als **wiederkehrende Routine** einrichten (direkter
-   Google-Calendar-Zugriff ist in dieser Session vorhanden) statt
-   "manueller Cowork-Agent" — täglich, idempotent (prüft vor dem Anlegen,
-   ob für den Tag schon ein korrekter Blocker existiert), rollierend für
-   die nächsten ~45 Tage.
-3. Ursprünglich geplanter PHP/SQLite-Neubau: **verworfen** — nicht mehr
+1. `team-app/team-kalender-widget.html` ins Elementor-HTML-Widget
+   einfügen, PIN-Login + Eintragen/Ändern/Löschen + Ganztägig live testen.
+2. Falls Einträge nach dem Login falsch aussehen: Apps-Script-`list`-Code
+   schicken, damit ich die Feldnamen anpasse.
+3. Übersetzung Verfügbarkeit → Hilfskalender als **wiederkehrende Routine**
+   einrichten (direkter Google-Calendar-Zugriff ist in dieser Session
+   vorhanden) statt "manueller Cowork-Agent" — täglich, idempotent (prüft
+   vor dem Anlegen, ob für den Tag schon ein korrekter Blocker existiert),
+   rollierend für die nächsten ~45 Tage.
+4. Ursprünglich geplanter PHP/SQLite-Neubau: **verworfen** — nicht mehr
    nötig, die Team-App existiert bereits und funktioniert im Kern.
 
 ## Personalisierung

@@ -9,20 +9,24 @@
 
 **Test:** abgeschlossen — dieser Abgleich war der Test.
 
-## Phase 1 — Login-Live-Test bestätigen
-- Du testest PIN-Login, Eintragen/Ändern/Löschen, Ganztägig-Checkbox auf
-  spiritual-touch.de/team-app/
+## Phase 1 — Team-App live aktualisieren (erledigt: Code bereitgestellt, 03.08.2026)
+- Live-Code geprüft: war die alte, nie verbundene Demo-Version (hartcodierte
+  PINs, keine Backend-Anbindung, keine Ganztägig-Checkbox)
+- Korrigierte Version mit echter Backend-Anbindung + Ganztägig-Checkbox
+  liegt in `team-app/team-kalender-widget.html`
+- **Noch offen:** Du fügst den Code ins Elementor-HTML-Widget ein und
+  testest PIN-Login, Eintragen/Ändern/Löschen, Ganztägig live
 
-**Test:** Du bestätigst "Login funktioniert" oder beschreibst den Fehler.
+**Test:** Du bestätigst "funktioniert" oder schickst die Fehlermeldung
+(inkl. Browser-Konsole, falls Einträge nicht laden — dann brauche ich den
+`list`-Teil des Apps Scripts, um die Feldnamen abzugleichen).
 
-## Phase 2 — Lücke schließen + Bestand bereinigen
-- Fehlenden Blocker für Asmita (07.08., 09:00–23:00) anlegen
+## Phase 2 — Bestand bereinigen
 - Mislabelte `sourceDate`-Beschreibungen korrigieren, echte Duplikate
   löschen (nur exakte Doppel, keine echten Buchungen anfassen)
 
 **Test:** Erneuter Abgleich aller 10 Hilfskalender gegen die
-Verfügbarkeit-Einträge für die nächsten 14 Tage — keine Lücke, keine
-Duplikate mehr.
+Verfügbarkeit-Einträge für die nächsten 14 Tage — keine Duplikate mehr.
 
 ## Phase 3 — Übersetzung automatisieren (Routine statt manuellem Chat)
 - Einmaliges Vorgehen, das für alle 10 Personen die Verfügbarkeit-Einträge

@@ -1,0 +1,479 @@
+<style>
+#st{
+  --sand:#F3ECE1;--card:#FBF7F0;--plum:#3E2A34;--soft:#6B5560;
+  --clay:#B5654A;--clay-d:#9E5440;--line:#E4D9C8;
+  --danger:#A24A3E;--danger-bg:#FAF0EE;
+  --warn:#C07A2E;--warn-bg:#FDF5EB;--sage:#7E8A6F;
+  --r:16px;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  color:var(--plum);line-height:1.45;
+  max-width:480px;margin:0 auto;
+  background:var(--sand);border-radius:28px;
+  padding:36px 24px 56px;
+  min-height:520px;
+}
+#st *{box-sizing:border-box !important;margin:0 !important;padding:0 !important;}
+
+/* Reset — alle theme-Styles raus */
+#st button{
+  all:unset !important;
+  box-sizing:border-box !important;
+  cursor:pointer !important;
+  -webkit-tap-highlight-color:transparent !important;
+}
+#st input:not([type=checkbox]){
+  all:unset !important;
+  box-sizing:border-box !important;
+  font-family:inherit !important;
+}
+
+/* ── KEYPAD-TASTE — stärker als jedes Elementor-Selector ── */
+#st button.st-key{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  height:72px !important;
+  width:100% !important;
+  border-radius:var(--r) !important;
+  background:var(--card) !important;
+  color:var(--plum) !important;
+  font-size:26px !important;
+  font-weight:500 !important;
+  box-shadow:0 2px 0 var(--line) !important;
+  transition:.1s !important;
+  border:none !important;
+  text-align:center !important;
+}
+#st button.st-key:active{
+  transform:translateY(2px) !important;
+  box-shadow:none !important;
+  background:#EDE4D8 !important;
+}
+#st button.st-key-ghost{
+  background:transparent !important;
+  box-shadow:none !important;
+  color:var(--soft) !important;
+  font-size:17px !important;
+}
+#st button.st-key:disabled,#st button.st-key-ghost:disabled{
+  opacity:.5 !important;cursor:not-allowed !important;
+}
+
+/* ── SCREENS ── */
+.st-screen{display:none;}
+.st-screen.on{display:block;animation:stfade .3s ease;}
+@keyframes stfade{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
+
+/* ── TYPO ── */
+.st-eyebrow{font-size:11px !important;letter-spacing:3px !important;text-transform:uppercase !important;color:var(--clay) !important;font-weight:600 !important;margin-bottom:6px !important;display:block !important;}
+.st-h1{font-size:26px !important;font-weight:600 !important;letter-spacing:-.3px !important;margin-bottom:8px !important;display:block !important;}
+.st-lead{color:var(--soft) !important;font-size:15px !important;margin-bottom:28px !important;display:block !important;}
+.st-section{font-size:11px !important;letter-spacing:1.5px !important;text-transform:uppercase !important;color:var(--soft) !important;margin-bottom:14px !important;display:block !important;}
+
+/* ── PIN ── */
+.st-dots{display:flex !important;gap:16px !important;justify-content:center !important;margin:30px 0 36px !important;}
+.st-dot{width:15px !important;height:15px !important;border-radius:50% !important;border:2px solid var(--clay) !important;transition:.18s !important;display:block !important;}
+.st-dot.on{background:var(--clay) !important;transform:scale(1.12) !important;}
+.st-dot.err{border-color:var(--danger) !important;}
+.st-keypad{display:grid !important;grid-template-columns:repeat(3,1fr) !important;gap:12px !important;max-width:300px !important;margin:0 auto !important;}
+.st-pin-err{color:var(--danger) !important;font-size:13.5px !important;text-align:center !important;margin-top:16px !important;min-height:20px !important;display:block !important;}
+
+/* ── LIST ── */
+.st-topbar{display:flex !important;justify-content:space-between !important;align-items:baseline !important;margin-bottom:24px !important;}
+.st-hello{font-size:23px !important;font-weight:600 !important;}
+#st button.st-logout{
+  font-size:14px !important;color:var(--soft) !important;
+  text-decoration:underline !important;text-underline-offset:3px !important;
+  background:none !important;padding:0 !important;display:inline !important;
+}
+.st-card{background:var(--card) !important;border-radius:var(--r) !important;padding:16px 18px !important;margin-bottom:12px !important;border:1px solid var(--line) !important;display:block !important;}
+.st-card-date{font-size:14px !important;font-weight:600 !important;margin-bottom:2px !important;display:block !important;}
+.st-card-time{font-size:20px !important;font-weight:600 !important;color:var(--clay-d) !important;margin:3px 0 8px !important;display:block !important;}
+.st-card-bar{height:5px !important;border-radius:3px !important;background:linear-gradient(90deg,var(--clay),#D08A6E) !important;opacity:.35 !important;margin-bottom:12px !important;display:block !important;}
+.st-card-act{display:flex !important;gap:20px !important;padding-top:11px !important;border-top:1px solid var(--line) !important;}
+#st button.st-edit{color:var(--sage) !important;font-size:14px !important;font-weight:500 !important;display:inline !important;}
+#st button.st-del{color:var(--danger) !important;font-size:14px !important;font-weight:500 !important;display:inline !important;}
+.st-empty{color:var(--soft) !important;font-size:14px !important;text-align:center !important;padding:28px 0 !important;display:block !important;}
+#st button.st-add{
+  display:block !important;width:100% !important;margin-top:20px !important;
+  padding:17px !important;border-radius:var(--r) !important;
+  background:var(--clay) !important;color:#fff !important;
+  font-size:16px !important;font-weight:600 !important;text-align:center !important;
+  box-shadow:0 3px 0 var(--clay-d) !important;transition:.1s !important;
+}
+#st button.st-add:active{transform:translateY(3px) !important;box-shadow:none !important;}
+
+/* ── FORM ── */
+#st button.st-back{
+  color:var(--soft) !important;font-size:15px !important;
+  margin-bottom:20px !important;display:block !important;
+}
+.st-field{margin-bottom:18px !important;display:block !important;}
+.st-field label{display:block !important;font-size:13.5px !important;font-weight:600 !important;margin-bottom:7px !important;}
+#st input.st-input{
+  display:block !important;width:100% !important;
+  padding:14px 15px !important;
+  border:1.5px solid var(--line) !important;border-radius:14px !important;
+  background:var(--card) !important;font-size:16px !important;color:var(--plum) !important;
+}
+#st input.st-input:focus{border-color:var(--clay) !important;outline:none !important;}
+.st-row{display:flex !important;gap:11px !important;}
+.st-row .st-field{flex:1 !important;}
+
+/* Ganztägig-Checkbox */
+.st-allday-row{
+  display:flex !important;align-items:center !important;gap:12px !important;
+  background:var(--card) !important;border:1.5px solid var(--line) !important;
+  border-radius:14px !important;padding:14px 15px !important;margin-bottom:18px !important;
+  cursor:pointer !important;
+}
+#st input.st-checkbox{
+  -webkit-appearance:none !important;appearance:none !important;
+  width:24px !important;height:24px !important;flex-shrink:0 !important;
+  border:2px solid var(--line) !important;border-radius:7px !important;
+  background:#fff !important;
+  display:inline-flex !important;align-items:center !important;justify-content:center !important;
+  cursor:pointer !important;transition:.15s !important;
+  padding:0 !important;margin:0 !important;
+}
+#st input.st-checkbox:checked{
+  background:var(--clay) !important;border-color:var(--clay) !important;
+}
+#st input.st-checkbox:checked::after{
+  content:'✓' !important;color:#fff !important;font-size:16px !important;font-weight:700 !important;
+  line-height:1 !important;
+}
+.st-allday-label{font-size:15px !important;font-weight:500 !important;color:var(--plum) !important;user-select:none !important;}
+
+/* Warnboxen */
+.st-warn,.st-err{display:none !important;border-radius:14px !important;padding:13px 15px !important;margin-bottom:18px !important;gap:11px !important;align-items:flex-start !important;}
+.st-warn.on{display:flex !important;background:var(--warn-bg) !important;border:1.5px solid #E4A84E !important;}
+.st-err.on{display:flex !important;background:var(--danger-bg) !important;border:1.5px solid #D9897E !important;}
+.st-warn-ico,.st-err-ico{font-size:18px !important;flex-shrink:0 !important;}
+.st-warn-txt{font-size:13.5px !important;color:var(--plum) !important;}
+.st-warn-txt b{color:var(--warn) !important;font-weight:600 !important;}
+.st-warn-sub{font-size:12.5px !important;color:var(--soft) !important;margin-top:3px !important;display:block !important;}
+.st-err-txt{font-size:13.5px !important;color:var(--danger) !important;}
+.st-err-txt b{font-weight:600 !important;}
+
+#st button.st-save{
+  display:block !important;width:100% !important;padding:17px !important;margin-top:26px !important;
+  border-radius:var(--r) !important;background:var(--clay) !important;color:#fff !important;
+  font-size:16px !important;font-weight:600 !important;text-align:center !important;
+  box-shadow:0 3px 0 var(--clay-d) !important;transition:.1s !important;
+}
+#st button.st-save:disabled{background:#C9B5AC !important;box-shadow:none !important;cursor:not-allowed !important;}
+#st button.st-save:not(:disabled):active{transform:translateY(3px) !important;box-shadow:none !important;}
+#st button.st-cancel{
+  display:block !important;width:100% !important;padding:14px !important;margin-top:10px !important;
+  border-radius:var(--r) !important;border:1.5px solid var(--line) !important;
+  background:transparent !important;color:var(--soft) !important;
+  font-size:15px !important;text-align:center !important;
+}
+
+/* ── DELETE OVERLAY ── */
+.st-overlay{display:none;position:fixed !important;inset:0 !important;background:rgba(62,42,52,.5) !important;z-index:9999 !important;justify-content:flex-end !important;flex-direction:column !important;padding:20px !important;}
+.st-overlay.on{display:flex !important;}
+.st-sheet{background:var(--card) !important;border-radius:22px !important;padding:24px 20px !important;}
+.st-sheet-title{font-size:18px !important;font-weight:600 !important;margin-bottom:6px !important;display:block !important;}
+.st-sheet-sub{font-size:14px !important;color:var(--soft) !important;margin-bottom:22px !important;display:block !important;}
+#st-overlay button.st-btn-danger{
+  all:unset !important;
+  display:block !important;width:100% !important;padding:16px !important;
+  border-radius:var(--r) !important;background:var(--danger) !important;
+  color:#fff !important;font-size:15px !important;font-weight:600 !important;
+  text-align:center !important;margin-bottom:10px !important;
+  cursor:pointer !important;box-sizing:border-box !important;
+}
+#st-overlay button.st-btn-cancel-sheet{
+  all:unset !important;
+  display:block !important;width:100% !important;padding:14px !important;
+  border-radius:var(--r) !important;border:1.5px solid var(--line) !important;
+  color:var(--soft) !important;font-size:15px !important;text-align:center !important;
+  cursor:pointer !important;box-sizing:border-box !important;
+}
+</style>
+
+<div id="st">
+
+  <!-- SCREEN: PIN -->
+  <div class="st-screen on" id="st-pin">
+    <span class="st-eyebrow">Spiritual Touch</span>
+    <span class="st-h1">Team-Kalender</span>
+    <span class="st-lead">Gib Deinen persönlichen Code ein</span>
+    <div class="st-dots">
+      <div class="st-dot" id="sd0"></div>
+      <div class="st-dot" id="sd1"></div>
+      <div class="st-dot" id="sd2"></div>
+      <div class="st-dot" id="sd3"></div>
+    </div>
+    <div class="st-keypad" id="st-keypad">
+      <button class="st-key" onclick="stPress('1')">1</button>
+      <button class="st-key" onclick="stPress('2')">2</button>
+      <button class="st-key" onclick="stPress('3')">3</button>
+      <button class="st-key" onclick="stPress('4')">4</button>
+      <button class="st-key" onclick="stPress('5')">5</button>
+      <button class="st-key" onclick="stPress('6')">6</button>
+      <button class="st-key" onclick="stPress('7')">7</button>
+      <button class="st-key" onclick="stPress('8')">8</button>
+      <button class="st-key" onclick="stPress('9')">9</button>
+      <button class="st-key st-key-ghost" onclick="stClear()">Leer</button>
+      <button class="st-key" onclick="stPress('0')">0</button>
+      <button class="st-key st-key-ghost" onclick="stDel()">⌫</button>
+    </div>
+    <div class="st-pin-err" id="st-pin-err"></div>
+  </div>
+
+  <!-- SCREEN: LIST -->
+  <div class="st-screen" id="st-list">
+    <div class="st-topbar">
+      <div class="st-hello" id="st-hello">Hallo</div>
+      <button class="st-logout" onclick="stLogout()">abmelden</button>
+    </div>
+    <span class="st-section">Deine Verfügbarkeiten</span>
+    <div id="st-entries"></div>
+    <button class="st-add" onclick="stOpenForm(null)">+ Verfügbarkeit hinzufügen</button>
+  </div>
+
+  <!-- SCREEN: FORM -->
+  <div class="st-screen" id="st-form">
+    <button class="st-back" onclick="stGo('list')">← Zurück</button>
+    <span class="st-h1" id="st-form-title" style="font-size:22px !important;margin-bottom:22px !important;">Verfügbarkeit hinzufügen</span>
+
+    <div class="st-warn" id="st-warn">
+      <span class="st-warn-ico">⚠️</span>
+      <div class="st-warn-txt">
+        <b>Du hast an diesem Tag schon einen Eintrag:</b>
+        <span class="st-warn-sub" id="st-warn-sub"></span>
+        Du kannst trotzdem speichern — der alte Eintrag bleibt.
+      </div>
+    </div>
+    <div class="st-err" id="st-err">
+      <span class="st-err-ico">🚫</span>
+      <div class="st-err-txt"><b>Endzeit liegt vor Startzeit</b> — bitte korrigieren.</div>
+    </div>
+
+    <div class="st-field">
+      <label>Datum</label>
+      <input type="date" id="st-date" class="st-input" onchange="stCheckDate()">
+    </div>
+
+    <label class="st-allday-row" for="st-allday">
+      <input type="checkbox" id="st-allday" class="st-checkbox" onchange="stToggleAllDay()">
+      <span class="st-allday-label">Ganztägig verfügbar</span>
+    </label>
+
+    <div class="st-row" id="st-time-row">
+      <div class="st-field">
+        <label>Von</label>
+        <input type="time" id="st-from" class="st-input" value="09:00" onchange="stCheckTimes()">
+      </div>
+      <div class="st-field">
+        <label>Bis</label>
+        <input type="time" id="st-to" class="st-input" value="18:00" onchange="stCheckTimes()">
+      </div>
+    </div>
+
+    <button class="st-save" id="st-save" onclick="stSave()">Speichern</button>
+    <button class="st-cancel" onclick="stGo('list')">Abbrechen</button>
+  </div>
+
+</div>
+
+<!-- DELETE OVERLAY (außerhalb #st für position:fixed) -->
+<div class="st-overlay" id="st-overlay">
+  <div class="st-sheet">
+    <span class="st-sheet-title">Eintrag löschen?</span>
+    <span class="st-sheet-sub" id="st-del-sub"></span>
+    <button class="st-btn-danger" onclick="stConfirmDel()">Ja, löschen</button>
+    <button class="st-btn-cancel-sheet" onclick="stCloseOverlay()">Abbrechen</button>
+  </div>
+</div>
+
+<script>
+const ST_API_URL='/wp-json/st/v1/cal';
+let stUser=null,stEditId=null,stDelId=null,stPin='',stTimeErr=false,stLoading=false;
+let stEntries=[];
+
+async function stApi(payload){
+  try{
+    const res=await fetch(ST_API_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const data=await res.json();
+    return {networkError:false,data};
+  }catch(err){
+    return {networkError:true,data:null};
+  }
+}
+
+function stGo(n){
+  document.querySelectorAll('.st-screen').forEach(s=>s.classList.remove('on'));
+  document.getElementById('st-'+n).classList.add('on');
+  document.getElementById('st').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function stSetKeypadDisabled(disabled){
+  document.querySelectorAll('#st-keypad .st-key').forEach(b=>b.disabled=disabled);
+}
+function stPress(n){
+  if(stLoading||stPin.length>=4)return;
+  stPin+=n;stRenderDots();
+  if(stPin.length===4)setTimeout(stTryLogin,220);
+}
+function stDel(){if(stLoading)return;stPin=stPin.slice(0,-1);stRenderDots();}
+function stClear(){if(stLoading)return;stPin='';stRenderDots();}
+function stRenderDots(){
+  for(let i=0;i<4;i++)
+    document.getElementById('sd'+i).classList.toggle('on',i<stPin.length);
+}
+async function stTryLogin(){
+  if(stLoading)return;
+  stLoading=true;stSetKeypadDisabled(true);
+  document.getElementById('st-pin-err').textContent='';
+  const pinTried=stPin;
+  const {networkError,data}=await stApi({pin:pinTried,action:'list'});
+  stLoading=false;stSetKeypadDisabled(false);
+
+  if(networkError){
+    document.getElementById('st-pin-err').textContent='Verbindungsfehler — bitte in ein paar Sekunden nochmal versuchen';
+    stPin='';stRenderDots();
+    return;
+  }
+  if(data&&data.ok&&data.name){
+    stUser=data.name;
+    stEntries=Array.isArray(data.entries)?data.entries:[];
+    document.getElementById('st-hello').textContent='Hallo '+stUser;
+    document.querySelectorAll('.st-dot').forEach(d=>d.classList.remove('err'));
+    stRenderList();stGo('list');
+  } else {
+    document.getElementById('st-pin-err').textContent='Falscher Code — bitte nochmal versuchen';
+    document.querySelectorAll('.st-dot').forEach(d=>d.classList.add('err'));
+    setTimeout(()=>{stPin='';stRenderDots();document.querySelectorAll('.st-dot').forEach(d=>d.classList.remove('err'));},700);
+  }
+}
+function stLogout(){stUser=null;stPin='';stEntries=[];stRenderDots();stGo('pin');}
+
+async function stRefreshEntries(){
+  const {networkError,data}=await stApi({pin:stPin,action:'list'});
+  if(!networkError&&data&&data.ok){
+    stEntries=Array.isArray(data.entries)?data.entries:[];
+  }
+  stRenderList();
+}
+
+function stRenderList(){
+  const el=document.getElementById('st-entries');
+  if(!stEntries.length){el.innerHTML='<div class="st-empty">Noch keine Einträge</div>';return;}
+  const s=[...stEntries].sort((a,b)=>a.date.localeCompare(b.date));
+  el.innerHTML=s.map(e=>`
+    <div class="st-card">
+      <span class="st-card-date">${stFmt(e.date)}</span>
+      <span class="st-card-time">${e.allDay?'Ganztägig':e.from+' – '+e.to+' Uhr'}</span>
+      <span class="st-card-bar"></span>
+      <div class="st-card-act">
+        <button class="st-edit" onclick="stOpenForm(${e.id})">Ändern</button>
+        <button class="st-del" onclick="stOpenDel(${e.id})">Löschen</button>
+      </div>
+    </div>`).join('');
+}
+function stFmt(iso){
+  const d=new Date(iso+'T12:00:00');
+  return d.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'long'});
+}
+function stOpenForm(id){
+  stEditId=id;
+  document.getElementById('st-warn').classList.remove('on');
+  document.getElementById('st-err').classList.remove('on');
+  document.getElementById('st-save').disabled=false;stTimeErr=false;
+  if(id){
+    const e=stEntries.find(x=>x.id===id);
+    document.getElementById('st-form-title').textContent='Verfügbarkeit ändern';
+    document.getElementById('st-date').value=e.date;
+    document.getElementById('st-allday').checked=!!e.allDay;
+    document.getElementById('st-from').value=e.from||'09:00';
+    document.getElementById('st-to').value=e.to||'18:00';
+  } else {
+    document.getElementById('st-form-title').textContent='Verfügbarkeit hinzufügen';
+    const t=new Date();t.setDate(t.getDate()+1);
+    document.getElementById('st-date').value=t.toISOString().split('T')[0];
+    document.getElementById('st-allday').checked=false;
+    document.getElementById('st-from').value='09:00';
+    document.getElementById('st-to').value='18:00';
+  }
+  stToggleAllDay();
+  stCheckDate();stGo('form');
+}
+function stToggleAllDay(){
+  const allDay=document.getElementById('st-allday').checked;
+  document.getElementById('st-time-row').style.display=allDay?'none':'flex';
+  stCheckTimes();
+}
+function stCheckDate(){
+  const date=document.getElementById('st-date').value;if(!date)return;
+  const clash=stEntries.find(e=>e.date===date&&e.id!==stEditId);
+  if(clash){
+    document.getElementById('st-warn-sub').textContent=stFmt(clash.date)+', '+(clash.allDay?'Ganztägig':clash.from+' – '+clash.to+' Uhr');
+    document.getElementById('st-warn').classList.add('on');
+  } else {document.getElementById('st-warn').classList.remove('on');}
+}
+function stCheckTimes(){
+  const allDay=document.getElementById('st-allday').checked;
+  if(allDay){
+    stTimeErr=false;
+    document.getElementById('st-err').classList.remove('on');
+    document.getElementById('st-save').disabled=false;
+    return;
+  }
+  const f=document.getElementById('st-from').value;
+  const t=document.getElementById('st-to').value;
+  stTimeErr=!!(f&&t&&t<=f);
+  document.getElementById('st-err').classList.toggle('on',stTimeErr);
+  document.getElementById('st-save').disabled=stTimeErr;
+}
+async function stSave(){
+  if(stTimeErr||stLoading)return;
+  const date=document.getElementById('st-date').value;
+  const allDay=document.getElementById('st-allday').checked;
+  const from=allDay?'':document.getElementById('st-from').value;
+  const to=allDay?'':document.getElementById('st-to').value;
+  if(!date)return;
+  if(!allDay&&(!from||!to))return;
+
+  stLoading=true;
+  document.getElementById('st-save').disabled=true;
+  const payload=stEditId
+    ?{pin:stPin,action:'update',id:stEditId,date,from,to,allDay}
+    :{pin:stPin,action:'create',date,from,to,allDay};
+  const {networkError,data}=await stApi(payload);
+  stLoading=false;
+
+  if(networkError||!data||!data.ok){
+    document.getElementById('st-save').disabled=false;
+    document.getElementById('st-err').classList.add('on');
+    document.querySelector('#st-err .st-err-txt').innerHTML='<b>Verbindungsfehler</b> — bitte nochmal versuchen.';
+    return;
+  }
+  await stRefreshEntries();
+  stGo('list');
+}
+function stOpenDel(id){
+  stDelId=id;const e=stEntries.find(x=>x.id===id);
+  document.getElementById('st-del-sub').textContent=stFmt(e.date)+', '+(e.allDay?'Ganztägig':e.from+' – '+e.to+' Uhr');
+  document.getElementById('st-overlay').classList.add('on');
+}
+function stCloseOverlay(){stDelId=null;document.getElementById('st-overlay').classList.remove('on');}
+async function stConfirmDel(){
+  if(stLoading)return;
+  stLoading=true;
+  const {networkError,data}=await stApi({pin:stPin,action:'delete',id:stDelId});
+  stLoading=false;
+  stCloseOverlay();
+  if(!networkError&&data&&data.ok){
+    await stRefreshEntries();
+  } else {
+    stRenderList();
+  }
+}
+</script>
