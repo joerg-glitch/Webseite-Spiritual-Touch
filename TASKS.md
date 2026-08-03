@@ -1,56 +1,46 @@
-# Tasks: Team-Verfügbarkeits-App für Amelia
+# Tasks: Team-Verfügbarkeit → Amelia (Stand 03.08.2026)
 
-Voraussetzung vor Phase 1: Google-Cloud-Projekt + Service Account anlegen,
-Service-Account-JSON-Key erzeugen, Service-Account-E-Mail auf allen
-Hilfskalendern als Bearbeiter freigeben. (Kurzanleitung folgt beim Start von
-Phase 1, kein API-Key wird ins Repo geschrieben.)
+## Phase 0 — Bestandsaufnahme (erledigt, 03.08.2026)
+- Notion-Doku gelesen, echte Kalenderdaten aller Hilfskalender gegen die
+  Doku geprüft
+- Übersetzungsregel empirisch bestätigt (09:00–23:00-Fenster, inkl.
+  Zwei-Blocker-Fall bei "ab...bis...")
+- Lücke bei Asmita (07.08.) und unsauberes Labeling gefunden
 
-## Phase 1 — Lauffähiger Mini-Prototyp
-- Google Calendar API Anbindung via Service Account (PHP)
-- Skript: Event in einem Test-Hilfskalender anlegen, auflisten, löschen
-- Konfiguration (Arbeitsfenster, Kalender-IDs) in einer zentralen Config-Datei
+**Test:** abgeschlossen — dieser Abgleich war der Test.
 
-**Test:** Skript gegen einen echten Test-Hilfskalender laufen lassen,
-Event via Calendar-API-Abfrage verifizieren (Erstellung + Löschung
-funktionieren nachweisbar ohne manuelles Nachschauen im Browser).
+## Phase 1 — Login-Live-Test bestätigen
+- Du testest PIN-Login, Eintragen/Ändern/Löschen, Ganztägig-Checkbox auf
+  spiritual-touch.de/team-app/
 
-## Phase 2 — Übersetzungslogik mit Beispieldaten
-- Kernfunktion: Verfügbarkeits-Eintrag → Blocker-Event(e) berechnen
-  (ganztag / ab / bis / kein Eintrag)
-- Vier Beispiel-Fälle als Testdaten hinterlegen
-- Event-Mapping-Tabelle (SQLite), damit Änderungen bestehende Events
-  updaten statt Duplikate zu erzeugen
+**Test:** Du bestätigst "Login funktioniert" oder beschreibst den Fehler.
 
-**Test:** Automatisiertes Testskript, das alle vier Beispiel-Fälle gegen
-den Test-Hilfskalender durchspielt und die erzeugten Events (Anzahl,
-Start-/Endzeit) gegen die erwarteten Werte prüft — läuft ohne manuelles
-Zutun durch.
+## Phase 2 — Lücke schließen + Bestand bereinigen
+- Fehlenden Blocker für Asmita (07.08., 09:00–23:00) anlegen
+- Mislabelte `sourceDate`-Beschreibungen korrigieren, echte Duplikate
+  löschen (nur exakte Doppel, keine echten Buchungen anfassen)
 
-## Phase 3 — Bedienoberfläche
-- Formular über persönlichen Link: Datum wählen, Typ wählen (ganztag/ab/bis),
-  Liste bereits eingetragener Verfügbarkeiten mit Löschen-Option
-- Responsive, einfache Optik in der abgestimmten Farbpalette
+**Test:** Erneuter Abgleich aller 10 Hilfskalender gegen die
+Verfügbarkeit-Einträge für die nächsten 14 Tage — keine Lücke, keine
+Duplikate mehr.
 
-**Test:** Manueller Durchlauf im Browser (lokal oder Staging) — Eintrag
-anlegen, Kalender-Event erscheint, Eintrag löschen, Blocker wird wieder auf
-Ganztag zurückgesetzt.
+## Phase 3 — Übersetzung automatisieren (Routine statt manuellem Chat)
+- Einmaliges Vorgehen, das für alle 10 Personen die Verfügbarkeit-Einträge
+  liest und Hilfskalender-Blocker idempotent nachführt (prüft `sourceDate`
+  in der Beschreibung, bevor es neu anlegt)
+- Als wiederkehrende Routine einrichten (täglich)
 
-## Phase 4 — Automatisierung & Übersicht
-- Cron-Skript: erzeugt rollierend (60 Tage voraus) Ganztages-Blocker für
-  Tage ohne Eintrag
-- Übersichtsseite für dich: alle Teammitglieder + ihre nächsten
-  Verfügbarkeiten auf einen Blick
+**Test:** Routine einmal manuell auslösen, prüfen dass keine Duplikate
+entstehen und neue Verfügbarkeits-Einträge korrekt übersetzt werden.
 
-**Test:** Cron-Skript manuell einmal ausführen, prüfen dass für neu in den
-Horizont rückende Tage automatisch Blocker entstehen, für Tage mit
-bestehendem Eintrag aber nichts doppelt angelegt wird.
+## Phase 4 — Laufender Betrieb beobachten
+- 1–2 Wochen laufen lassen, stichprobenartig prüfen ob Amelia-Buchbarkeit
+  mit echter Verfügbarkeit übereinstimmt
+
+**Test:** Stichprobe über 5–10 Tage, keine Fehlbuchungen.
 
 ## Phase 5 — Entscheidung
-- Nach 2–4 Wochen echtem Einsatz: Nutzung, Fehinterpretationen durch Team,
-  Wartungsaufwand bewerten
-- Entscheidung: behalten / verbessern (z. B. Mehrfach-Zeitblöcke pro Tag
-  ergänzen) / zurück zu rein manueller Pflege
+- Reicht die Routine dauerhaft, oder soll die Übersetzung doch fest in
+  Apps Script (stündlich, wie ursprünglich geplant) verlagert werden?
 
-**Test:** Kurzer Soll/Ist-Abgleich — stimmen Amelia-Buchbarkeit und
-tatsächliche Team-Verfügbarkeit für den Testzeitraum überein (Stichprobe
-über 5–10 Tage, keine Fehlbuchungen durch falsche Blocker)?
+**Test:** Kurzer Soll/Ist-Vergleich nach 2–4 Wochen.
