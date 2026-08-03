@@ -19,26 +19,18 @@ function doPost(e) {
     switch (data.action) {
       case 'list':   return json({ok: true, name: member.name, entries: listEntries(member.name)});
       case 'create': return json({ok: true, id: createEntry(member.name, data.date, data.from, data.to, data.allDay)});
-      case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to)});
+      case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to, data.allDay)});
       case 'delete': return json({ok: deleteEntry(member.name, data.id)});
       default:       return json({error: 'unknown_action'});
     }
-   } catch (error) {
+  } catch (error) {
     // Wenn ein Fehler passiert, MUSS Google das im JSON-Format erfahren:
-    return json({ 
-      error: "internal_catch_error", 
-      details: error.toString() 
+    return json({
+      error: "internal_catch_error",
+      details: error.toString()
     });
   }
-// ... ganz viel Code im switch-Block ...
-
-  // DAS HIER GANZ AM ENDE EINFÜGEN (vor der letzten } von doPost):
-  return json({ 
-    error: "Sicherheitsnetz gegriffen", 
-    hinweis: "Der Code ist bis zum Ende durchgelaufen, ohne eine Antwort zurückzugeben!",
-    empfangene_daten: data 
-  });
- }// <- Das ist die allerletzte Klammer von doPost(e)
+}
 
 // Health-Check — zum Testen im Browser aufrufbar
 function doGet() {
@@ -53,31 +45,46 @@ function listEntries(name) {
   end.setMonth(end.getMonth() + 6);
 
   return cal.getEvents(start, end)
-    .filter(ev => ev.getTitle() === name)
-    .map(ev => ({
-      id:   ev.getId(),
-      date: fmt(ev.getStartTime(), 'yyyy-MM-dd'),
-      from: fmt(ev.getStartTime(), 'HH:mm'),
-      to:   fmt(ev.getEndTime(),   'HH:mm')
-    }));
+    .filter(ev => getMember(ev) === name)
+    .map(ev => {
+      const allDay = ev.isAllDayEvent();
+      const info   = parseDesc(ev.getDescription());
+      return {
+        id:     ev.getId(),
+        date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+        from:   allDay ? '' : (info.from || ''),
+        to:     allDay ? '' : (info.to   || ''),
+        allDay: allDay
+      };
+    });
 }
 
+// Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
+// Bei Teilverfügbarkeit steht die Uhrzeit im Titel, die Zeiten liegen
+// zusätzlich strukturiert in der Beschreibung (robuster als Titel-Parsing).
 function createEntry(name, date, from, to, allDay) {
   const cal = CalendarApp.getCalendarById(CAL_ID);
   let event;
   if (allDay) {
     event = cal.createAllDayEvent(name, new Date(date + 'T12:00:00'));
+    event.setDescription('member:' + name);
   } else {
-    event = cal.createEvent(name, parsedt(date, from), parsedt(date, to));
+    const title = name + ' ' + from + '–' + to + ' Uhr';
+    event = cal.createAllDayEvent(title, new Date(date + 'T12:00:00'));
+    event.setDescription('member:' + name + ';from:' + from + ';to:' + to);
   }
   event.setTransparency(CalendarApp.EventTransparency.TRANSPARENT);
   return event.getId();
 }
 
-function updateEntry(name, id, date, from, to) {
+// Ganztägig-Status kann sich beim Ändern ändern (z.B. Uhrzeit -> Ganztägig) —
+// dafür alten Eintrag löschen und mit den neuen Werten neu anlegen statt
+// setTime() zu verwenden (funktioniert bei Ganztages-Events nicht sauber).
+function updateEntry(name, id, date, from, to, allDay) {
   const ev = safeGet(name, id);
   if (!ev) return false;
-  ev.setTime(parsedt(date, from), parsedt(date, to));
+  ev.deleteEvent();
+  createEntry(name, date, from, to, allDay);
   return true;
 }
 
@@ -91,7 +98,23 @@ function deleteEntry(name, id) {
 // Sicherheit: Gehört das Event wirklich dieser Person?
 function safeGet(name, id) {
   const ev = CalendarApp.getCalendarById(CAL_ID).getEventById(id);
-  return (ev && ev.getTitle() === name) ? ev : null;
+  return (ev && getMember(ev) === name) ? ev : null;
+}
+
+// Liest die Person aus der Beschreibung (member:Name), Fallback auf den
+// Titel für alte, manuell angelegte Ganztages-Einträge ohne Tag.
+function getMember(ev) {
+  const info = parseDesc(ev.getDescription());
+  return info.member || ev.getTitle();
+}
+
+function parseDesc(desc) {
+  const out = {};
+  (desc || '').split(';').forEach(part => {
+    const idx = part.indexOf(':');
+    if (idx > -1) out[part.slice(0, idx).trim()] = part.slice(idx + 1).trim();
+  });
+  return out;
 }
 
 // ── Hilfsfunktionen ─────────────────────────────────────
@@ -103,10 +126,6 @@ function getByPin(pin) {
       return { name: rows[i][0], email: rows[i][1] };
   }
   return null;
-}
-
-function parsedt(date, time) {
-  return Utilities.parseDate(date + ' ' + time, TIMEZONE, 'yyyy-MM-dd HH:mm');
 }
 
 function fmt(date, pattern) {
