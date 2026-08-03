@@ -87,17 +87,38 @@ nachgebildet werden muss.
 eigener Analysefehler — siehe Regel-Ergänzung "mehrtägige Ganztages-
 Einträge" oben. Es besteht dort keine Lücke, nichts zu tun.)
 
+## Stand 03.08.2026 (Abend): Apps Script bekommen und korrigiert
+
+Echter Apps-Script-Code (`team-app/App Script`) geprüft. Gefundene Bugs:
+- `listEntries` gab kein `allDay`-Feld zurück → Widget zeigte nie korrekt
+  "Ganztägig" beim Bearbeiten
+- `update`-Aktion kannte `allDay` gar nicht (weder im `doPost`-Switch noch
+  in `updateEntry`) → Ändern eines Ganztägig-Eintrags wäre vermutlich kaputt
+  gegangen
+- Teilverfügbarkeit wurde als echter Uhrzeit-Termin angelegt statt (wie vom
+  Nutzer gewünscht) als Ganztages-Event mit Zeit im Titel
+
+Alle drei behoben. Neue Konvention: **jeder Eintrag ist ein Ganztages-Event**
+(bessere Sichtbarkeit); bei Teilverfügbarkeit steht die Zeit im Titel
+("Alea 11:00–14:00 Uhr"), Zuordnung/Zeiten zusätzlich strukturiert in der
+Beschreibung (`member:Name;from:HH:MM;to:HH:MM`) — im selben Stil wie die
+bestehende Hilfskalender-Konvention (`autoBlock:true;sourceDate:...;member:...`).
+`updateEntry` macht jetzt Löschen+Neuanlegen statt `setTime()` (robuster bei
+Ganztägig-Wechsel).
+
 ## Empfehlung für die nächsten Schritte
 
-1. `team-app/team-kalender-widget.html` ins Elementor-HTML-Widget
-   einfügen, PIN-Login + Eintragen/Ändern/Löschen + Ganztägig live testen.
-2. Falls Einträge nach dem Login falsch aussehen: Apps-Script-`list`-Code
-   schicken, damit ich die Feldnamen anpasse.
-3. Übersetzung Verfügbarkeit → Hilfskalender als **wiederkehrende Routine**
-   einrichten (direkter Google-Calendar-Zugriff ist in dieser Session
-   vorhanden) statt "manueller Cowork-Agent" — täglich, idempotent (prüft
-   vor dem Anlegen, ob für den Tag schon ein korrekter Blocker existiert),
-   rollierend für die nächsten ~45 Tage.
+1. Aktualisiertes Apps Script (`team-app/App Script`) im Apps-Script-Editor
+   einfügen und **Bereitstellen → Neue Version** (nicht nur speichern —
+   euer eigener bekannter Fallstrick).
+2. `team-app/team-kalender-widget.html` ist schon mit dem Button-Fix
+   (Ändern/Löschen) aktuell — nochmal komplett live testen: Anlegen,
+   Ändern, Löschen, Ganztägig, inkl. Wechsel Ganztägig ↔ Uhrzeit beim
+   Ändern.
+3. **Noch offen (wartet auf Go):** Übersetzung Verfügbarkeit → Hilfskalender
+   als wiederkehrende Routine einrichten, inkl. Invertierung bei Ganztägig
+   (bestehender Blocker muss raus, wenn ganztägig eingetragen wird) —
+   direkter Google-Calendar-Zugriff ist in dieser Session vorhanden.
 4. Ursprünglich geplanter PHP/SQLite-Neubau: **verworfen** — nicht mehr
    nötig, die Team-App existiert bereits und funktioniert im Kern.
 
