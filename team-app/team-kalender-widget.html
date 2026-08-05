@@ -365,35 +365,46 @@ async function stRefreshEntries(){
 
 function stRenderList(){
   const el=document.getElementById('st-entries');
+  el.innerHTML='';
   if(!stEntries.length){el.innerHTML='<div class="st-empty">Noch keine Einträge</div>';return;}
   const s=[...stEntries].sort((a,b)=>a.date.localeCompare(b.date));
-  el.innerHTML=s.map(e=>`
-    <div class="st-card">
+  s.forEach(e=>{
+    const card=document.createElement('div');
+    card.className='st-card';
+    card.innerHTML=`
       <span class="st-card-date">${stFmt(e.date)}</span>
       <span class="st-card-time">${e.allDay?'Ganztägig':e.from+' – '+e.to+' Uhr'}</span>
       <span class="st-card-bar"></span>
-      <div class="st-card-act">
-        <button class="st-edit" onclick="stOpenForm('${e.id}')">Ändern</button>
-        <button class="st-del" onclick="stOpenDel('${e.id}')">Löschen</button>
-      </div>
-    </div>`).join('');
+      <div class="st-card-act"></div>`;
+    const act=card.querySelector('.st-card-act');
+    const editBtn=document.createElement('button');
+    editBtn.className='st-edit';
+    editBtn.textContent='Ändern';
+    editBtn.addEventListener('click',()=>stOpenForm(e));
+    const delBtn=document.createElement('button');
+    delBtn.className='st-del';
+    delBtn.textContent='Löschen';
+    delBtn.addEventListener('click',()=>stOpenDel(e));
+    act.appendChild(editBtn);
+    act.appendChild(delBtn);
+    el.appendChild(card);
+  });
 }
 function stFmt(iso){
   const d=new Date(iso+'T12:00:00');
   return d.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'long'});
 }
-function stOpenForm(id){
-  stEditId=id;
+function stOpenForm(entry){
+  stEditId=entry?entry.id:null;
   document.getElementById('st-warn').classList.remove('on');
   document.getElementById('st-err').classList.remove('on');
   document.getElementById('st-save').disabled=false;stTimeErr=false;
-  if(id){
-    const e=stEntries.find(x=>x.id===id);
+  if(entry){
     document.getElementById('st-form-title').textContent='Verfügbarkeit ändern';
-    document.getElementById('st-date').value=e.date;
-    document.getElementById('st-allday').checked=!!e.allDay;
-    document.getElementById('st-from').value=e.from||'09:00';
-    document.getElementById('st-to').value=e.to||'18:00';
+    document.getElementById('st-date').value=entry.date;
+    document.getElementById('st-allday').checked=!!entry.allDay;
+    document.getElementById('st-from').value=entry.from||'09:00';
+    document.getElementById('st-to').value=entry.to||'18:00';
   } else {
     document.getElementById('st-form-title').textContent='Verfügbarkeit hinzufügen';
     const t=new Date();t.setDate(t.getDate()+1);
@@ -458,9 +469,9 @@ async function stSave(){
   await stRefreshEntries();
   stGo('list');
 }
-function stOpenDel(id){
-  stDelId=id;const e=stEntries.find(x=>x.id===id);
-  document.getElementById('st-del-sub').textContent=stFmt(e.date)+', '+(e.allDay?'Ganztägig':e.from+' – '+e.to+' Uhr');
+function stOpenDel(entry){
+  stDelId=entry.id;
+  document.getElementById('st-del-sub').textContent=stFmt(entry.date)+', '+(entry.allDay?'Ganztägig':entry.from+' – '+entry.to+' Uhr');
   document.getElementById('st-overlay').classList.add('on');
 }
 function stCloseOverlay(){stDelId=null;document.getElementById('st-overlay').classList.remove('on');}
