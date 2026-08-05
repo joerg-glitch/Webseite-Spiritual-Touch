@@ -38,6 +38,9 @@ function doGet() {
 }
 
 // ── Kalender ────────────────────────────────────────────
+// Zuordnung/Zeiten liegen als Apps-Script-Tags am Event (setTag/getTag) —
+// unsichtbar für den Nutzer, robuster als Text in der Beschreibung zu
+// parsen, und derselbe Mechanismus, den der Verfügbarkeit-Sync nutzt.
 function listEntries(name) {
   const cal   = CalendarApp.getCalendarById(CAL_ID);
   const start = new Date();
@@ -47,32 +50,32 @@ function listEntries(name) {
   return cal.getEvents(start, end)
     .filter(ev => getMember(ev) === name)
     .map(ev => {
-      const allDay = ev.isAllDayEvent();
-      const info   = parseDesc(ev.getDescription());
+      const from = ev.getTag('from');
+      const to   = ev.getTag('to');
       return {
         id:     ev.getId(),
         date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
-        from:   allDay ? '' : (info.from || ''),
-        to:     allDay ? '' : (info.to   || ''),
-        allDay: allDay
+        from:   from || '',
+        to:     to   || '',
+        allDay: !(from && to)
       };
     });
 }
 
 // Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
-// Bei Teilverfügbarkeit steht die Uhrzeit im Titel, die Zeiten liegen
-// zusätzlich strukturiert in der Beschreibung (robuster als Titel-Parsing).
+// Bei Teilverfügbarkeit steht die Uhrzeit zusätzlich im Titel.
 function createEntry(name, date, from, to, allDay) {
   const cal = CalendarApp.getCalendarById(CAL_ID);
   let event;
   if (allDay) {
     event = cal.createAllDayEvent(name, new Date(date + 'T12:00:00'));
-    event.setDescription('member:' + name);
   } else {
     const title = name + ' ' + from + '–' + to + ' Uhr';
     event = cal.createAllDayEvent(title, new Date(date + 'T12:00:00'));
-    event.setDescription('member:' + name + ';from:' + from + ';to:' + to);
+    event.setTag('from', from);
+    event.setTag('to', to);
   }
+  event.setTag('member', name);
   event.setTransparency(CalendarApp.EventTransparency.TRANSPARENT);
   return event.getId();
 }
@@ -101,20 +104,10 @@ function safeGet(name, id) {
   return (ev && getMember(ev) === name) ? ev : null;
 }
 
-// Liest die Person aus der Beschreibung (member:Name), Fallback auf den
-// Titel für alte, manuell angelegte Ganztages-Einträge ohne Tag.
+// Fallback auf den Titel für alte, manuell angelegte Ganztages-Einträge
+// ohne "member"-Tag (Titel besteht dann nur aus dem Namen).
 function getMember(ev) {
-  const info = parseDesc(ev.getDescription());
-  return info.member || ev.getTitle();
-}
-
-function parseDesc(desc) {
-  const out = {};
-  (desc || '').split(';').forEach(part => {
-    const idx = part.indexOf(':');
-    if (idx > -1) out[part.slice(0, idx).trim()] = part.slice(idx + 1).trim();
-  });
-  return out;
+  return ev.getTag('member') || ev.getTitle();
 }
 
 // ── Hilfsfunktionen ─────────────────────────────────────

@@ -106,6 +106,23 @@ bestehende Hilfskalender-Konvention (`autoBlock:true;sourceDate:...;member:...`)
 `updateEntry` macht jetzt Löschen+Neuanlegen statt `setTime()` (robuster bei
 Ganztägig-Wechsel).
 
+## Stand 03.08.2026 (spät): gefundenes Test-Skript eingearbeitet
+
+Nutzer hatte bereits ein reiferes Sync-Skript aus einer früheren Test-
+Session (Screenshots, kein Repo-Eintrag) — mit Locking, Sync-Log-Sheet,
+Watchdog+E-Mail-Alarm, Tags statt Text-Parsing, allgemeinem Frei-Fenster-
+Algorithmus (mehrere Verfügbarkeit-Einträge pro Tag korrekt zusammenführen).
+Deutlich reifer als meine erste Version — übernommen als neue Basis für
+`team-app/App Script - Sync`.
+
+**Kompatibilitätskonflikt gefunden und gelöst:** Das alte Skript erwartete
+für Teilverfügbarkeit echte Uhrzeit-Termine mit Titel = exakt der Name
+(altes `createEntry`-Verhalten, vor der Ganztägig-mit-Zeit-im-Titel-
+Umstellung von heute). Erweitert um Erkennung des neuen Formats (Tags) +
+Fallback auf alte Freitext-Einträge. Team-App-Skript (`App Script`) läuft
+jetzt ebenfalls über Tags (`member`/`from`/`to`) statt Beschreibungstext —
+einheitlicher Mechanismus in beiden Skripten.
+
 ## Empfehlung für die nächsten Schritte
 
 1. Aktualisiertes Apps Script (`team-app/App Script`) im Apps-Script-Editor
