@@ -50,6 +50,10 @@ Teilverfügbarkeit korrekt vor/nach der Zeit blockiert, keine Duplikate.
 ## Phase 4 — Laufender Betrieb beobachten
 - 1–2 Wochen laufen lassen, stichprobenartig prüfen ob Amelia-Buchbarkeit
   mit echter Verfügbarkeit übereinstimmt
+- Team-Einweisung per Einzelgespräch (ab der Woche 10.08.): Team-App
+  erklärt, Ansage "nicht mehr händisch in den Google-Kalender eintragen".
+  Danach laufen praktisch nur noch strukturierte Einträge durch den Sync,
+  der Freitext-Parser wird zum reinen Sicherheitsnetz für Alt-Einträge.
 
 **Test:** Stichprobe über 5–10 Tage, keine Fehlbuchungen.
 
