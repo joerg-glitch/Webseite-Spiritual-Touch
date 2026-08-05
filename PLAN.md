@@ -123,6 +123,20 @@ Fallback auf alte Freitext-Einträge. Team-App-Skript (`App Script`) läuft
 jetzt ebenfalls über Tags (`member`/`from`/`to`) statt Beschreibungstext —
 einheitlicher Mechanismus in beiden Skripten.
 
+## Stand 05.08.2026: erster Produktivlauf geprüft
+
+Vollständiger Soll/Ist-Abgleich aller 10 Hilfskalender gegen die
+Verfügbarkeit-Einträge (05.–25.08.) durchgeführt. Ergebnis: Sync
+funktioniert korrekt für strukturierte Team-App-Einträge und die meisten
+Alt-Einträge. Drei Lücken gefunden — alle auf denselben Freitext-Parser-
+Bug zurückzuführen (Alea 08.08. fehlender zweiter Blocker, Maxine 20.08.
+und Stephanie 20.08. fehlender Blocker komplett, weil "bis M.ende 17:00"
+bzw. "bis ... 17 Uhr" nicht erkannt wurden). Parser robuster gemacht
+(sucht jetzt die nächste Uhrzeit irgendwo nach "ab"/"bis", nicht nur
+direkt danach; erkennt auch "Uhr" als Einheit, nicht nur "h"). Betrifft
+nur alte, handgetippte Freitext-Einträge — bei über die Team-App
+angelegten Terminen (strukturierte Tags) tritt das nicht auf.
+
 ## Empfehlung für die nächsten Schritte
 
 1. Aktualisiertes Apps Script (`team-app/App Script`) im Apps-Script-Editor

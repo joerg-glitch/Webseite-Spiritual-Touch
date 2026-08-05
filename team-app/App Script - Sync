@@ -247,16 +247,27 @@ function timeOnDate(date, hhmm) {
 }
 function formatHM(d) { return Utilities.formatDate(d, TZ, 'HH:mm'); }
 
+// Sucht ab dem Wort "ab"/"bis" nach der NÄCHSTEN Uhrzeit im restlichen Text
+// — erlaubt beliebige Wörter dazwischen ("bis M.ende 17:00", "bis Ende 17
+// Uhr") statt nur eine Uhrzeit direkt nach dem Schlüsselwort zu akzeptieren.
 function parseLegacyTimes(text) {
   var out = {};
-  var m = text.match(/ab\s*(\d{1,2})[:.](\d{2})/i);
-  if (m) out.from = pad(m[1]) + ':' + m[2];
-  else if (m = text.match(/ab\s*(\d{1,2})\s*h/i)) out.from = pad(m[1]) + ':00';
-
-  m = text.match(/bis\s*(\d{1,2})[:.](\d{2})/i);
-  if (m) out.to = pad(m[1]) + ':' + m[2];
-  else if (m = text.match(/bis\s*(\d{1,2})\s*h/i)) out.to = pad(m[1]) + ':00';
+  var from = extractTimeAfter(text, /ab\b/i);
+  if (from) out.from = from;
+  var to = extractTimeAfter(text, /bis\b/i);
+  if (to) out.to = to;
   return out;
+}
+
+function extractTimeAfter(text, keywordRe) {
+  var idx = text.search(keywordRe);
+  if (idx === -1) return null;
+  var rest = text.slice(idx);
+  var m = rest.match(/(\d{1,2})[:.](\d{2})/); // "11:30" oder "11.30"
+  if (m) return pad(m[1]) + ':' + m[2];
+  m = rest.match(/(\d{1,2})\s*(?:h\b|uhr)/i); // "15h" oder "17 Uhr"
+  if (m) return pad(m[1]) + ':00';
+  return null;
 }
 function pad(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 
