@@ -28,14 +28,24 @@
 **Test:** Erneuter Abgleich aller 10 Hilfskalender gegen die
 Verfügbarkeit-Einträge für die nächsten 14 Tage — keine Duplikate mehr.
 
-## Phase 3 — Übersetzung automatisieren (Routine statt manuellem Chat)
-- Einmaliges Vorgehen, das für alle 10 Personen die Verfügbarkeit-Einträge
-  liest und Hilfskalender-Blocker idempotent nachführt (prüft `sourceDate`
-  in der Beschreibung, bevor es neu anlegt)
-- Als wiederkehrende Routine einrichten (täglich)
+## Phase 3 — Übersetzung automatisieren (erledigt: Code bereitgestellt, 03.08.2026)
+- Eigenständiges Apps-Script-Projekt `team-app/App Script - Sync` gebaut —
+  läuft **ohne Cowork-Assistent/Claude-Session**, per stündlichem
+  Zeit-Trigger direkt bei Google
+- Regel: kein Eintrag -> ganztägig blockiert; ganztägig verfügbar -> kein
+  Blocker; Teilverfügbarkeit -> Blocker vor/nach der angegebenen Zeit
+- Idempotent: löscht/erzeugt nur eigene `autoBlock:true`-Events, fasst
+  echte Amelia-Buchungen nie an
+- Legacy-Alteinträge (ohne `member:`-Tag) werden per Freitext-Erkennung
+  ("ab"/"bis"/Zeit-Bindestrich) bestmöglich mitverarbeitet
 
-**Test:** Routine einmal manuell auslösen, prüfen dass keine Duplikate
-entstehen und neue Verfügbarkeits-Einträge korrekt übersetzt werden.
+**Noch offen:** Du richtest das neue Apps-Script-Projekt ein (Code
+einfügen, `setupHourlyTrigger` einmal manuell ausführen, Kalender-
+Berechtigung bestätigen), danach `runSyncNow` einmal zum Testen.
+
+**Test:** Nach `runSyncNow`: alle 10 Hilfskalender stichprobenartig prüfen
+— Ganztägig-Einträge ohne Blocker, Tage ohne Eintrag komplett blockiert,
+Teilverfügbarkeit korrekt vor/nach der Zeit blockiert, keine Duplikate.
 
 ## Phase 4 — Laufender Betrieb beobachten
 - 1–2 Wochen laufen lassen, stichprobenartig prüfen ob Amelia-Buchbarkeit
