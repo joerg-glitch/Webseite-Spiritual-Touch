@@ -309,7 +309,11 @@ let stEntries=[];
 // ganzen Bildschirm bezieht. Als direktes body-Kind ist das ausgeschlossen.
 document.body.appendChild(document.getElementById('st-overlay'));
 
-async function stApi(payload){
+// Ein stiller Wiederholungsversuch, bevor der Nutzer einen Fehler sieht —
+// fängt vereinzelte, kurze Aussetzer der Google-Infrastruktur ab
+// (Apps Script antwortet dann z.B. mit einer generischen Fehlerseite statt
+// JSON, was hier als networkError ankommt).
+async function stApi(payload,isRetry){
   try{
     const res=await fetch(ST_API_URL,{
       method:'POST',
@@ -319,6 +323,10 @@ async function stApi(payload){
     const data=await res.json();
     return {networkError:false,data};
   }catch(err){
+    if(!isRetry){
+      await new Promise(r=>setTimeout(r,900));
+      return stApi(payload,true);
+    }
     return {networkError:true,data:null};
   }
 }

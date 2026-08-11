@@ -45,7 +45,7 @@ function listEntries(name) {
   const cal   = CalendarApp.getCalendarById(CAL_ID);
   const start = new Date();
   const end   = new Date();
-  end.setMonth(end.getMonth() + 6);
+  end.setDate(end.getDate() + 60); // reicht zum Bearbeiten/Planen, hält die Abfrage bei jedem Login/Speichern klein
 
   return cal.getEvents(start, end)
     .filter(ev => getMember(ev) === name)
