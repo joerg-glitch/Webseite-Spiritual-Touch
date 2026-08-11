@@ -171,27 +171,35 @@
   font-size:15px !important;text-align:center !important;
 }
 
-/* ── DELETE OVERLAY ── */
-.st-overlay{display:none;position:fixed !important;inset:0 !important;background:rgba(62,42,52,.5) !important;z-index:9999 !important;justify-content:flex-end !important;flex-direction:column !important;padding:20px !important;}
+/* ── DELETE OVERLAY ──
+   Wird per JS an <body> gehängt, deshalb hier bewusst KEINE var(--...)
+   Farben (die sind nur innerhalb von #st definiert) — feste Hex-Werte,
+   damit die Darstellung unabhängig vom Elementor-Umfeld funktioniert. */
+.st-overlay{display:none;position:fixed !important;inset:0 !important;background:rgba(62,42,52,.5) !important;z-index:9999 !important;align-items:center !important;justify-content:center !important;padding:20px !important;}
 .st-overlay.on{display:flex !important;}
-.st-sheet{background:var(--card) !important;border-radius:22px !important;padding:24px 20px !important;}
-.st-sheet-title{font-size:18px !important;font-weight:600 !important;margin-bottom:6px !important;display:block !important;}
-.st-sheet-sub{font-size:14px !important;color:var(--soft) !important;margin-bottom:22px !important;display:block !important;}
+.st-sheet{background:#FBF7F0 !important;border-radius:22px !important;padding:26px 22px !important;width:100% !important;max-width:360px !important;box-shadow:0 20px 50px -12px rgba(62,42,52,.35) !important;}
+.st-sheet-title{font-size:18px !important;font-weight:600 !important;margin-bottom:6px !important;display:block !important;color:#3E2A34 !important;}
+.st-sheet-sub{font-size:14px !important;color:#6B5560 !important;margin-bottom:22px !important;display:block !important;}
+.st-sheet-err{display:none !important;font-size:13px !important;color:#A24A3E !important;margin-bottom:14px !important;}
+.st-sheet-err.on{display:block !important;}
 #st-overlay button.st-btn-danger{
   all:unset !important;
   display:block !important;width:100% !important;padding:16px !important;
-  border-radius:var(--r) !important;background:var(--danger) !important;
+  border-radius:16px !important;background:#A24A3E !important;
   color:#fff !important;font-size:15px !important;font-weight:600 !important;
   text-align:center !important;margin-bottom:10px !important;
-  cursor:pointer !important;box-sizing:border-box !important;
+  cursor:pointer !important;box-sizing:border-box !important;transition:background .15s !important;
 }
+#st-overlay button.st-btn-danger.is-done{background:#7E8A6F !important;}
+#st-overlay button.st-btn-danger:disabled{opacity:.85 !important;cursor:default !important;}
 #st-overlay button.st-btn-cancel-sheet{
   all:unset !important;
   display:block !important;width:100% !important;padding:14px !important;
-  border-radius:var(--r) !important;border:1.5px solid var(--line) !important;
-  color:var(--soft) !important;font-size:15px !important;text-align:center !important;
+  border-radius:16px !important;border:1.5px solid #E4D9C8 !important;
+  color:#6B5560 !important;font-size:15px !important;text-align:center !important;
   cursor:pointer !important;box-sizing:border-box !important;
 }
+#st-overlay button.st-btn-cancel-sheet:disabled{opacity:.5 !important;cursor:default !important;}
 </style>
 
 <div id="st">
@@ -285,8 +293,9 @@
   <div class="st-sheet">
     <span class="st-sheet-title">Eintrag löschen?</span>
     <span class="st-sheet-sub" id="st-del-sub"></span>
-    <button class="st-btn-danger" onclick="stConfirmDel()">Ja, löschen</button>
-    <button class="st-btn-cancel-sheet" onclick="stCloseOverlay()">Abbrechen</button>
+    <span class="st-sheet-err" id="st-sheet-err"></span>
+    <button class="st-btn-danger" id="st-btn-danger" onclick="stConfirmDel()">Ja, löschen</button>
+    <button class="st-btn-cancel-sheet" id="st-btn-cancel" onclick="stCloseOverlay()">Abbrechen</button>
   </div>
 </div>
 
@@ -294,6 +303,11 @@
 const ST_API_URL='/wp-json/st/v1/cal';
 let stUser=null,stEditId=null,stDelId=null,stPin='',stTimeErr=false,stLoading=false;
 let stEntries=[];
+
+// Overlay an <body> hängen: Elementor-Wrapper haben oft ein eigenes
+// "transform", wodurch position:fixed sich nur auf den Wrapper statt den
+// ganzen Bildschirm bezieht. Als direktes body-Kind ist das ausgeschlossen.
+document.body.appendChild(document.getElementById('st-overlay'));
 
 async function stApi(payload){
   try{
@@ -472,19 +486,45 @@ async function stSave(){
 function stOpenDel(entry){
   stDelId=entry.id;
   document.getElementById('st-del-sub').textContent=stFmt(entry.date)+', '+(entry.allDay?'Ganztägig':entry.from+' – '+entry.to+' Uhr');
+  const btn=document.getElementById('st-btn-danger');
+  btn.textContent='Ja, löschen';
+  btn.disabled=false;
+  btn.classList.remove('is-done');
+  document.getElementById('st-btn-cancel').disabled=false;
+  document.getElementById('st-sheet-err').classList.remove('on');
   document.getElementById('st-overlay').classList.add('on');
 }
 function stCloseOverlay(){stDelId=null;document.getElementById('st-overlay').classList.remove('on');}
 async function stConfirmDel(){
   if(stLoading)return;
   stLoading=true;
-  const {networkError,data}=await stApi({pin:stPin,action:'delete',id:stDelId});
+  const btn=document.getElementById('st-btn-danger');
+  const cancelBtn=document.getElementById('st-btn-cancel');
+  const errEl=document.getElementById('st-sheet-err');
+  errEl.classList.remove('on');
+  btn.textContent='Wird gelöscht …';
+  btn.disabled=true;
+  cancelBtn.disabled=true;
+
+  const delId=stDelId;
+  const {networkError,data}=await stApi({pin:stPin,action:'delete',id:delId});
   stLoading=false;
-  stCloseOverlay();
+
   if(!networkError&&data&&data.ok){
-    await stRefreshEntries();
-  } else {
+    btn.textContent='✓ Erledigt';
+    btn.classList.add('is-done');
+    stEntries=stEntries.filter(e=>e.id!==delId);
     stRenderList();
+    setTimeout(()=>{
+      stCloseOverlay();
+      stRefreshEntries();
+    },550);
+  } else {
+    btn.textContent='Ja, löschen';
+    btn.disabled=false;
+    cancelBtn.disabled=false;
+    errEl.textContent='Verbindungsfehler — bitte nochmal versuchen.';
+    errEl.classList.add('on');
   }
 }
 </script>
