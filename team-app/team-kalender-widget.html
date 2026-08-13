@@ -79,12 +79,18 @@
 .st-pin-err{color:var(--danger) !important;font-size:13.5px !important;text-align:center !important;margin-top:16px !important;min-height:20px !important;display:block !important;}
 
 /* ── LIST ── */
-.st-topbar{display:flex !important;justify-content:space-between !important;align-items:baseline !important;margin-bottom:24px !important;}
-.st-hello{font-size:23px !important;font-weight:600 !important;}
+.st-topbar{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) !important;
+  align-items:baseline !important;column-gap:10px !important;margin-bottom:24px !important;
+}
+.st-topbar-spacer{display:block !important;}
+.st-hello{font-size:23px !important;font-weight:600 !important;text-align:center !important;}
 #st button.st-logout{
   font-size:14px !important;color:var(--soft) !important;
   text-decoration:underline !important;text-underline-offset:3px !important;
   background:none !important;padding:0 !important;display:inline !important;
+  justify-self:end !important;
 }
 .st-card{background:var(--card) !important;border-radius:var(--r) !important;padding:16px 18px !important;margin-bottom:12px !important;border:1px solid var(--line) !important;display:block !important;}
 .st-card-date{font-size:14px !important;font-weight:600 !important;margin-bottom:2px !important;display:block !important;}
@@ -100,7 +106,7 @@
   overflow-x:auto !important;overflow-y:hidden !important;
   -webkit-overflow-scrolling:touch !important;
   scrollbar-width:none !important;
-  margin-bottom:20px !important;padding-bottom:2px !important;
+  margin-bottom:34px !important;padding-bottom:2px !important;
 }
 .st-menu::-webkit-scrollbar{display:none !important;}
 #st .st-menu-item{
@@ -283,6 +289,7 @@
   <!-- SCREEN: LIST -->
   <div class="st-screen" id="st-list">
     <div class="st-topbar">
+      <span class="st-topbar-spacer" aria-hidden="true"></span>
       <div class="st-hello" id="st-hello">Hallo</div>
       <button class="st-logout" onclick="stLogout()">abmelden</button>
     </div>
@@ -291,9 +298,6 @@
       <button class="st-menu-item primary" onclick="stOpenForm(null)">
         <span class="st-menu-ico">➕</span><span>Verfügbar&shy;keit</span>
       </button>
-      <a class="st-menu-item" href="https://app.notion.com/p/3bb046fd4e5181f58ea5d99e4f87c03c" target="_blank" rel="noopener">
-        <span class="st-menu-ico">❓</span><span>Praxis-FAQ</span>
-      </a>
       <a class="st-menu-item" href="https://app.notion.com/p/3bb046fd4e5181378a64f55e9b6cbf1b" target="_blank" rel="noopener">
         <span class="st-menu-ico">📚</span><span>Daten&shy;bank</span>
       </a>
