@@ -253,6 +253,11 @@
   .track li:last-child { margin-bottom: 0; }
   .track b { color: var(--ink); font-weight: 600; }
 
+  .sub-track { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .sub-track:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+  .sub-label { font-weight: 600; font-size: 14.5px; color: var(--ink); margin-bottom: 8px; }
+  .track-note { font-size: 13px; color: var(--ink-soft); margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+
   .url-chip {
     display: inline-flex;
     align-items: center;
@@ -418,79 +423,71 @@
       <div class="track">
         <div class="track-label">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          iPhone
-        </div>
-        <ol>
-          <li>Adresse in <b>Safari</b> öffnen</li>
-          <li>Unten auf das <b>Teilen-Symbol</b> tippen (Quadrat mit Pfeil nach oben)</li>
-          <li><b>„Zum Home-Bildschirm"</b> wählen</li>
-        </ol>
-      </div>
-      <div class="track">
-        <div class="track-label">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
           Android
         </div>
-        <ol>
-          <li>Adresse in <b>Chrome</b> öffnen</li>
-          <li>Oben rechts auf die <b>drei Punkte</b> tippen</li>
-          <li><b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
-        </ol>
-      </div>
-      <div class="track">
-        <div class="track-label">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          iPad
+        <div class="sub-track">
+          <div class="sub-label">Chrome</div>
+          <ol>
+            <li>Adresse in <b>Chrome</b> öffnen</li>
+            <li>Oben rechts auf die <b>drei Punkte</b> tippen</li>
+            <li><b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
+          </ol>
         </div>
-        <ol>
-          <li>Adresse in <b>Safari</b> öffnen</li>
-          <li>Oben auf das <b>Teilen-Symbol</b> tippen (Quadrat mit Pfeil nach oben)</li>
-          <li><b>„Zum Home-Bildschirm"</b> wählen</li>
-        </ol>
+        <div class="sub-track">
+          <div class="sub-label">Edge</div>
+          <ol>
+            <li>Adresse in <b>Edge</b> öffnen</li>
+            <li>Unten rechts auf die <b>drei Punkte</b> tippen</li>
+            <li><b>„Zum Smartphone hinzufügen"</b> wählen</li>
+          </ol>
+        </div>
+        <div class="sub-track">
+          <div class="sub-label">Firefox</div>
+          <ol>
+            <li>Adresse in <b>Firefox</b> öffnen</li>
+            <li>Oben rechts auf die <b>drei Punkte</b> tippen</li>
+            <li><b>„Installieren"</b> bzw. <b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
+          </ol>
+        </div>
+        <div class="sub-track">
+          <div class="sub-label">Opera</div>
+          <ol>
+            <li>Adresse in <b>Opera</b> öffnen</li>
+            <li>Menü (<b>☰</b>) öffnen</li>
+            <li><b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
+          </ol>
+        </div>
       </div>
       <div class="track">
         <div class="track-label">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-          Mac
+          Apple
         </div>
-        <ol>
-          <li>Adresse in <b>Safari</b> öffnen</li>
-          <li>Im Menü <b>„Ablage"</b> öffnen</li>
-          <li><b>„Zum Dock hinzufügen"</b> wählen</li>
-        </ol>
-      </div>
-      <div class="track">
-        <div class="track-label">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          Android (Firefox)
+        <div class="sub-track">
+          <div class="sub-label">iPhone — Safari</div>
+          <ol>
+            <li>Adresse in <b>Safari</b> öffnen</li>
+            <li>Unten auf das <b>Teilen-Symbol</b> tippen (Quadrat mit Pfeil nach oben)</li>
+            <li><b>„Zum Home-Bildschirm"</b> wählen</li>
+          </ol>
         </div>
-        <ol>
-          <li>Adresse in <b>Firefox</b> öffnen</li>
-          <li>Oben rechts auf die <b>drei Punkte</b> tippen</li>
-          <li><b>„Installieren"</b> bzw. <b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
-        </ol>
-      </div>
-      <div class="track">
-        <div class="track-label">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          Android (Edge)
+        <div class="sub-track">
+          <div class="sub-label">iPad — Safari</div>
+          <ol>
+            <li>Adresse in <b>Safari</b> öffnen</li>
+            <li>Oben auf das <b>Teilen-Symbol</b> tippen (Quadrat mit Pfeil nach oben)</li>
+            <li><b>„Zum Home-Bildschirm"</b> wählen</li>
+          </ol>
         </div>
-        <ol>
-          <li>Adresse in <b>Edge</b> öffnen</li>
-          <li>Unten rechts auf die <b>drei Punkte</b> tippen</li>
-          <li><b>„Zum Smartphone hinzufügen"</b> wählen</li>
-        </ol>
-      </div>
-      <div class="track">
-        <div class="track-label">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          Android (Opera)
+        <div class="sub-track">
+          <div class="sub-label">Mac — Safari</div>
+          <ol>
+            <li>Adresse in <b>Safari</b> öffnen</li>
+            <li>Im Menü <b>„Ablage"</b> öffnen</li>
+            <li><b>„Zum Dock hinzufügen"</b> wählen</li>
+          </ol>
         </div>
-        <ol>
-          <li>Adresse in <b>Opera</b> öffnen</li>
-          <li>Menü (<b>☰</b>) öffnen</li>
-          <li><b>„Zum Startbildschirm hinzufügen"</b> wählen</li>
-        </ol>
+        <p class="track-note">Chrome, Firefox, Edge & Opera gibt es zwar auch fürs iPhone/iPad — auf Apple-Geräten läuft dort aber technisch bedingt ebenfalls Safari im Hintergrund. Nur der Weg über Safari selbst legt ein eigenes App-Icon ohne Browser-Leiste an, deshalb ist das hier der empfohlene Weg.</p>
       </div>
     </div>
     <p class="section-sub" style="margin-bottom:0;">Am Computer reicht ein ganz normales Lesezeichen bzw. Favorit.</p>
