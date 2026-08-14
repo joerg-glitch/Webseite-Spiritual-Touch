@@ -137,11 +137,23 @@ direkt danach; erkennt auch "Uhr" als Einheit, nicht nur "h"). Betrifft
 nur alte, handgetippte Freitext-Einträge — bei über die Team-App
 angelegten Terminen (strukturierte Tags) tritt das nicht auf.
 
+## Stand 14.08.2026: Ganztägig-Checkbox-Bug live bestätigt und behoben
+
+Nutzer meldete: Teilverfügbarkeit (z.B. Stephanie 09:00–18:00) landet korrekt
+im Google-Kalender, aber die Team-App zeigt beim Ändern fälschlich
+„Ganztägig“ angehakt. Ursache: die live deployte Apps-Script-Version war
+älter als Commit `e5d3d77` (05.08.) — `listEntries` bestimmte „Ganztägig“
+noch über `ev.isAllDayEvent()` statt über die `from`/`to`-Tags. Da laut
+Konvention seit `0b886a4` (03.08.) **jeder** Eintrag technisch ein
+Ganztages-Event ist (Uhrzeit nur im Titel), lieferte das für ausnahmslos
+alle Einträge `allDay: true` zurück — Code im Repo war bereits korrekt,
+nur nicht neu bereitgestellt. Nutzer hat **Bereitstellen → Neue Version**
+nachgeholt → Fehler bestätigt behoben.
+
 ## Empfehlung für die nächsten Schritte
 
-1. Aktualisiertes Apps Script (`team-app/App Script`) im Apps-Script-Editor
-   einfügen und **Bereitstellen → Neue Version** (nicht nur speichern —
-   euer eigener bekannter Fallstrick).
+1. ~~Aktualisiertes Apps Script (`team-app/App Script`) im Apps-Script-Editor
+   einfügen und **Bereitstellen → Neue Version**~~ — erledigt, 14.08.2026.
 2. `team-app/team-kalender-widget.html` ist schon mit dem Button-Fix
    (Ändern/Löschen) aktuell — nochmal komplett live testen: Anlegen,
    Ändern, Löschen, Ganztägig, inkl. Wechsel Ganztägig ↔ Uhrzeit beim
