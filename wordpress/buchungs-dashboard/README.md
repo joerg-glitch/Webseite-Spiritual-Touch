@@ -8,6 +8,13 @@ Amelia-Plan-Upgrade (Elite) und ohne Umweg über Gmail.
 - Zeigt alle Buchungen der nächsten 30 Tage (Zeit, Service, Mitarbeiter,
   Kunde, Telefon, Status) als mobil-optimierte Kartenliste, sortiert nach
   Datum. "Ausstehend" ist farblich hervorgehoben.
+- Filter "Alle / Anfragen / Bestätigt": erkennt an "(bestätigt)" im
+  Service-Namen, ob eine Buchung noch beim Anfrage-Platzhalter
+  ("Individuelle Anfrage") hängt oder schon auf das (bestätigt)-Duplikat mit
+  echtem Mitarbeiter umgehängt wurde — passend zu Jörgs Kategorie-Mechanik
+  (versteckte Kategorie "Bestätigt" mit einem Duplikat pro Dienstleistung,
+  allen Mitarbeitern zugeordnet, damit im Nachhinein ein freier Mitarbeiter
+  eingesetzt werden kann). Rein clientseitig, kein zusätzlicher Request.
 - Liest **direkt aus der Amelia-Datenbank** (read-only SQL) — kein
   Amelia-REST-API-Produkt nötig, das ist ab Elite-Plan gated. Diese Lösung
   läuft in jedem Plan, weil sie einfach dieselbe Datenbank liest, die Amelia
@@ -67,11 +74,45 @@ Team-App-Login-Bug (`getActiveSheet()` statt festem Tab-Namen) gefunden wurde.
 
 ## Nicht Teil dieses Bausteins (mögliche nächste Schritte)
 
-- Freigabe-Aktion direkt im Dashboard (Status setzen), statt nur Deep-Link zu
-  Amelia. Voraussetzung dafür: einmal in Chrome DevTools → Netzwerk-Tab
-  beobachten, welchen internen Request Amelias eigene Oberfläche beim Klick
-  auf "Freigeben" tatsächlich schickt, damit der Proxy exakt denselben Weg
-  nachbildet (inkl. Benachrichtigungen/Kalender-Sync) statt nur den
-  Datenbank-Status zu ändern.
 - Push-Benachrichtigung bei neuer Buchung (derzeit: Dashboard muss aktiv
   geöffnet werden, kein automatischer Alert).
+
+## Nächster Schritt: Freigeben + Kategorie/Dienstleistung/Mitarbeiter direkt im Dashboard ändern
+
+Gewünscht, aber bewusst noch nicht gebaut — dafür wird eine Schreib-Aktion
+gegen Amelia gebraucht (Status setzen, Service wechseln, Mitarbeiter setzen),
+und die soll **nicht** per rohem Datenbank-UPDATE nachgebaut werden. Grund:
+Amelias eigene Oberfläche löst bei diesen drei Aktionen automatisch
+Bestätigungsmails, Google-Kalender-Sync und ggf. Preis-/Paket-Neuberechnung
+aus. Ein rohes SQL-UPDATE auf `serviceId`/`providerId`/`status` würde diese
+Kette umgehen — das fällt im Zweifel erst auf, wenn ein Kunde keine Mail
+bekommen hat.
+
+**Sicherer Weg:** Den echten internen Request nachbilden, den Amelias eigene
+Oberfläche beim Klick auf "Freigeben" bzw. beim Ändern von Service/Mitarbeiter
+tatsächlich verschickt — dann läuft die komplette Amelia-Logik automatisch
+mit, der Proxy schickt nur denselben Request stellvertretend fürs Dashboard.
+
+**Dafür einmalig nötig (ca. 10 Minuten):** In Chrome (oder Safari) am
+Rechner, im wp-admin bei Amelia → Bookings, mit den DevTools mitschneiden:
+
+1. DevTools öffnen (Rechtsklick auf die Seite → "Untersuchen" bzw.
+   "Inspect"), oben den Reiter **Netzwerk / Network** wählen.
+2. Filter oben im Netzwerk-Tab auf **Fetch/XHR** stellen (blendet Bilder/CSS
+   etc. aus, nur die relevanten Anfragen bleiben übrig).
+3. Eine bestehende Test-Buchung nehmen (oder eine Testbuchung anlegen) und
+   nacheinander diese drei Aktionen jeweils **einzeln** ausführen, direkt
+   danach in der Netzwerk-Liste den **neu aufgetauchten Request anklicken**,
+   Rechtsklick → **"Copy as cURL"**, und mir den Text schicken:
+   - a) Status von "Ausstehend" auf "Freigegeben" setzen
+   - b) Die Dienstleistung der Buchung ändern (z. B. auf die
+     "(bestätigt)"-Variante)
+   - c) Den Mitarbeiter der Buchung ändern
+4. Zwischen den drei Aktionen jeweils kurz warten, damit die Requests nicht
+   durcheinandergeraten — am einfachsten: Netzwerk-Liste vor jeder Aktion
+   mit dem 🚫-Symbol oben links leeren ("Clear").
+
+Sobald ich die drei cURL-Kommandos habe, baue ich den Proxy so, dass er
+exakt diese Requests serverseitig nachschickt (mit gültigem WP-Nonce/Cookie),
+und ergänze im Dashboard je Buchung Dropdowns für Kategorie/Dienstleistung/
+Mitarbeiter plus einen "Bestätigen & Freigeben"-Button.

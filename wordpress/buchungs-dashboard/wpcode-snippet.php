@@ -18,6 +18,10 @@
  *     eingeloggte Admins, per WP-Nonce abgesichert)
  *   - Shortcode   [st_booking_dashboard]  (auf einer WordPress-Seite platzieren,
  *     z. B. über den WPCode-Shortcode-Type oder einen Elementor-Shortcode-Widget)
+ *   - Filter "Alle / Anfragen / Bestätigt": erkennt am Namenszusatz
+ *     "(bestätigt)", ob eine Buchung noch beim Anfrage-Platzhalter hängt oder
+ *     schon auf das (bestätigt)-Duplikat mit echtem Mitarbeiter umgehängt
+ *     wurde (siehe Jörgs Kategorie-Mechanik, versteckte Kategorie "Bestätigt").
  *
  * WICHTIG — Datenbank-Schema-Annahme:
  * Die SQL-Abfrage unten geht von den Standard-Amelia-Tabellennamen und
@@ -120,7 +124,12 @@ add_shortcode('st_booking_dashboard', function () {
         <h2 style="margin:0;color:var(--st-plum);font-size:1.2rem;">Buchungen (nächste <span id="st-bd-days">30</span> Tage)</h2>
         <button id="st-bd-refresh" style="background:var(--st-clay);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.9rem;">Aktualisieren</button>
       </div>
-      <a href="<?php echo $bookings_admin_url; ?>" target="_blank" rel="noopener" style="display:block;margin-bottom:14px;color:var(--st-clay-d);font-size:0.85rem;">→ Amelia-Buchungen im wp-admin öffnen (zum Freigeben)</a>
+      <a href="<?php echo $bookings_admin_url; ?>" target="_blank" rel="noopener" style="display:block;margin-bottom:14px;color:var(--st-clay-d);font-size:0.85rem;">→ Amelia-Buchungen im wp-admin öffnen (zum Freigeben/Ändern)</a>
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <button class="st-bd-filter-btn" data-filter="all" style="flex:1;background:var(--st-clay);color:#fff;border:none;border-radius:8px;padding:8px 6px;font-size:0.82rem;">Alle</button>
+        <button class="st-bd-filter-btn" data-filter="anfrage" style="flex:1;background:var(--st-card);color:var(--st-plum);border:1px solid var(--st-line);border-radius:8px;padding:8px 6px;font-size:0.82rem;">Anfragen</button>
+        <button class="st-bd-filter-btn" data-filter="bestaetigt" style="flex:1;background:var(--st-card);color:var(--st-plum);border:1px solid var(--st-line);border-radius:8px;padding:8px 6px;font-size:0.82rem;">Bestätigt</button>
+      </div>
       <div id="st-bd-status" style="color:var(--st-soft);font-size:0.9rem;margin-bottom:10px;"></div>
       <div id="st-bd-list"></div>
     </div>
@@ -130,6 +139,16 @@ add_shortcode('st_booking_dashboard', function () {
       const nonce = <?php echo wp_json_encode($nonce); ?>;
       const statusLabels = { pending: 'Ausstehend', approved: 'Freigegeben', canceled: 'Storniert', rejected: 'Abgelehnt', noshow: 'No-Show' };
       const statusColors = { pending: '#B5654A', approved: '#7E8A6F', canceled: '#999', rejected: '#A24A3E', noshow: '#A24A3E' };
+      let allAppointments = [];
+      let activeFilter = 'all';
+
+      // "Anfrage" = noch beim Platzhalter-Service, "Bestätigt" = auf das
+      // "(bestätigt)"-Duplikat mit echtem Mitarbeiter umgehängt (siehe Jörgs
+      // Kategorie-Mechanik: versteckte Kategorie "Bestätigt" mit einem
+      // "(bestätigt)"-Duplikat pro Dienstleistung, allen Mitarbeitern zugeordnet).
+      function isConfirmed(a) {
+        return (a.service_name || '').indexOf('(bestätigt)') !== -1;
+      }
 
       function fmtDate(iso) {
         if (!iso) return '–';
@@ -137,19 +156,36 @@ add_shortcode('st_booking_dashboard', function () {
         return d.toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       }
 
+      function applyFilter(appointments) {
+        if (activeFilter === 'anfrage') return appointments.filter(function (a) { return !isConfirmed(a); });
+        if (activeFilter === 'bestaetigt') return appointments.filter(isConfirmed);
+        return appointments;
+      }
+
+      function updateFilterButtons() {
+        document.querySelectorAll('.st-bd-filter-btn').forEach(function (btn) {
+          const active = btn.getAttribute('data-filter') === activeFilter;
+          btn.style.background = active ? 'var(--st-clay)' : 'var(--st-card)';
+          btn.style.color = active ? '#fff' : 'var(--st-plum)';
+        });
+      }
+
       function render(appointments) {
         const list = document.getElementById('st-bd-list');
         const statusEl = document.getElementById('st-bd-status');
-        if (!appointments || !appointments.length) {
+        const filtered = applyFilter(appointments);
+        if (!filtered.length) {
           list.innerHTML = '';
-          statusEl.textContent = 'Keine Buchungen in diesem Zeitraum.';
+          statusEl.textContent = 'Keine Buchungen in diesem Zeitraum/Filter.';
           return;
         }
-        statusEl.textContent = appointments.length + ' Buchung(en)';
-        list.innerHTML = appointments.map(function (a) {
+        statusEl.textContent = filtered.length + ' Buchung(en)';
+        list.innerHTML = filtered.map(function (a) {
           const st = a.booking_status || a.appointment_status || 'pending';
           const color = statusColors[st] || '#999';
           const label = statusLabels[st] || st;
+          const kind = isConfirmed(a) ? 'Bestätigt' : 'Anfrage';
+          const kindColor = isConfirmed(a) ? 'var(--st-sage)' : 'var(--st-clay-d)';
           return '' +
             '<div style="background:var(--st-card);border:1px solid var(--st-line);border-left:4px solid ' + color + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;">' +
               '<div style="display:flex;justify-content:space-between;align-items:baseline;">' +
@@ -158,6 +194,7 @@ add_shortcode('st_booking_dashboard', function () {
               '</div>' +
               '<div style="color:var(--st-plum);margin-top:4px;">' + (a.service_name || 'Unbekannter Service') + ' — ' + (a.employee_name || '–') + '</div>' +
               '<div style="color:var(--st-soft);font-size:0.85rem;margin-top:2px;">' + (a.customer_name || '–') + (a.customer_phone ? ' · ' + a.customer_phone : '') + '</div>' +
+              '<div style="color:' + kindColor + ';font-size:0.75rem;margin-top:4px;font-weight:600;">' + kind + '</div>' +
             '</div>';
         }).join('');
       }
@@ -171,12 +208,21 @@ add_shortcode('st_booking_dashboard', function () {
               document.getElementById('st-bd-status').textContent = 'Fehler: ' + (data.detail || data.error);
               return;
             }
-            render(data.appointments);
+            allAppointments = data.appointments || [];
+            render(allAppointments);
           })
           .catch(function (err) {
             document.getElementById('st-bd-status').textContent = 'Verbindungsfehler: ' + err;
           });
       }
+
+      document.querySelectorAll('.st-bd-filter-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          activeFilter = btn.getAttribute('data-filter');
+          updateFilterButtons();
+          render(allAppointments);
+        });
+      });
 
       document.getElementById('st-bd-refresh').addEventListener('click', load);
       load();
