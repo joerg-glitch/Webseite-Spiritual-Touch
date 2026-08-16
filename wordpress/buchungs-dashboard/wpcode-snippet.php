@@ -6,12 +6,12 @@
  * damit Jörg unterwegs (Handy-Browser) schnell sieht, was ansteht — ohne durch
  * die wp-admin-Navigation zu müssen und ohne Amelia-Plan-Upgrade.
  *
- * BEWUSST NUR LESEND: Die eigentliche Freigabe (Status → "Freigegeben")
- * passiert weiterhin direkt in Amelia (Amelia → Bookings im wp-admin). Dieses
- * Dashboard verlinkt dorthin, ändert selbst aber nichts an Buchungsdaten —
- * damit die Amelia-eigene Logik (Bestätigungsmail, Google-Kalender-Sync,
- * Zahlungsstatus) garantiert intakt bleibt und nicht per Fremdcode umgangen
- * wird.
+ * Freigeben (Status "Ausstehend" → "Freigegeben") geht direkt im Dashboard,
+ * per Button. Kategorie/Dienstleistung/Mitarbeiter ändern noch nicht (siehe
+ * README, Abschnitt "Nächster Schritt") — für beides gilt: kein rohes
+ * Datenbank-UPDATE, sondern derselbe interne Request, den Amelias eigene
+ * Oberfläche selbst verschickt, damit Bestätigungsmail/Kalender-Sync/
+ * Zahlungsstatus garantiert intakt bleiben.
  *
  * Enthält:
  *   - REST-Route  GET /wp-json/st/v1/booking-overview  (JSON, nur für
@@ -33,15 +33,111 @@
  * Query schnell angepasst werden kann. Genau dasselbe Vorgehen wie beim
  * Login-Fix der Team-App (siehe Notion, "Buchungssystem — Übergabe &
  * Dokumentation").
+ *
+ * SCHREIB-AKTIONEN (Freigeben):
+ * Statt Amelias interne Logik nachzubauen, ruft der Proxy denselben internen
+ * AJAX-Endpunkt auf, den Amelias eigene Oberfläche selbst benutzt
+ * (admin-ajax.php?action=wpamelia_api), mit der GERADE AKTIVEN Session des
+ * aufrufenden Admins (Cookies werden pro Request live weitergereicht, nie
+ * gespeichert) und einem frisch von der echten Amelia-Bookings-Seite
+ * abgegriffenen Nonce. Dadurch laufen Benachrichtigungen/Kalender-Sync/
+ * Zahlungsstatus exakt wie bei einem normalen Klick in Amelia selbst.
+ * Kein Secret/Token wird im Code gespeichert.
  */
 
+/**
+ * Reicht die Cookies des aktuellen Requests (Login-Session des Admins) an
+ * einen internen Amelia-Aufruf weiter. Nichts davon wird gespeichert.
+ */
+function st_forward_cookies_() {
+    $cookies = [];
+    foreach ($_COOKIE as $name => $value) {
+        $cookies[] = new WP_Http_Cookie(['name' => $name, 'value' => $value]);
+    }
+    return $cookies;
+}
+
+/**
+ * Holt sich einen frischen wpAmeliaNonce direkt von der echten Amelia-
+ * Bookings-Seite (dieselbe Session) statt ihn zu raten oder fest zu
+ * hinterlegen — Nonces laufen ab und werden bei jedem Seitenaufruf neu
+ * erzeugt.
+ */
+function st_scrape_amelia_nonce_() {
+    $url = admin_url('admin.php?page=wpamelia-bookings');
+    $response = wp_remote_get($url, [
+        'cookies' => st_forward_cookies_(),
+        'timeout' => 15,
+    ]);
+    if (is_wp_error($response)) {
+        return $response;
+    }
+    $body = wp_remote_retrieve_body($response);
+    if (!preg_match('/wpAmeliaNonce["\']?\s*[:=]\s*["\']([a-zA-Z0-9]{6,20})["\']/', $body, $m)) {
+        return new WP_Error('nonce_not_found', 'Amelia-Nonce nicht auf der Bookings-Seite gefunden.');
+    }
+    return ['nonce' => $m[1], 'html' => $body];
+}
+
+/**
+ * Ruft admin-ajax.php?action=wpamelia_api&call=... mit der Session des
+ * aktuellen Admins auf (Cookies live weitergereicht, frischer Nonce).
+ */
+function st_amelia_ajax_call_($method, $call_path, $query_extra = [], $body = null) {
+    $ctx = st_scrape_amelia_nonce_();
+    if (is_wp_error($ctx)) {
+        return $ctx;
+    }
+
+    $query = array_merge(['action' => 'wpamelia_api', 'call' => $call_path, 'wpAmeliaNonce' => $ctx['nonce']], $query_extra);
+    $url = admin_url('admin-ajax.php') . '?' . http_build_query($query);
+
+    $args = [
+        'method' => $method,
+        'cookies' => st_forward_cookies_(),
+        'timeout' => 20,
+    ];
+    if ($body !== null) {
+        $args['headers'] = ['Content-Type' => 'application/json'];
+        $args['body'] = wp_json_encode($body);
+    }
+
+    $response = wp_remote_request($url, $args);
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    return [
+        'code' => wp_remote_retrieve_response_code($response),
+        'data' => json_decode(wp_remote_retrieve_body($response), true),
+    ];
+}
+
 add_action('rest_api_init', function () {
+    $admin_only = function () {
+        return current_user_can('manage_options');
+    };
+
     register_rest_route('st/v1', '/booking-overview', [
         'methods' => 'GET',
         'callback' => 'st_booking_overview_handler',
-        'permission_callback' => function () {
-            return current_user_can('manage_options');
-        },
+        'permission_callback' => $admin_only,
+    ]);
+
+    register_rest_route('st/v1', '/booking-approve', [
+        'methods' => 'POST',
+        'callback' => 'st_booking_approve_handler',
+        'permission_callback' => $admin_only,
+    ]);
+
+    // Liefert einen Ausschnitt der echten Amelia-Bookings-Seite (Kategorien/
+    // Services/Mitarbeiter-Daten, die die Oberfläche für ihre eigenen
+    // Dropdowns einbettet) — Zwischenschritt, um die Kategorie/Dienstleistung/
+    // Mitarbeiter-ändern-Aktion sicher (ohne Rateschema) fertigzubauen.
+    register_rest_route('st/v1', '/amelia-bootstrap-debug', [
+        'methods' => 'GET',
+        'callback' => 'st_amelia_bootstrap_debug_handler',
+        'permission_callback' => $admin_only,
     ]);
 });
 
@@ -108,6 +204,46 @@ function st_booking_overview_debug_($wpdb, $prefix) {
     return new WP_REST_Response(['ok' => true, 'tables' => $out], 200);
 }
 
+function st_booking_approve_handler(WP_REST_Request $request) {
+    $id = (int) $request->get_param('appointmentId');
+    if (!$id) {
+        return new WP_REST_Response(['error' => 'missing_appointment_id'], 400);
+    }
+
+    $result = st_amelia_ajax_call_('POST', '/appointments/status/' . $id, [], ['status' => 'approved']);
+    if (is_wp_error($result)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message()], 502);
+    }
+
+    return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
+}
+
+function st_amelia_bootstrap_debug_handler(WP_REST_Request $request) {
+    $ctx = st_scrape_amelia_nonce_();
+    if (is_wp_error($ctx)) {
+        return new WP_REST_Response(['error' => $ctx->get_error_message()], 502);
+    }
+
+    $html = $ctx['html'];
+    return new WP_REST_Response([
+        'ok' => true,
+        'nonce_found' => $ctx['nonce'],
+        'html_length' => strlen($html),
+        'snippet_around_categories' => st_find_snippet_($html, 'categor'),
+        'snippet_around_services' => st_find_snippet_($html, '"services"'),
+        'snippet_around_providers' => st_find_snippet_($html, 'provider'),
+    ], 200);
+}
+
+function st_find_snippet_($haystack, $needle, $context = 500) {
+    $pos = stripos($haystack, $needle);
+    if ($pos === false) {
+        return null;
+    }
+    $start = max(0, $pos - 100);
+    return substr($haystack, $start, $context);
+}
+
 add_shortcode('st_booking_dashboard', function () {
     if (!is_user_logged_in() || !current_user_can('manage_options')) {
         return '<p>Kein Zugriff. Bitte als Admin im wp-admin einloggen und diese Seite erneut aufrufen.</p>';
@@ -115,6 +251,7 @@ add_shortcode('st_booking_dashboard', function () {
 
     $nonce = wp_create_nonce('wp_rest');
     $endpoint = esc_url_raw(rest_url('st/v1/booking-overview'));
+    $approve_endpoint = esc_url_raw(rest_url('st/v1/booking-approve'));
     $bookings_admin_url = esc_url_raw(admin_url('admin.php?page=wpamelia-appointments'));
 
     ob_start();
@@ -136,6 +273,7 @@ add_shortcode('st_booking_dashboard', function () {
     <script>
     (function () {
       const endpoint = <?php echo wp_json_encode($endpoint); ?>;
+      const approveEndpoint = <?php echo wp_json_encode($approve_endpoint); ?>;
       const nonce = <?php echo wp_json_encode($nonce); ?>;
       const statusLabels = { pending: 'Ausstehend', approved: 'Freigegeben', canceled: 'Storniert', rejected: 'Abgelehnt', noshow: 'No-Show' };
       const statusColors = { pending: '#B5654A', approved: '#7E8A6F', canceled: '#999', rejected: '#A24A3E', noshow: '#A24A3E' };
@@ -186,17 +324,54 @@ add_shortcode('st_booking_dashboard', function () {
           const label = statusLabels[st] || st;
           const kind = isConfirmed(a) ? 'Bestätigt' : 'Anfrage';
           const kindColor = isConfirmed(a) ? 'var(--st-sage)' : 'var(--st-clay-d)';
+          const approveBtn = st === 'pending'
+            ? '<button class="st-bd-approve-btn" data-appointment-id="' + a.appointment_id + '" style="margin-top:8px;background:var(--st-sage);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.82rem;">Freigeben</button>'
+            : '';
           return '' +
             '<div style="background:var(--st-card);border:1px solid var(--st-line);border-left:4px solid ' + color + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;">' +
               '<div style="display:flex;justify-content:space-between;align-items:baseline;">' +
                 '<strong style="color:var(--st-plum);">' + fmtDate(a.bookingStart) + '</strong>' +
-                '<span style="color:' + color + ';font-size:0.8rem;font-weight:600;">' + label + '</span>' +
+                '<span style="color:' + color + ';font-size:0.8rem;font-weight:600;" data-status-for="' + a.appointment_id + '">' + label + '</span>' +
               '</div>' +
               '<div style="color:var(--st-plum);margin-top:4px;">' + (a.service_name || 'Unbekannter Service') + ' — ' + (a.employee_name || '–') + '</div>' +
               '<div style="color:var(--st-soft);font-size:0.85rem;margin-top:2px;">' + (a.customer_name || '–') + (a.customer_phone ? ' · ' + a.customer_phone : '') + '</div>' +
               '<div style="color:' + kindColor + ';font-size:0.75rem;margin-top:4px;font-weight:600;">' + kind + '</div>' +
+              approveBtn +
             '</div>';
         }).join('');
+
+        list.querySelectorAll('.st-bd-approve-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { approveBooking(btn); });
+        });
+      }
+
+      function approveBooking(btn) {
+        const id = btn.getAttribute('data-appointment-id');
+        if (!confirm('Termin #' + id + ' wirklich freigeben? Löst die Bestätigungsmail an den Kunden aus.')) {
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Wird freigegeben…';
+        fetch(approveEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+          body: JSON.stringify({ appointmentId: id }),
+        })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (result) {
+            if (!result.ok || result.data.error) {
+              alert('Fehler beim Freigeben: ' + (result.data.detail || result.data.error || 'unbekannt'));
+              btn.disabled = false;
+              btn.textContent = 'Freigeben';
+              return;
+            }
+            load();
+          })
+          .catch(function (err) {
+            alert('Verbindungsfehler: ' + err);
+            btn.disabled = false;
+            btn.textContent = 'Freigeben';
+          });
       }
 
       function load() {

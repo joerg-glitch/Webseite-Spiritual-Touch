@@ -19,14 +19,16 @@ Amelia-Plan-Upgrade (Elite) und ohne Umweg über Gmail.
   Amelia-REST-API-Produkt nötig, das ist ab Elite-Plan gated. Diese Lösung
   läuft in jedem Plan, weil sie einfach dieselbe Datenbank liest, die Amelia
   selbst nutzt.
-- **Ändert nichts an Buchungen.** Die Freigabe ("Ausstehend" → "Freigegeben")
-  bleibt bewusst in Amelia selbst — das Dashboard verlinkt nur dorthin. Grund:
-  Der Freigabe-Klick in Amelia löst automatisch Bestätigungsmail,
-  Google-Kalender-Eintrag und Zahlungsstatus-Folgeaktionen aus. Ein
-  Nachbau dieser Aktion außerhalb von Amelia würde riskieren, dass genau
-  diese Kette lautlos bricht — das wäre bei einer echten Kundenbuchung ein
-  teurer Fehler. Wenn sich das Dashboard bewährt, kann eine Freigabe-Aktion
-  als nächster, separater Schritt ergänzt werden (siehe unten).
+- **Freigeben direkt im Dashboard** (Status "Ausstehend" → "Freigegeben"),
+  per "Freigeben"-Button an jeder ausstehenden Buchung. Ruft dabei nicht
+  irgendeinen eigenen Code auf, sondern denselben internen Amelia-Endpunkt,
+  den Amelias eigene Oberfläche selbst benutzt (`admin-ajax.php?action=
+  wpamelia_api&call=/appointments/status/{id}`), mit der gerade aktiven
+  Login-Session des Admins. Dadurch laufen Bestätigungsmail,
+  Google-Kalender-Sync und Zahlungsstatus-Folgeaktionen exakt wie bei einem
+  normalen Klick in Amelia — kein Nachbau, kein rohes Datenbank-UPDATE.
+- **Kategorie/Dienstleistung/Mitarbeiter ändern:** noch nicht gebaut, siehe
+  Abschnitt "Nächster Schritt" unten — dafür fehlt noch eine Information.
 
 ## Sicherheit
 
@@ -37,11 +39,26 @@ sondern echte WordPress-Anmeldung:
 
 - Der Shortcode `[st_booking_dashboard]` rendert nur etwas, wenn der
   aufrufende Nutzer eingeloggt ist und `manage_options` hat (Admin).
-- Die REST-Route `/wp-json/st/v1/booking-overview` prüft dieselbe Berechtigung
-  serverseitig, unabhängig vom Shortcode, und verlangt einen gültigen
-  WordPress-REST-Nonce (`X-WP-Nonce`-Header). Ohne aktive, eingeloggte
-  Session gibt es keine Daten — auch nicht, wenn jemand die REST-URL direkt
+- Jede REST-Route (`booking-overview`, `booking-approve`,
+  `amelia-bootstrap-debug`) prüft dieselbe Berechtigung serverseitig,
+  unabhängig vom Shortcode, und verlangt einen gültigen WordPress-REST-Nonce
+  (`X-WP-Nonce`-Header). Ohne aktive, eingeloggte Session gibt es keine
+  Daten und keine Aktion — auch nicht, wenn jemand die REST-URL direkt
   aufruft.
+- Die Freigeben-Aktion (und alles Zukünftige, das echte Amelia-Requests
+  nachschickt) **speichert nirgends** Login-Cookies, Nonces oder Tokens im
+  Code oder in der Datenbank. Sie liest bei jedem Aufruf live `$_COOKIE` aus
+  dem gerade laufenden Request (also die Session des Admins, der das
+  Dashboard gerade benutzt) und reicht diese Cookies serverseitig an Amelias
+  eigenen internen Endpunkt weiter. Der Amelia-Nonce wird jedes Mal frisch
+  von der echten Amelia-Bookings-Seite abgegriffen, nie fest hinterlegt.
+  ⚠️ Genau deshalb bitte **niemals** echte Cookie-Werte oder Tokens (z. B.
+  aus einem DevTools-Mitschnitt) in dieses Repo committen — nur die
+  Request-*Struktur* (URL, Payload-Form) ist relevant, nie die konkreten
+  Session-Werte selbst. Falls doch mal ein Mitschnitt mit echten Werten
+  irgendwo landet (Dokument, Screenshot): sicherheitshalber in WordPress
+  überall ausloggen ("Log out everywhere" im Profil), das invalidiert alle
+  darin enthaltenen Cookies/Tokens sofort.
 
 ## Deployment
 
@@ -77,42 +94,61 @@ Team-App-Login-Bug (`getActiveSheet()` statt festem Tab-Namen) gefunden wurde.
 - Push-Benachrichtigung bei neuer Buchung (derzeit: Dashboard muss aktiv
   geöffnet werden, kein automatischer Alert).
 
-## Nächster Schritt: Freigeben + Kategorie/Dienstleistung/Mitarbeiter direkt im Dashboard ändern
+## Aus dem DevTools-Mitschnitt vom 16.08. ausgewertet
 
-Gewünscht, aber bewusst noch nicht gebaut — dafür wird eine Schreib-Aktion
-gegen Amelia gebraucht (Status setzen, Service wechseln, Mitarbeiter setzen),
-und die soll **nicht** per rohem Datenbank-UPDATE nachgebaut werden. Grund:
-Amelias eigene Oberfläche löst bei diesen drei Aktionen automatisch
-Bestätigungsmails, Google-Kalender-Sync und ggf. Preis-/Paket-Neuberechnung
-aus. Ein rohes SQL-UPDATE auf `serviceId`/`providerId`/`status` würde diese
-Kette umgehen — das fällt im Zweifel erst auf, wenn ein Kunde keine Mail
-bekommen hat.
+Von den 6 mitgeschnittenen Requests waren zwei die eigentlichen
+Schreib-Aktionen, der Rest waren Nebeneffekte der Oberfläche (Amelia prüft
+z. B. automatisch freie Slots/Coupons neu, wenn im Formular ein Dropdown
+wechselt — das musste nicht separat nachgebaut werden):
 
-**Sicherer Weg:** Den echten internen Request nachbilden, den Amelias eigene
-Oberfläche beim Klick auf "Freigeben" bzw. beim Ändern von Service/Mitarbeiter
-tatsächlich verschickt — dann läuft die komplette Amelia-Logik automatisch
-mit, der Proxy schickt nur denselben Request stellvertretend fürs Dashboard.
+- **Freigeben** — `POST .../appointments/status/{id}` mit Body
+  `{"status":"approved"}`. Einfach, in sich abgeschlossen, **bereits
+  eingebaut** (Button an jeder ausstehenden Buchung im Dashboard).
+- **"Aktualisieren"** — `POST .../appointments/{id}` mit dem **kompletten
+  Termin-Objekt** als Body (Kategorie, Service, Mitarbeiter, Kundendaten,
+  Freitext-Nachricht, Zahlungslink-Einstellung, uvm. — alles in einem
+  Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
+  Mitarbeiter ändern.
 
-**Dafür einmalig nötig (ca. 10 Minuten):** In Chrome (oder Safari) am
-Rechner, im wp-admin bei Amelia → Bookings, mit den DevTools mitschneiden:
+## Nächster Schritt: Kategorie/Dienstleistung/Mitarbeiter direkt im Dashboard ändern
 
-1. DevTools öffnen (Rechtsklick auf die Seite → "Untersuchen" bzw.
-   "Inspect"), oben den Reiter **Netzwerk / Network** wählen.
-2. Filter oben im Netzwerk-Tab auf **Fetch/XHR** stellen (blendet Bilder/CSS
-   etc. aus, nur die relevanten Anfragen bleiben übrig).
-3. Eine bestehende Test-Buchung nehmen (oder eine Testbuchung anlegen) und
-   nacheinander diese drei Aktionen jeweils **einzeln** ausführen, direkt
-   danach in der Netzwerk-Liste den **neu aufgetauchten Request anklicken**,
-   Rechtsklick → **"Copy as cURL"**, und mir den Text schicken:
-   - a) Status von "Ausstehend" auf "Freigegeben" setzen
-   - b) Die Dienstleistung der Buchung ändern (z. B. auf die
-     "(bestätigt)"-Variante)
-   - c) Den Mitarbeiter der Buchung ändern
-4. Zwischen den drei Aktionen jeweils kurz warten, damit die Requests nicht
-   durcheinandergeraten — am einfachsten: Netzwerk-Liste vor jeder Aktion
-   mit dem 🚫-Symbol oben links leeren ("Clear").
+Noch nicht gebaut, weil beim "Aktualisieren"-Request das **komplette**
+Termin-Objekt zurückgeschickt werden muss — inklusive aller Felder, die
+gar nicht geändert werden (Kundendaten, Freitext-Nachricht, Coupon,
+Zusatzoptionen, Uhrzeit, Notiz-Feld usw.). Woher diese Werte für einen noch
+unbekannten, beliebigen Termin nehmen? Zwei Möglichkeiten:
 
-Sobald ich die drei cURL-Kommandos habe, baue ich den Proxy so, dass er
-exakt diese Requests serverseitig nachschickt (mit gültigem WP-Nonce/Cookie),
-und ergänze im Dashboard je Buchung Dropdowns für Kategorie/Dienstleistung/
-Mitarbeiter plus einen "Bestätigen & Freigeben"-Button.
+1. Es gibt einen eigenen Request, der beim Öffnen einer Buchung zum
+   Bearbeiten den vollständigen Termin lädt (bevor irgendetwas geändert
+   wird) — genau der fehlt im bisherigen Mitschnitt, vermutlich weil die
+   Aufnahme erst mittendrin gestartet wurde.
+2. Falls es diesen nicht gibt: die Liste, mit der die komplette
+   Bookings-Seite beim Laden befüllt wird, enthält vermutlich schon alle
+   Termine vollständig — dann reicht der allererste Request beim
+   Seitenaufruf.
+
+**Deshalb noch einmal ca. 5 Minuten, diesmal von Anfang an mitschneiden:**
+
+1. In Chrome/Safari die Amelia-Bookings-Seite (Amelia → Bookings)
+   **schließen**, falls offen.
+2. DevTools öffnen (Rechtsklick → "Untersuchen"/"Inspect"), Reiter
+   **Netzwerk/Network**, Filter auf **Fetch/XHR**, Netzwerk-Liste leeren
+   (🚫-Symbol).
+3. **Erst jetzt** die Amelia-Bookings-Seite neu laden/öffnen.
+4. Die Buchung anklicken, die geändert werden soll, direkt ihr Bearbeiten-
+   Fenster öffnen — **noch nichts ändern**.
+5. Alle bis hierhin aufgetauchten Fetch/XHR-Requests durchgehen und die
+   herauskopieren (Rechtsklick → "Copy as cURL"), deren URL `/appointments`
+   oder `/bookings` enthält (nicht `/slots`, `/coupons` — die kennen wir
+   schon). Am besten alle mitschicken, die in Frage kommen — lieber zu viel
+   als zu wenig.
+6. Danach wie beim letzten Mal Kategorie, Dienstleistung und Mitarbeiter
+   ändern und speichern, den dabei auftauchenden "Aktualisieren"-Request
+   nochmal mitschicken (zur Bestätigung, dass er identisch zum vorherigen
+   Mitschnitt ist).
+
+⚠️ Bitte die cURL-Befehle wie letztes Mal in ein Dokument kopieren und mir
+so schicken — aber denk daran: die enthaltenen Cookie-/Token-Werte sind
+live gültig, siehe Sicherheitshinweis oben. Sobald ich die Requests habe,
+baue ich eine "Fetch aktuellen Termin → nur Kategorie/Service/Mitarbeiter
+ändern → zurückschicken"-Aktion plus Dropdowns im Dashboard.
