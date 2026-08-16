@@ -9,8 +9,11 @@ Eigenständiges Google-Apps-Script-Projekt. Hält den Kalender
 Ein Gast, der über "Nur auf Anfrage" bucht, soll sehen **wann die Praxis
 überhaupt buchbar ist** — nicht, wer konkret verfügbar ist. Das Skript:
 
-1. Liest für die nächsten 14 Tage die persönlichen Google-Kalender aller
-   Teammitglieder außer Jörg & Eva (Liste in `Code.gs`, `TEAM_CALENDARS`).
+1. Liest für die nächsten `SYNC_DAYS_AHEAD` Tage (aktuell 60, live von
+   Jörg getestet) die persönlichen Google-Kalender aller Teammitglieder
+   außer Jörg (Liste in `Code.gs`, `TEAM_CALENDARS`) — inklusive Eva,
+   deren privater Kalender ihre Verfügbarkeit direkt regelt: ist sie dort
+   nicht blockiert, zählt das als zusätzliche Verfügbarkeit.
 2. Prüft in 30-Minuten-Schritten (09:00–23:00 Uhr), ob **mindestens ein**
    Mitglied frei ist.
 3. Trägt auf `anfragen@` eine Blockierung ("Blockiert (Anfragen-Sync)")
@@ -83,10 +86,13 @@ bei Editor-Testläufen immer die neueste gespeicherte Version prüfen).
 | Stephanie | `c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com` |
 | Karen | `c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com` |
 | Maxine | `c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com` |
+| Eva | `eva.saur1993@gmail.com` |
 
-Jörg und Eva sind bewusst nicht enthalten — sie haben eigene feste
-Buchungswege in Amelia und laufen nicht über den "Nur auf Anfrage"-
-Mitarbeiter.
+Jörg ist bewusst nicht enthalten — er hat einen eigenen festen Buchungsweg
+in Amelia und läuft nicht über den "Nur auf Anfrage"-Mitarbeiter. Evas
+privater Kalender ist dagegen mit einbezogen (siehe oben): sie hat zwar
+ebenfalls einen eigenen Buchungsweg, aber ihre freie Zeit dort zählt
+zusätzlich als "Nur auf Anfrage"-Verfügbarkeit.
 
 ## Nicht Teil dieses Skripts (nächste, separate Schritte)
 

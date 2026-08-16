@@ -42,8 +42,12 @@
 const ANFRAGEN_CALENDAR_ID =
   'c_401278f6887d93ae312284ce6931ed0c3547aafd33d6bb142843bbb7e29e4aa4@group.calendar.google.com';
 
-// Alle Teammitglieder außer Jörg & Eva (haben eigene feste Buchungswege,
-// laufen nicht über den "Nur auf Anfrage"-Mitarbeiter).
+// Alle Teammitglieder außer Jörg (hat einen eigenen festen Buchungsweg,
+// läuft nicht über den "Nur auf Anfrage"-Mitarbeiter).
+// Eva ist dabei, obwohl sie ebenfalls einen eigenen Buchungsweg hat: ihr
+// privater Kalender regelt ihre Verfügbarkeit direkt (keine Team-App), und
+// wenn sie dort nicht blockiert ist, zählt das als zusätzliche Verfügbarkeit
+// für "Nur auf Anfrage".
 const TEAM_CALENDARS = {
   Tara: 'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com',
   Asmita: 'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com',
@@ -55,11 +59,12 @@ const TEAM_CALENDARS = {
   Stephanie: 'c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com',
   Karen: 'c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com',
   Maxine: 'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com',
+  Eva: 'eva.saur1993@gmail.com',
 };
 
 const DAY_START_HOUR = 9; // wie Jörgs eigene Default-Regel (9–23 Uhr)
 const DAY_END_HOUR = 23;
-const SYNC_DAYS_AHEAD = 14;
+const SYNC_DAYS_AHEAD = 60; // live getestet von Jörg (Stand 16.08.2026)
 const SLOT_MINUTES = 30; // gleiches Raster wie die historische Buchungs-Spezifikation
 const TIMEZONE = 'Europe/Berlin';
 const SYNC_MARKER = 'kind:anfragen-sync';
