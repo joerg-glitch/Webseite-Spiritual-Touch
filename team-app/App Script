@@ -7,6 +7,23 @@ const CAL_ID   = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85
 const TIMEZONE = 'Europe/Berlin';
 const SECRET   = 'ST2026geheim'; // Stimmt mit WordPress-Snippet überein
 
+// Hilfskalender je Mitglied — MUSS mit der MEMBERS-Liste in
+// "App Script - Sync" übereinstimmen (dort die führende Quelle für
+// Kalender-IDs; hier nur für den Lesezugriff auf echte Amelia-Termine
+// dupliziert, weil beide Apps-Script-Projekte getrennt bleiben).
+const HELPER_CAL_IDS = {
+  'Tara':       'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com',
+  'Asmita':     'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com',
+  'Amila':      'c_727306d56fd4b1755718073543de922a25edc2509fcb14f2b4e53b7a9263b72a@group.calendar.google.com',
+  'Sarah':      'c_d37ba1f2e4913be355bc25873d90dc9ee115b70537adfd5a6b2a5f1e98d26361@group.calendar.google.com',
+  'Dominik':    'c_0d3ba2a1dde3033c512dfd51c12fd0bb0c23b3e41297c169c214e76ced530669@group.calendar.google.com',
+  'Konstantin': 'c_459599398173cc57da9c45a996d1946f1ea0f3b057bdcb1732fd752d298ae15e@group.calendar.google.com',
+  'Alea':       'c_bee7bf11c2bdae2e7d8bda28b87fd27c5f4bd3cf45124c65da06d799ae9edb7f@group.calendar.google.com',
+  'Stephanie':  'c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com',
+  'Karen':      'c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com',
+  'Maxine':     'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com'
+};
+
 // ── Eintrittspunkt ──────────────────────────────────────
 function doPost(e) {
   try {
@@ -21,6 +38,14 @@ function doPost(e) {
       case 'create': return json({ok: true, id: createEntry(member.name, data.date, data.from, data.to, data.allDay)});
       case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to, data.allDay)});
       case 'delete': return json({ok: deleteEntry(member.name, data.id)});
+      // Identifiziert das Mitglied per PIN, ohne Kalenderdaten zu laden —
+      // genutzt vom WordPress-Login-Bridge-Snippet, um den PIN auf einen
+      // WP-Benutzer (per E-Mail) abzubilden, bevor die Amelia-Session
+      // eingerichtet wird.
+      case 'identify':    return json({ok: true, name: member.name, email: member.email});
+      // Echte Amelia-Buchungen aus dem Hilfskalender (nicht die
+      // "Verfügbarkeit"-Einträge — anderer Kalender, andere Funktion).
+      case 'appointments': return json({ok: true, name: member.name, appointments: listAppointments(member.name)});
       default:       return json({error: 'unknown_action'});
     }
   } catch (error) {
@@ -60,6 +85,34 @@ function listEntries(name) {
         allDay: !(from && to)
       };
     });
+}
+
+// Echte Amelia-Termine aus dem persönlichen Hilfskalender des Mitglieds —
+// nur zur Anzeige. Ändern/Absagen läuft NICHT über diese Funktion bzw.
+// diesen Kalender (würde nicht zu Amelia zurückgeschrieben), sondern über
+// die eingebettete Amelia-Mitarbeiteransicht (WordPress-Login-Bridge).
+// Blendet die eigenen "autoBlock"-Platzhalter des Verfügbarkeit-Syncs aus
+// (Tag autoBlock=true) — das sind keine echten Termine.
+function listAppointments(name) {
+  const calId = HELPER_CAL_IDS[name];
+  if (!calId) return []; // Person hat (noch) keinen Hilfskalender hinterlegt
+
+  const cal   = CalendarApp.getCalendarById(calId);
+  const start = new Date();
+  const end   = new Date();
+  end.setDate(end.getDate() + 90);
+
+  return cal.getEvents(start, end)
+    .filter(ev => ev.getTag('autoBlock') !== 'true')
+    .map(ev => ({
+      id:     ev.getId(),
+      date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+      from:   fmt(ev.getStartTime(), 'HH:mm'),
+      to:     fmt(ev.getEndTime(), 'HH:mm'),
+      title:  ev.getTitle(),
+      allDay: ev.isAllDayEvent()
+    }))
+    .sort((a, b) => (a.date + a.from).localeCompare(b.date + b.from));
 }
 
 // Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
