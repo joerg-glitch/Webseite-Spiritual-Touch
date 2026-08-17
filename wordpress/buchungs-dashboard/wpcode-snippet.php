@@ -30,8 +30,16 @@
  *                 Prüfung markierte normale, direkt an einen echten
  *                 Mitarbeiter gebuchte Dienstleistungen (z. B.
  *                 Körperarbeit) fälschlich als "Anfrage".
+ *   2026-08-23.3  Fix: Die 23.1-Selbstblockade-Gegenprobe war zu
+ *                 großzügig — sie hätte auch echte, mehrstündige
+ *                 Google-Kalender-Blockaden (siehe team-app "App Script -
+ *                 Sync", von Amelia tatsächlich als Verfügbarkeit gelesen)
+ *                 fälschlich übergangen. Neue Breiten-Plausibilitätsgrenze
+ *                 (st_slots_gap_width_minutes_()): nur noch als
+ *                 Selbstblockade werten, wenn die belegte Lücke ungefähr
+ *                 zur Dauer des gerade bewerteten Termins passt.
  */
-define('ST_BD_VERSION', '2026-08-23.2');
+define('ST_BD_VERSION', '2026-08-23.3');
 
 /**
  * ST Buchungs-Dashboard
@@ -430,6 +438,50 @@ function st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $exclu
     return $found !== null;
 }
 
+/**
+ * Misst, wie breit (in Minuten) die zusammenhängende "belegt"-Lücke rund
+ * um $time in $slots_for_date ist (30-Minuten-Raster, wie von Amelia
+ * geliefert). Grund: Amelia liest laut apps-script/../team-app "App
+ * Script - Sync" echte, mehrstündige Google-Kalender-Blockaden
+ * ("Blockiert (Verfügbarkeit-Sync)") als Verfügbarkeit — das ist also kein
+ * Amelia-internes Artefakt, sondern eine ECHTE Nichtverfügbarkeit, die
+ * st_provider_has_other_appointment_() (nur amelia_appointments) niemals
+ * sehen kann. Eine echte Selbstblockade durch den gerade bewerteten
+ * Termin sollte ungefähr dessen eigene Dauer breit sein; eine mehrstündige
+ * Lücke ist es mit hoher Wahrscheinlichkeit nicht — siehe README, "Offen:
+ * Dominik wird trotz Blockade vorgeschlagen" (23.08.2026, noch nicht mit
+ * Jörg endgültig bestätigt, aber deutlich plausibler als die erste
+ * Vermutung).
+ */
+function st_slots_gap_width_minutes_($slots_for_date, $time) {
+    if (!is_array($slots_for_date)) {
+        return null;
+    }
+    $to_minutes = function ($hhmm) {
+        $parts = explode(':', $hhmm);
+        return ((int) $parts[0]) * 60 + (int) $parts[1];
+    };
+    $to_hhmm = function ($mins) {
+        $mins = (($mins % 1440) + 1440) % 1440;
+        return sprintf('%02d:%02d', intdiv($mins, 60), $mins % 60);
+    };
+    $start_min = $to_minutes($time);
+    $width = 30;
+    for ($m = $start_min - 30; $m >= 0; $m -= 30) {
+        if (isset($slots_for_date[$to_hhmm($m)])) {
+            break;
+        }
+        $width += 30;
+    }
+    for ($m = $start_min + 30; $m < 24 * 60; $m += 30) {
+        if (isset($slots_for_date[$to_hhmm($m)])) {
+            break;
+        }
+        $width += 30;
+    }
+    return $width;
+}
+
 add_action('rest_api_init', function () {
     $admin_only = function () {
         return current_user_can('manage_options');
@@ -631,13 +683,13 @@ function st_booking_availability_handler(WP_REST_Request $request) {
             $raw_per_candidate[$provider_id] = ['error' => $result->get_error_message(), 'debug' => $result->get_error_data()];
             continue;
         }
+        $slots_for_date = isset($result['data']['data']['slots'][$date]) ? $result['data']['data']['slots'][$date] : null;
         if ($debug) {
             // Amelia liefert hier oft einen mehrjährigen Zeitraum an Slots
             // zurück (gefunden 21.08.2026: ~2 Jahre, Minuten-Takt) — die
             // komplette Rohantwort ins Dashboard zu schreiben lässt den
             // Browser hängen. Für die Kalibrierung reicht der Ausschnitt des
             // angefragten Tages.
-            $slots_for_date = isset($result['data']['data']['slots'][$date]) ? $result['data']['data']['slots'][$date] : null;
             $raw_per_candidate[$provider_id] = [
                 'message' => isset($result['data']['message']) ? $result['data']['message'] : null,
                 'requestedDate' => $date,
@@ -649,10 +701,23 @@ function st_booking_availability_handler(WP_REST_Request $request) {
         if (!$free) {
             // /slots sagt "belegt" — Gegenprobe, ob das nur an dem gerade
             // bewerteten Termin selbst liegt (siehe st_provider_has_other_
-            // appointment_()-Kommentar).
-            $free = !st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $appointment_id, $row->bookingStart, $row->bookingEnd);
-            if ($debug && $free) {
-                $raw_per_candidate[$provider_id]['overriddenAsSelfBlock'] = true;
+            // appointment_()-Kommentar). Erst mal prüfen, ob die Lücke
+            // überhaupt schmal genug ist, um plausibel nur vom gerade
+            // bewerteten Termin selbst zu stammen (siehe
+            // st_slots_gap_width_minutes_()-Kommentar) — sonst NICHT
+            // überschreiben, das wäre vermutlich eine echte, mehrstündige
+            // Kalender-Blockade (Google-Calendar-Sync).
+            $own_duration_minutes = (int) round(((int) $row->duration_seconds) / 60);
+            $gap_minutes = st_slots_gap_width_minutes_($slots_for_date, $time);
+            $plausible_self_block = $gap_minutes !== null && $gap_minutes <= ($own_duration_minutes * 2 + 60);
+            if ($plausible_self_block) {
+                $free = !st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $appointment_id, $row->bookingStart, $row->bookingEnd);
+            }
+            if ($debug) {
+                $raw_per_candidate[$provider_id]['gapMinutes'] = $gap_minutes;
+                $raw_per_candidate[$provider_id]['ownDurationMinutes'] = $own_duration_minutes;
+                $raw_per_candidate[$provider_id]['plausibleSelfBlock'] = $plausible_self_block;
+                $raw_per_candidate[$provider_id]['overriddenAsSelfBlock'] = $free;
             }
         }
         if ($free) {

@@ -246,7 +246,7 @@ als "Anfrage" markiert. **Fix:** `isConfirmed()` prüft jetzt die
 dafür liefert `booking-overview` jetzt zusätzlich `provider_id` mit.
 Zuverlässiger, weil unabhängig vom jeweiligen Servicenamen.
 
-⚠️ **Offen (23.08.2026): Dominik wird trotz Blockade vorgeschlagen.**
+⚠️ **Behoben mit Vorbehalt (23.08.2026): Dominik wurde trotz Blockade vorgeschlagen.**
 Jörg meldet: Für Termin #56 (21.08. 15:30, zu dem Zeitpunkt noch
 unzugewiesene Anfrage, Service-Titel zeigt weiter "männliche Begleitung")
 schlägt die Automatik weiterhin Dominik vor, obwohl er laut Kalender
@@ -257,28 +257,40 @@ erneute Prüfung von #56 nach einer Zuweisung hätte ohnehin mit
 `unknown_gender_pseudo_provider` abgebrochen, nicht fälschlich Dominik
 gezeigt — diese erste Erklärung passt also nicht.)
 
-**Wahrscheinlichere Ursache:** Im Kalender-Screenshot vom 21.08. ist in
-Dominiks Spalte ein Block **"Blockiert (Verfügbarkeit-Sync) 09:00–18:00"**
-zu sehen — das deckt die Anfrage-Zeit (15:30) vollständig ab. Dieser Block
-stammt vermutlich aus dem **separaten** Apps-Script-System
-(`apps-script/anfragen-verfuegbarkeit-sync`), das private Google-Kalender
-der Teammitglieder abgleicht und Lücken in einen eigenen "Anfragen"-
-Kalender schreibt — komplett losgelöst von Amelia. **Smart Freigeben
-prüft ausschließlich Amelias eigene Daten** (`/slots` + `amelia_appointments`
-via `st_provider_has_other_appointment_()`), hat aber **keine Sicht auf
-diesen zweiten, Google-Calendar-basierten Block** — Amelia weiß davon
-schlicht nichts, weil er nie in Amelias Datenbank landet. Falls sich das
-bestätigt, ist das kein kleiner Bug, sondern eine strukturelle Lücke: die
-beiden Verfügbarkeits-Systeme (Amelia-intern vs. Google-Calendar-Sync)
-sind nicht miteinander verbunden.
+**Tatsächliche Ursache gefunden:** Im Kalender-Screenshot vom 21.08. ist
+in Dominiks Spalte ein Block **"Blockiert (Verfügbarkeit-Sync) 09:00–18:00"**
+zu sehen — das deckt die Anfrage-Zeit (15:30) vollständig ab. Dieser Titel
+stammt **nicht** aus `apps-script/anfragen-verfuegbarkeit-sync` (das
+schreibt "Blockiert (**Anfragen**-Sync)" in einen separaten Sammelkalender)
+— sondern aus `team-app/App Script - Sync`, Branch
+`claude/amelia-appointments-team-app-m43p57`, per Git durchsuchbar. Dessen
+eigener Docblock sagt es explizit: Es überträgt "Verfügbarkeit"-Einträge
+der Team-App in **pro-Mitarbeiter Hilfskalender, die Amelia liest** ("Amelia
+interpretiert: frei, es sei denn geblockt") — das ist also kein
+Amelia-fremdes System, sondern **der reguläre Mechanismus, über den Amelia
+selbst weiß, wann ein Mitarbeiter Zeit hat**. Amelias `/slots` hat diesen
+9-Stunden-Block also vermutlich völlig korrekt als "belegt" gemeldet.
 
-**Zum Bestätigen/Verwerfen:** Stammt der Block "Blockiert
-(Verfügbarkeit-Sync)" tatsächlich aus dem zweiten System und spiegelt er
-Dominiks echte (private) Nichtverfügbarkeit wider? Falls ja, wäre der
-nächste Schritt, zu klären, ob/wie sich dieser zweite Kalender für die
-Prüfung mit heranziehen lässt (z. B. direkt den `ANFRAGEN_CALENDAR_ID`
-aus dem Apps Script gegenlesen) — das wäre ein größeres Stück Arbeit,
-kein schneller Fix.
+**Das eigentliche Problem war die 23.1-Selbstblockade-Gegenprobe selbst:**
+Sie hat jede "belegt"-Antwort ohne anderen `amelia_appointments`-Eintrag
+pauschal als Selbstblockade gewertet und überschrieben — auch echte,
+mehrstündige Google-Kalender-Blockaden wie diese, die naturgemäß nie als
+`amelia_appointments`-Zeile auftauchen. **Fix (23.3):** Neue
+Breiten-Plausibilitätsprüfung `st_slots_gap_width_minutes_()` — misst,
+wie viele zusammenhängende Minuten um die angefragte Uhrzeit als "belegt"
+markiert sind, und wertet nur noch als Selbstblockade, wenn diese Lücke
+ungefähr zur Dauer des gerade bewerteten Termins passt (`Dauer × 2 + 60
+Min` Toleranz für Amelia-Puffer). Gegen die zwei bekannten echten Fälle
+durchgerechnet: Termin #57 (Lücke 210 Min bei 90 Min Dauer → knapp
+plausibel, korrekt als Selbstblockade erkannt) vs. Dominiks 21.08.-Block
+(Lücke 540 Min bei 90 Min Dauer → weit über der Grenze, korrekt **nicht**
+mehr überschrieben).
+
+⚠️ Die genaue Schwelle (`× 2 + 60`) ist an nur zwei bekannten Datenpunkten
+kalibriert, kein verifizierter Amelia-Wert — bei ungewöhnlich langen
+Dienstleistungen (z. B. "Tantramassage lernen für Paare", 14400s = 4h)
+oder sehr kurzen Lücken-Rundungen könnte sie noch nachjustiert werden
+müssen. Noch nicht mit echten Daten nach dem Fix erneut getestet.
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
