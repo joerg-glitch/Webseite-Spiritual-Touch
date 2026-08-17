@@ -143,10 +143,12 @@ läuft dadurch bei jedem Klick sofort und kostenlos.
 
 **Status:** gebaut (Routen `/booking-availability` und `/booking-reassign`
 in `wpcode-snippet.php`, Dashboard-UI mit Auswahl-Popup bei mehreren
-Treffern). **Vor dem ersten Vertrauen auf die Automatik unbedingt einmal
-kalibrieren** — siehe "Offener Kalibrierungsschritt" unten. Bis dahin bei
-jedem Klick auf "Freigeben" einer Anfrage-Buchung genau beobachten, ob das
-Ergebnis plausibel ist (kein Blind-Vertrauen auf 0/1/mehrere Treffer).
+Treffern) und am 21.08.2026 an einer echten Buchung kalibriert (siehe
+"Kalibriert" bei Schritt 3 im Bauplan unten). **Die eigentliche
+Zuweisung+Freigabe (Schreib-Aktion) ist aber noch nicht an einer echten
+Buchung getestet** — beim ersten Klick auf "Freigeben" einer echten
+Anfrage-Buchung genau beobachten, ob Zuweisung und Uhrzeit in Amelia danach
+stimmen (kein Blind-Vertrauen beim allerersten Live-Lauf).
 
 ⚠️ **Direkte URL-Aufrufe von `.../booking-availability?...` in der
 Adresszeile scheitern mit `401 rest_forbidden`** — der Browser schickt beim
@@ -343,19 +345,17 @@ einer echten Buchung ausprobiert wird.
    Bestätigt-Pendant, `providerIds` = [Kandidat], `serviceDuration` =
    Dienstleistungsdauer, `dates` = [Termin-Datum]) und prüft, ob die exakte
    Uhrzeit des Termins in der Antwort auftaucht.
-   ⚠️ **Offener Kalibrierungsschritt:** Die genauen Query-Parameter und das
-   Antwortformat von `/slots` sind **nicht** aus einem echten
-   DevTools-Mitschnitt übernommen — der lag beim Bauen dieses Schritts nicht
-   vor (nur die im Abschnitt oben referenzierten Feldnamen aus der
-   ursprünglichen Planungsnotiz). Vor dem ersten produktiven Klick auf
-   "Freigeben" einer echten Anfrage-Buchung: `?debug=1` an die Route hängen,
-   die rohe Amelia-Antwort mit der wp-admin-Oberfläche vergleichen (dort
-   Mitarbeiter bei einer Anfrage-Buchung im Dropdown wechseln, DevTools
-   Network-Tab auf `/slots` prüfen) und `serviceId`/`providerIds`/
-   `serviceDuration`/`dates`-Namen sowie `st_slots_contains_time_()` in
-   `wpcode-snippet.php` bei Abweichung anpassen — dasselbe Vorgehen wie beim
-   SQL-Schema (`?debug=1`) und beim Nonce-Scraping
-   (`amelia-bootstrap-debug`).
+   ✅ **Kalibriert (21.08.2026)** an Termin #56: Die Query-Parameter
+   (`serviceId`, `providerIds`, `serviceDuration`, `dates`) liefern eine
+   gültige Antwort; Amelia ignoriert `dates` allerdings und gibt immer einen
+   mehrjährigen Zeitraum zurück (bei diesem Test: 17.08.2025–17.08.2027,
+   30-Minuten-Takt). Freie Zeiten stehen als **Schlüssel** unter
+   `data.slots[Datum][Uhrzeit]` (z. B. `"2026-08-21": {"15:30": [[29, 11]]}`),
+   nicht als Text-Wert — `st_slots_has_time_()` prüft jetzt genau diesen
+   Pfad. Die Debug-Ausgabe im Dashboard zeigt seither nur noch den
+   Tages-Ausschnitt für das angefragte Datum, weil die volle Antwort (durch
+   den ignorierten `dates`-Filter mehrere MB) den Browser zum Hängen
+   brachte.
 4. ✅ Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung (erkannt an
    fehlendem "(bestätigt)" im Service-Namen) löst zuerst den
    Verfügbarkeits-Check aus statt direkt freizugeben — 1 Treffer: sofort

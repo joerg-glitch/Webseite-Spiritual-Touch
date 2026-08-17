@@ -14,8 +14,13 @@
  *                 auf Browser-Weiterleitung zu hoffen (Login-Seite statt
  *                 Amelia-Bookings-Seite war die eigentliche Ursache des
  *                 Nonce-Fehlers)
+ *   2026-08-21.6  Fix: Slots-Abgleich sucht jetzt am richtigen Pfad
+ *                 (data.slots[Datum][Uhrzeit] als Schlüssel, nicht als
+ *                 Text-Wert) + Debug-Ausgabe stark gekürzt, weil die volle
+ *                 Amelia-Antwort (mehrjähriger Slot-Zeitraum) den Browser
+ *                 zum Hängen brachte
  */
-define('ST_BD_VERSION', '2026-08-21.5');
+define('ST_BD_VERSION', '2026-08-21.6');
 
 /**
  * ST Buchungs-Dashboard
@@ -69,13 +74,12 @@ define('ST_BD_VERSION', '2026-08-21.5');
  * übernimmt bei genau einem Treffer automatisch Zuweisung + Freigabe (Route
  * /booking-reassign, dann die bestehende /booking-approve). Bei mehreren
  * Treffern wählt das Dashboard-UI aus, bei null Treffern passiert nichts.
- * ⚠️ Das genaue Antwortformat von /slots ist NICHT aus einem echten
- * DevTools-Mitschnitt übernommen (der lag beim Schreiben dieses Codes nicht
- * vor) — vor dem produktiven Vertrauen auf die Automatik einmal
- * GET .../booking-availability?appointmentId=<echte Anfrage-ID>&debug=1
- * aufrufen und die rohe Amelia-Antwort mit dem, was st_slots_contains_time_
- * daraus liest, abgleichen. Genau dasselbe Kalibrierungs-Vorgehen wie beim
- * SQL-Schema (?debug=1) und beim Nonce-Scraping (amelia-bootstrap-debug).
+ * Antwortformat von /slots am 21.08.2026 an einer echten Buchung kalibriert
+ * (data.slots[Datum][Uhrzeit], siehe st_slots_has_time_()) — bei
+ * Unsicherheit weiterhin über den "Verfügbarkeit-Debug"-Button im
+ * Dashboard nachvollziehbar (GET .../booking-availability?appointmentId=
+ * <ID>&debug=1), zeigt jetzt nur den Tages-Ausschnitt statt der vollen,
+ * mehrjährigen Amelia-Antwort.
  */
 
 /**
@@ -355,24 +359,18 @@ function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_i
 }
 
 /**
- * Sucht in der decodierten /slots-Antwort rekursiv nach der exakten Uhrzeit
- * des Termins ("HH:MM" als Teilstring irgendeines String-Werts). Bewusst
- * unspezifisch gegenüber der genauen Verschachtelung, weil das reale
- * Antwortformat noch nicht kalibriert ist — siehe Kalibrierungshinweis oben
- * im Datei-Header und ?debug=1 an /booking-availability.
+ * Prüft, ob die exakte Uhrzeit des Termins in der decodierten /slots-
+ * Antwort als freier Slot auftaucht. Kalibriert am 21.08.2026 an einer
+ * echten Antwort: Amelia liefert `data.slots[<Datum>][<Uhrzeit>]` als
+ * Objekt/Array — die Uhrzeit ist dabei der SCHLÜSSEL (z. B. "15:30"), kein
+ * Text-Wert irgendwo verschachtelt. `$date`/`$time` im Format "YYYY-MM-DD"
+ * / "HH:MM".
  */
-function st_slots_contains_time_($data, $time) {
-    if (is_string($data)) {
-        return strpos($data, $time) !== false;
+function st_slots_has_time_($data, $date, $time) {
+    if (!is_array($data) || empty($data['data']['slots'][$date][$time])) {
+        return false;
     }
-    if (is_array($data)) {
-        foreach ($data as $v) {
-            if (st_slots_contains_time_($v, $time)) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return true;
 }
 
 add_action('rest_api_init', function () {
@@ -576,9 +574,20 @@ function st_booking_availability_handler(WP_REST_Request $request) {
             continue;
         }
         if ($debug) {
-            $raw_per_candidate[$provider_id] = $result['data'];
+            // Amelia liefert hier oft einen mehrjährigen Zeitraum an Slots
+            // zurück (gefunden 21.08.2026: ~2 Jahre, Minuten-Takt) — die
+            // komplette Rohantwort ins Dashboard zu schreiben lässt den
+            // Browser hängen. Für die Kalibrierung reicht der Ausschnitt des
+            // angefragten Tages.
+            $slots_for_date = isset($result['data']['data']['slots'][$date]) ? $result['data']['data']['slots'][$date] : null;
+            $raw_per_candidate[$provider_id] = [
+                'message' => isset($result['data']['message']) ? $result['data']['message'] : null,
+                'requestedDate' => $date,
+                'requestedTime' => $time,
+                'slotsForRequestedDate' => $slots_for_date,
+            ];
         }
-        if (st_slots_contains_time_($result['data'], $time)) {
+        if (st_slots_has_time_($result['data'], $date, $time)) {
             $matches[] = ['providerId' => $provider_id, 'name' => $name];
         }
     }
@@ -1021,7 +1030,14 @@ add_shortcode('st_booking_dashboard', function () {
         fetch(availabilityEndpoint + '?appointmentId=' + encodeURIComponent(id) + '&debug=1', { headers: { 'X-WP-Nonce': nonce } })
           .then(function (r) { return r.json(); })
           .then(function (data) {
-            out.textContent = JSON.stringify(data, null, 2);
+            let text = JSON.stringify(data, null, 2);
+            // Sicherheitsnetz: eine unerwartet riesige Amelia-Antwort (z. B.
+            // ein mehrjähriger Slot-Zeitraum) sonst nicht 1:1 ins DOM
+            // schreiben — das ließ den Browser am 21.08.2026 hängen.
+            if (text.length > 50000) {
+              text = text.slice(0, 50000) + '\n\n… (gekürzt, Antwort war ' + text.length + ' Zeichen lang)';
+            }
+            out.textContent = text;
           })
           .catch(function (err) {
             out.textContent = 'Verbindungsfehler: ' + err;
