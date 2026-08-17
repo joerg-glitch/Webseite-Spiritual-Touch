@@ -228,12 +228,12 @@ merkt einen fehlenden männlichen Treffer daran, dass die Anfrage auf
 "Anfrage" stehen bleibt, und entscheidet dann selbst, ob er den Termin
 manuell übernimmt.
 
-**Erster echter Live-Test erfolgreich (23.08.2026):** Termin #56
-(Intuitive Tantramassage, 21.08. 15:30) automatisch Dominik zugewiesen,
-Freigeben-Klick hat funktioniert, Bestätigungsmail raus, Termin korrekt in
-Amelia/Dominiks Kalender eingetragen — Uhrzeit stimmte. Damit ist auch der
-in "Zeitzone" oben als unverifiziert markierte Reassign-Payload-Teil
-bestätigt.
+**Erster echter Live-Test erfolgreich (23.08.2026):** Termin #57
+(Intuitive Tantramassage, 23.08. 10:00, siehe Selbstblockade-Fix oben)
+automatisch Dominik zugewiesen, Freigeben-Klick hat funktioniert,
+Bestätigungsmail raus, Termin korrekt in Amelia/Dominiks Kalender
+eingetragen — Uhrzeit stimmte. Damit ist auch der in "Zeitzone" oben als
+unverifiziert markierte Reassign-Payload-Teil bestätigt.
 
 **Behoben (23.08.2026): Anfragen/Bestätigt-Filter zeigte falsche Werte.**
 Ursache: `isConfirmed()` im Dashboard prüfte bisher, ob `"(bestätigt)"` im
@@ -247,18 +247,38 @@ dafür liefert `booking-overview` jetzt zusätzlich `provider_id` mit.
 Zuverlässiger, weil unabhängig vom jeweiligen Servicenamen.
 
 ⚠️ **Offen (23.08.2026): Dominik wird trotz Blockade vorgeschlagen.**
-Jörg meldet: Für Termin/Zeitpunkt 21.08. 15:30 schlägt die Automatik
-weiterhin Dominik vor, obwohl der zu dem Zeitpunkt laut Kalender blockiert
-ist. Mögliche Ursache: Termin #56 (genau dieser Zeitpunkt) wurde durch den
-ersten Live-Test bereits Dominik zugewiesen — die Selbstblockade-
-Gegenprobe (`st_provider_has_other_appointment_()`, siehe oben)
-schließt bewusst die gerade bewertete Appointment-ID von der Konflikt-
-Prüfung aus. Wird jetzt versehentlich erneut für Termin #56 geprüft, wäre
-das nicht mehr "der eigene, noch unzugewiesene Termin", sondern Dominiks
-echte, bereits bestätigte Buchung — die Gegenprobe würde sie trotzdem
-ausschließen und ihn fälschlich als frei zeigen. Unbestätigte Vermutung,
-noch nicht mit echten Daten geprüft. **Für die Diagnose gebraucht:** die
-genaue Termin-ID und ein frischer "Verfügbarkeit-Debug"-Aufruf dafür.
+Jörg meldet: Für Termin #56 (21.08. 15:30, zu dem Zeitpunkt noch
+unzugewiesene Anfrage, Service-Titel zeigt weiter "männliche Begleitung")
+schlägt die Automatik weiterhin Dominik vor, obwohl er laut Kalender
+blockiert ist. (Korrektur einer ersten, inzwischen verworfenen Vermutung:
+Der erfolgreiche erste Live-Test betraf tatsächlich **Termin #57**
+(23.08., Sonntag — "Dominik … neuen Termin am Sonntag"), nicht #56. Eine
+erneute Prüfung von #56 nach einer Zuweisung hätte ohnehin mit
+`unknown_gender_pseudo_provider` abgebrochen, nicht fälschlich Dominik
+gezeigt — diese erste Erklärung passt also nicht.)
+
+**Wahrscheinlichere Ursache:** Im Kalender-Screenshot vom 21.08. ist in
+Dominiks Spalte ein Block **"Blockiert (Verfügbarkeit-Sync) 09:00–18:00"**
+zu sehen — das deckt die Anfrage-Zeit (15:30) vollständig ab. Dieser Block
+stammt vermutlich aus dem **separaten** Apps-Script-System
+(`apps-script/anfragen-verfuegbarkeit-sync`), das private Google-Kalender
+der Teammitglieder abgleicht und Lücken in einen eigenen "Anfragen"-
+Kalender schreibt — komplett losgelöst von Amelia. **Smart Freigeben
+prüft ausschließlich Amelias eigene Daten** (`/slots` + `amelia_appointments`
+via `st_provider_has_other_appointment_()`), hat aber **keine Sicht auf
+diesen zweiten, Google-Calendar-basierten Block** — Amelia weiß davon
+schlicht nichts, weil er nie in Amelias Datenbank landet. Falls sich das
+bestätigt, ist das kein kleiner Bug, sondern eine strukturelle Lücke: die
+beiden Verfügbarkeits-Systeme (Amelia-intern vs. Google-Calendar-Sync)
+sind nicht miteinander verbunden.
+
+**Zum Bestätigen/Verwerfen:** Stammt der Block "Blockiert
+(Verfügbarkeit-Sync)" tatsächlich aus dem zweiten System und spiegelt er
+Dominiks echte (private) Nichtverfügbarkeit wider? Falls ja, wäre der
+nächste Schritt, zu klären, ob/wie sich dieser zweite Kalender für die
+Prüfung mit heranziehen lässt (z. B. direkt den `ANFRAGEN_CALENDAR_ID`
+aus dem Apps Script gegenlesen) — das wäre ein größeres Stück Arbeit,
+kein schneller Fix.
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
