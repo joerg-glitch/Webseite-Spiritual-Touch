@@ -139,10 +139,41 @@ function st_amelia_ajax_call_($method, $call_path, $query_extra = [], $body = nu
 const ST_CAT_ANFRAGE = 8;
 const ST_CAT_BESTAETIGT = 7;
 
-/** Anfrage-Service-ID => Bestätigt-Service-ID (gleiche Dauer in beiden). */
-function st_confirmed_service_id_($anfrage_service_id) {
-    $map = [37 => 33, 39 => 35, 38 => 34, 40 => 36];
-    return isset($map[$anfrage_service_id]) ? $map[$anfrage_service_id] : null;
+/**
+ * Findet zur aktuellen Dienstleistung das passende "(Bestätigt)"-Gegenstück
+ * in Kategorie 7 — per Namens-/Dauer-Abgleich direkt in der DB statt über
+ * eine feste ID-Tabelle. Grund: Der reale Dienstleistungskatalog hat pro
+ * Basis-Service oft mehrere Varianten in verschiedenen Kategorien (z. B.
+ * "Intuitive Tantramassage" separat für Männer/Frauen/Anfrage, alle mit
+ * eigener Service-ID) — eine feste Tabelle mit nur den "(Anfrage)"-IDs
+ * erfasst diese anderen Varianten nicht (siehe 17.08.2026: Termin mit
+ * serviceId 13 — "Intuitive Tantramassage", Kategorie "Angebote für
+ * Männer" — schlug fehl, weil nur ID 37 aus der "(Anfrage)"-Kategorie
+ * bekannt war). Liefert null, wenn kein Gegenstück existiert (z. B. bei
+ * Dienstleistungen ohne Bestätigt-Duplikat wie Bodyflow-Massage) — dann
+ * lieber Fehler zeigen als raten.
+ */
+function st_confirmed_service_id_($wpdb, $prefix, $current_service_id) {
+    $services_table = $prefix . 'amelia_services';
+    $current = $wpdb->get_row($wpdb->prepare(
+        "SELECT name, duration FROM {$services_table} WHERE id = %d",
+        $current_service_id
+    ));
+    if (!$current) {
+        return null;
+    }
+    if (stripos($current->name, '(bestätigt)') !== false) {
+        return (int) $current_service_id;
+    }
+
+    $base_name = trim(preg_replace('/\s*\(anfrage\)\s*$/i', '', $current->name));
+    $match = $wpdb->get_row($wpdb->prepare(
+        "SELECT id FROM {$services_table} WHERE categoryId = %d AND duration = %d AND name = %s LIMIT 1",
+        ST_CAT_BESTAETIGT,
+        $current->duration,
+        $base_name . ' (Bestätigt)'
+    ));
+    return $match ? (int) $match->id : null;
 }
 
 /**
@@ -458,7 +489,7 @@ function st_booking_availability_handler(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'appointment_not_found'], 404);
     }
 
-    $confirmed_service_id = st_confirmed_service_id_((int) $row->service_id);
+    $confirmed_service_id = st_confirmed_service_id_($wpdb, $prefix, (int) $row->service_id);
     if (!$confirmed_service_id) {
         return new WP_REST_Response(['error' => 'unknown_service_pairing', 'serviceId' => (int) $row->service_id], 422);
     }
@@ -537,7 +568,7 @@ function st_booking_reassign_handler(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'appointment_not_found'], 404);
     }
 
-    $confirmed_service_id = st_confirmed_service_id_((int) $row->service_id);
+    $confirmed_service_id = st_confirmed_service_id_($wpdb, $prefix, (int) $row->service_id);
     if (!$confirmed_service_id) {
         return new WP_REST_Response(['error' => 'unknown_service_pairing', 'serviceId' => (int) $row->service_id], 422);
     }

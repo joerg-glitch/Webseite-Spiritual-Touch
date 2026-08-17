@@ -168,18 +168,62 @@ prüfen, ob die Uhrzeit in Amelia danach stimmt.
 **Kategorien:** 8 = Anfrage, 7 = Bestätigt (weitere Kategorien existieren,
 sind für diesen Baustein nicht relevant).
 
-**Anfrage → Bestätigt Service-Paare** (per Namensmuster erkennbar, gleiche
-Dauer in beiden):
+⚠️ **21.08.2026, beim ersten Live-Test gefunden:** Der reale
+Dienstleistungskatalog ist größer als hier ursprünglich dokumentiert — z. B.
+gibt es "Intuitive Tantramassage" **dreifach** mit eigenen Service-IDs (13
+unter Kategorie "Angebote für Männer", 14 unter "Angebote für Frauen", 37
+unter "Anfrage"). Eine feste Anfrage→Bestätigt-Tabelle mit nur den vier
+"(Anfrage)"-IDs erfasst diese anderen Varianten nicht — ein echter Termin
+mit `serviceId 13` schlug deshalb mit `unknown_service_pairing` fehl.
 
-| Basis-Dienstleistung | Anfrage-ID | Bestätigt-ID | Dauer |
+**Fix:** `st_confirmed_service_id_()` sucht das "(Bestätigt)"-Gegenstück
+jetzt live per Namens-/Dauer-Abgleich in der DB (Basisname ohne
+"(Anfrage)"-Suffix, gleiche Dauer, Kategorie 7) statt über eine feste
+ID-Tabelle — dadurch werden automatisch auch die Varianten unter "Angebote
+für Männer"/"Angebote für Frauen"/"Zu Zweit" erkannt, sofern Name und Dauer
+zum Bestätigt-Duplikat passen. Kein Gegenstück gefunden → bewusst Fehler
+(`unknown_service_pairing`) statt Raten. Bekannte Fälle, die dadurch
+**nicht** Smart-Freigeben-fähig sind (kein passendes Bestätigt-Duplikat):
+Bodyflow-Massage, Körperarbeit, sowie "Intuitive Tantramassage" unter
+"Angebote für Frauen" (ID 14, 7200s — die einzige "Bestätigt"-Variante hat
+5400s, passt nicht). Falls Letzteres eigentlich auch automatisiert laufen
+soll, bei Jörg nachfragen, ob da eine Dauer-Inkonsistenz im
+Amelia-Katalog vorliegt.
+
+Vollständige Dienstleistungsliste (Stand 21.08.2026, zur Nachvollziehbarkeit
+statt einer gekürzten Anfrage/Bestätigt-Tabelle):
+
+| ID | Name | Kategorie | Dauer |
 |---|---|---|---|
-| Intuitive Tantramassage | 37 | 33 | 5400s |
-| Frauen-Heilmassage | 39 | 35 | 7200s |
-| Intimmassage Workshop | 38 | 34 | 12600s |
-| Ritual zu Dritt | 40 | 36 | 7200s |
+| 19 | Bodyflow-Massage | Angebote für Männer (3) | 3600s |
+| 31 | Bodyflow-Massage | Angebote für Frauen (4) | 3600s |
+| 22 | Frauen-Heilmassage | Angebote für Frauen (4) | 7200s |
+| 39 | Frauen-Heilmassage (Anfrage) | Anfrage (8) | 7200s |
+| 35 | Frauen-Heilmassage (Bestätigt) | Bestätigt (7) | 7200s |
+| 17 | Intimmassage Workshop | Angebote für Männer (3) | 12600s |
+| 21 | Intimmassage Workshop | Zu Zweit (5) | 12600s |
+| 30 | Intimmassage Workshop | Angebote für Frauen (4) | 12600s |
+| 38 | Intimmassage Workshop (Anfrage) | Anfrage (8) | 12600s |
+| 34 | Intimmassage Workshop (Bestätigt) | Bestätigt (7) | 12600s |
+| 13 | Intuitive Tantramassage | Angebote für Männer (3) | 5400s |
+| 14 | Intuitive Tantramassage | Angebote für Frauen (4) | 7200s |
+| 37 | Intuitive Tantramassage (Anfrage) | Anfrage (8) | 5400s |
+| 33 | Intuitive Tantramassage (Bestätigt) | Bestätigt (7) | 5400s |
+| 16 | Intuitive Tantramassage für Paare | Zu Zweit (5) | 5400s |
+| 23/25/32 | Körperarbeit (Sexological Bodywork) | Männer/Zu Zweit/Frauen (3/5/4) | 9000s |
+| 28 | Körperorientiertes Coaching einzeln | Coaching & Begleitung (6) | 5400s |
+| 29 | Körperorientiertes Coaching zu zweit | Coaching & Begleitung (6) | 7200s |
+| 11/12 | kostenloses Kennenlern-Gespräch (mit Eva) | Kennenlern-Gespräch (2) | 1800s |
+| 15 | Ritual zu Dritt | Zu Zweit (5) | 7200s |
+| 40 | Ritual zu Dritt (Anfrage) | Anfrage (8) | 7200s |
+| 36 | Ritual zu Dritt (Bestätigt) | Bestätigt (7) | 7200s |
+| 27 | Somatic Experiencing (SE) ® | Coaching & Begleitung (6) | 5400s |
+| 26 | Tantramassage lernen für Paare | Zu Zweit (5) | 14400s |
 
 **Die drei Geschlechts-Pseudo-Mitarbeiter** (das wählt der Kunde tatsächlich
-im Buchungsformular, landet als `providerId` auf dem Termin):
+im Buchungsformular, landet als `providerId` auf dem Termin) — am
+21.08.2026 gegen die echte Referenz erneut geprüft, IDs unverändert
+korrekt:
 
 | providerId | Bedeutung |
 |---|---|
@@ -187,8 +231,16 @@ im Buchungsformular, landet als `providerId` auf dem Termin):
 | 37 | männliche Begleitung gewünscht |
 | 36 | weibliche Begleitung gewünscht |
 
+Es gibt daneben noch weitere Pseudo-Mitarbeiter in Amelia, die **keine**
+Geschlechts-Präferenz sind (39 "andere Begleitung anfragen", 40 "Blind
+Date") — landet so ein Termin im Dashboard bei "Freigeben", liefert
+`st_gender_preference_()` bewusst `null` und die Route
+`unknown_gender_pseudo_provider` statt zu raten; Jörg weist dann manuell in
+Amelia zu.
+
 **Echte Mitarbeiter für die Anfrage-Zuweisung** (Amelia-ID, Geschlecht laut
-Jörg 17.08.2026 — alle außer Jörg & Eva, die haben eigene feste
+Jörg 17.08.2026, IDs am 21.08.2026 gegen die echte Referenz erneut
+geprüft und unverändert — alle außer Jörg & Eva, die haben eigene feste
 Buchungswege, siehe auch `apps-script/anfragen-verfuegbarkeit-sync`):
 
 | Name | Amelia-ID | Geschlecht |
