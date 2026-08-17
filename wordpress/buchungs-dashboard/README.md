@@ -195,6 +195,39 @@ auch beim echten Login greift. Kurzlebig (10 Minuten Gültigkeit), da nur
 für den einen unmittelbaren Server-zu-Server-Request gebraucht, nirgends
 gespeichert.
 
+**Behoben (23.08.2026): Selbstblockade durch den gerade bewerteten Termin.**
+An Termin #57 gefunden: Dominik wurde als "nicht frei" um 10:00 gemeldet,
+obwohl sein einziger echter Termin an dem Tag (privates Training, 08:00–
+09:00) gar nicht überschnitt. Grund vermutlich: Amelias `/slots` zählt den
+gerade bewerteten, noch unzugewiesenen Anfrage-Termin selbst als Konflikt
+mit (Standort/Ressource/Pseudo-Mitarbeiter-Zählung — genau warum bleibt
+offen, siehe Grenze unten). Ein Abgleich mit dem Amelia-Backend-Dropdown
+war dafür keine Hilfe: Jörg bestätigte, dass das Dropdown gar keine
+Verfügbarkeit prüft, sondern einfach alle Mitarbeiter listet, die die
+Dienstleistung anbieten — kein geeigneter Vergleichsmaßstab.
+
+**Fix:** `st_provider_has_other_appointment_()` prüft per direkter
+DB-Abfrage, ob der Kandidat einen **anderen** echten Termin (außer dem
+gerade bewerteten) im fraglichen Zeitfenster hat. Sagt `/slots` "belegt",
+aber es gibt keinen anderen echten Konflikt in der DB → wird als
+Selbstblockade gewertet und übergangen. Bekannte Grenze: Erkennt keine
+Nichtverfügbarkeit, die nicht als Zeile in `amelia_appointments` steht
+(z. B. ein als Sonderzeiten/Frei-Tag hinterlegter Block) — nur relevant,
+wenn so ein Block exakt mit der Startzeit des gerade bewerteten Termins
+zusammenfällt.
+
+**Entschieden (23.08.2026): Eva als Backup, Jörg bewusst nicht.** Auf
+Nachfrage bestätigt: Ist niemand der regulären Mitarbeiterinnen frei, soll
+Eva automatisch als Backup einspringen (eigener Kalender, ganz normal
+gegen `/slots` geprüft) — "die Verfügbarkeitslogik, die der Kunde sieht,
+[soll] immer verfügbar [sein], solange irgendein Teammitglied da ist oder
+Eva". Sie steht deshalb jetzt mit ihrer echten Amelia-ID (2) in
+`st_real_providers_()`, wie jede andere Mitarbeiterin auch. Jörg selbst
+bleibt bewusst außen vor (siehe Entscheidung vom 21.08.2026 oben) — er
+merkt einen fehlenden männlichen Treffer daran, dass die Anfrage auf
+"Anfrage" stehen bleibt, und entscheidet dann selbst, ob er den Termin
+manuell übernimmt.
+
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
 **Kategorien:** 8 = Anfrage, 7 = Bestätigt (weitere Kategorien existieren,
@@ -272,8 +305,11 @@ Amelia zu.
 
 **Echte Mitarbeiter für die Anfrage-Zuweisung** (Amelia-ID, Geschlecht laut
 Jörg 17.08.2026, IDs am 21.08.2026 gegen die echte Referenz erneut
-geprüft und unverändert — alle außer Jörg & Eva, die haben eigene feste
-Buchungswege, siehe auch `apps-script/anfragen-verfuegbarkeit-sync`):
+geprüft und unverändert — alle außer Jörg, der hat einen eigenen festen
+Buchungsweg (siehe Entscheidung 21.08.2026 oben) und bleibt bewusst
+außerhalb der Automatik. Eva am 23.08.2026 als Backup für "weiblich"
+ergänzt, siehe Entscheidung oben — läuft technisch genau wie die anderen,
+nur eben zusätzlich, nicht exklusiv:
 
 | Name | Amelia-ID | Geschlecht |
 |---|---|---|
@@ -286,6 +322,7 @@ Buchungswege, siehe auch `apps-script/anfragen-verfuegbarkeit-sync`):
 | Maxine | 17 | weiblich |
 | Amila | 28 | weiblich |
 | Dominik | 29 | männlich |
+| Eva | 2 | weiblich (Backup, seit 23.08.2026) |
 
 ⚠️ **Offen:** Konstantin taucht in der Amelia-Mitarbeiterliste nicht auf
 (9 statt 10 Personen aus dem Verfügbarkeits-Sync). Vor dem Bauen bei Jörg

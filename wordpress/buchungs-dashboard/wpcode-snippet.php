@@ -19,8 +19,13 @@
  *                 Text-Wert) + Debug-Ausgabe stark gekürzt, weil die volle
  *                 Amelia-Antwort (mehrjähriger Slot-Zeitraum) den Browser
  *                 zum Hängen brachte
+ *   2026-08-23.1  Fix: Selbstblockade durch den gerade bewerteten Termin
+ *                 selbst erkannt und per DB-Gegenprobe ausgeschlossen
+ *                 (Jörgs Vorgabe: "eigenen Termin ausschließen"). Eva als
+ *                 Backup-Kandidatin für "weiblich"/"egal" ergänzt (Jörg
+ *                 selbst bleibt bewusst außen vor).
  */
-define('ST_BD_VERSION', '2026-08-21.6');
+define('ST_BD_VERSION', '2026-08-23.1');
 
 /**
  * ST Buchungs-Dashboard
@@ -255,6 +260,14 @@ function st_real_providers_() {
         17 => ['name' => 'Maxine',    'gender' => 'weiblich'],
         28 => ['name' => 'Amila',     'gender' => 'weiblich'],
         29 => ['name' => 'Dominik',   'gender' => 'maennlich'],
+        // Eva ist laut Jörg (23.08.2026) bewusst das Backup für "weiblich":
+        // "immer verfügbar, solange irgendein Teammitglied da ist ODER Eva,
+        // wenn sie nicht blockiert ist, mit ihrem eigenen Kalender" — deshalb
+        // hier normaler Kandidat wie alle anderen, per eigener Amelia-ID
+        // gegen ihren echten Kalender geprüft. Jörg selbst (ID 1) bleibt
+        // bewusst NICHT im Pool — eigene Entscheidung vom 21.08.2026, er
+        // will die männliche Lücke manuell/bewusst füllen statt automatisch.
+        2  => ['name' => 'Eva',       'gender' => 'weiblich'],
     ];
 }
 
@@ -371,6 +384,44 @@ function st_slots_has_time_($data, $date, $time) {
         return false;
     }
     return true;
+}
+
+/**
+ * Gegenprobe zu st_slots_has_time_(): Amelias /slots blockiert die Zeit
+ * des gerade bewerteten, noch nicht zugewiesenen Termins offenbar auch für
+ * ANDERE Mitarbeiter mit (bestätigt von Jörg 23.08.2026 an Termin #57 —
+ * Dominik wurde als "nicht frei" gemeldet, obwohl sein einziger echter
+ * Termin an dem Tag zeitlich gar nicht überschnitt). Da unklar ist, WARUM
+ * (Standort/Ressource/Pseudo-Mitarbeiter-Zählung?) und Amelias
+ * Backend-Dropdown keine eigene Verfügbarkeitsprüfung anbietet, mit der man
+ * das kalibrieren könnte, prüft diese Funktion direkt in der DB, ob der
+ * Kandidat einen ANDEREN echten Termin (außer dem gerade bewerteten) im
+ * fraglichen Zeitfenster hat. Kein anderer Termin gefunden → wird als
+ * Selbstblockade gewertet, /slots-Ergebnis für genau diesen einen Zeitpunkt
+ * wird überschrieben. $exclude_appointment_id, $start, $end roh (UTC), wie
+ * aus der DB gelesen — keine Zeitzonenumrechnung nötig, da nur mit anderen
+ * DB-Zeilen verglichen wird.
+ *
+ * Bekannte Grenze: Erkennt keine Nichtverfügbarkeit, die nicht als Zeile in
+ * amelia_appointments steht (z. B. ein als "Frei-Tag"/Sonderzeiten
+ * hinterlegter Block statt eines echten Termins) — betrifft aber nur den
+ * seltenen Fall, dass so ein Block exakt mit der Startzeit des gerade
+ * bewerteten Termins zusammenfällt.
+ */
+function st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $exclude_appointment_id, $start, $end) {
+    $sql = "
+        SELECT a.id
+        FROM {$prefix}amelia_appointments a
+        LEFT JOIN {$prefix}amelia_customer_bookings cb ON cb.appointmentId = a.id
+        WHERE a.providerId = %d
+          AND a.id != %d
+          AND a.bookingStart < %s
+          AND a.bookingEnd > %s
+          AND (cb.status IS NULL OR cb.status NOT IN ('canceled', 'rejected'))
+        LIMIT 1
+    ";
+    $found = $wpdb->get_var($wpdb->prepare($sql, $provider_id, $exclude_appointment_id, $end, $start));
+    return $found !== null;
 }
 
 add_action('rest_api_init', function () {
@@ -587,7 +638,17 @@ function st_booking_availability_handler(WP_REST_Request $request) {
                 'slotsForRequestedDate' => $slots_for_date,
             ];
         }
-        if (st_slots_has_time_($result['data'], $date, $time)) {
+        $free = st_slots_has_time_($result['data'], $date, $time);
+        if (!$free) {
+            // /slots sagt "belegt" — Gegenprobe, ob das nur an dem gerade
+            // bewerteten Termin selbst liegt (siehe st_provider_has_other_
+            // appointment_()-Kommentar).
+            $free = !st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $appointment_id, $row->bookingStart, $row->bookingEnd);
+            if ($debug && $free) {
+                $raw_per_candidate[$provider_id]['overriddenAsSelfBlock'] = true;
+            }
+        }
+        if ($free) {
             $matches[] = ['providerId' => $provider_id, 'name' => $name];
         }
     }
