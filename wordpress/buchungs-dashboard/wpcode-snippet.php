@@ -252,7 +252,7 @@ add_shortcode('st_booking_dashboard', function () {
     $nonce = wp_create_nonce('wp_rest');
     $endpoint = esc_url_raw(rest_url('st/v1/booking-overview'));
     $approve_endpoint = esc_url_raw(rest_url('st/v1/booking-approve'));
-    $bookings_admin_url = esc_url_raw(admin_url('admin.php?page=wpamelia-appointments'));
+    $bookings_admin_url = esc_url_raw(admin_url('admin.php?page=wpamelia-bookings'));
 
     ob_start();
     ?>
