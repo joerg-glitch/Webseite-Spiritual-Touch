@@ -34,7 +34,7 @@
  * Login-Fix der Team-App (siehe Notion, "Buchungssystem — Übergabe &
  * Dokumentation").
  *
- * SCHREIB-AKTIONEN (Freigeben):
+ * SCHREIB-AKTIONEN (Freigeben, Smart Freigeben):
  * Statt Amelias interne Logik nachzubauen, ruft der Proxy denselben internen
  * AJAX-Endpunkt auf, den Amelias eigene Oberfläche selbst benutzt
  * (admin-ajax.php?action=wpamelia_api), mit der GERADE AKTIVEN Session des
@@ -43,6 +43,21 @@
  * abgegriffenen Nonce. Dadurch laufen Benachrichtigungen/Kalender-Sync/
  * Zahlungsstatus exakt wie bei einem normalen Klick in Amelia selbst.
  * Kein Secret/Token wird im Code gespeichert.
+ *
+ * SMART FREIGEBEN (siehe README, Abschnitt "Nächster Schritt: Smart
+ * Freigeben" für Herkunft/Referenzdaten): Bei einer Anfrage-Buchung prüft
+ * "Freigeben" zuerst per Amelias eigenem /slots-Endpunkt, welche zur
+ * Geschlechts-Präferenz passenden Mitarbeiter am Termin frei sind, und
+ * übernimmt bei genau einem Treffer automatisch Zuweisung + Freigabe (Route
+ * /booking-reassign, dann die bestehende /booking-approve). Bei mehreren
+ * Treffern wählt das Dashboard-UI aus, bei null Treffern passiert nichts.
+ * ⚠️ Das genaue Antwortformat von /slots ist NICHT aus einem echten
+ * DevTools-Mitschnitt übernommen (der lag beim Schreiben dieses Codes nicht
+ * vor) — vor dem produktiven Vertrauen auf die Automatik einmal
+ * GET .../booking-availability?appointmentId=<echte Anfrage-ID>&debug=1
+ * aufrufen und die rohe Amelia-Antwort mit dem, was st_slots_contains_time_
+ * daraus liest, abgleichen. Genau dasselbe Kalibrierungs-Vorgehen wie beim
+ * SQL-Schema (?debug=1) und beim Nonce-Scraping (amelia-bootstrap-debug).
  */
 
 /**
@@ -113,6 +128,166 @@ function st_amelia_ajax_call_($method, $call_path, $query_extra = [], $body = nu
     ];
 }
 
+/**
+ * "Smart Freigeben" — Referenzdaten Stand 17.08.2026 (siehe README, Abschnitt
+ * "Nächster Schritt: Smart Freigeben" für die Herkunft dieser Werte, per
+ * "Referenz anzeigen"-Button im Dashboard geholt). Bei Personalwechseln oder
+ * neuen Anfrage/Bestätigt-Service-Paaren hier UND in der README-Tabelle
+ * aktualisieren.
+ */
+
+const ST_CAT_ANFRAGE = 8;
+const ST_CAT_BESTAETIGT = 7;
+
+/** Anfrage-Service-ID => Bestätigt-Service-ID (gleiche Dauer in beiden). */
+function st_confirmed_service_id_($anfrage_service_id) {
+    $map = [37 => 33, 39 => 35, 38 => 34, 40 => 36];
+    return isset($map[$anfrage_service_id]) ? $map[$anfrage_service_id] : null;
+}
+
+/**
+ * Die drei Geschlechts-Pseudo-Mitarbeiter, die der Kunde tatsächlich im
+ * Buchungsformular wählt (landet als providerId auf der Anfrage-Buchung).
+ */
+function st_gender_preference_($pseudo_provider_id) {
+    $map = [38 => 'egal', 37 => 'maennlich', 36 => 'weiblich'];
+    return isset($map[$pseudo_provider_id]) ? $map[$pseudo_provider_id] : null;
+}
+
+/**
+ * Echte Mitarbeiter für die Anfrage-Zuweisung (alle außer Jörg & Eva, die
+ * eigene feste Buchungswege haben, siehe apps-script/anfragen-verfuegbarkeit-
+ * sync). Konstantin fehlt bewusst — taucht in Amelia (Stand 17.08.2026) nicht
+ * auf; vor einer Erweiterung dieser Liste bei Jörg nachfragen, siehe README
+ * "Offen".
+ */
+function st_real_providers_() {
+    return [
+        4  => ['name' => 'Tara',      'gender' => 'weiblich'],
+        5  => ['name' => 'Asmita',    'gender' => 'weiblich'],
+        6  => ['name' => 'Alea',      'gender' => 'weiblich'],
+        7  => ['name' => 'Stephanie', 'gender' => 'weiblich'],
+        8  => ['name' => 'Karen',     'gender' => 'weiblich'],
+        9  => ['name' => 'Sarah',     'gender' => 'weiblich'],
+        17 => ['name' => 'Maxine',    'gender' => 'weiblich'],
+        28 => ['name' => 'Amila',     'gender' => 'weiblich'],
+        29 => ['name' => 'Dominik',   'gender' => 'maennlich'],
+    ];
+}
+
+/** Mitarbeiter, die zur Geschlechts-Präferenz passen ('egal' => alle). */
+function st_candidate_providers_($gender_preference) {
+    $out = [];
+    foreach (st_real_providers_() as $id => $p) {
+        if ($gender_preference === 'egal' || $p['gender'] === $gender_preference) {
+            $out[$id] = $p['name'];
+        }
+    }
+    return $out;
+}
+
+/**
+ * Holt die für Zuweisung/Verfügbarkeitsprüfung nötigen Rohfelder EINER
+ * Buchung direkt aus der DB — bewusst eine eigene, engere Abfrage statt die
+ * booking-overview-Liste zu erweitern, damit interne Felder (customFields,
+ * internalNotes, Coupon) nicht bei jedem Dashboard-Laden für alle sichtbaren
+ * Buchungen mitgeschickt werden (siehe README, Abschnitt "Sicherheit").
+ */
+function st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id) {
+    $sql = "
+        SELECT
+            a.id AS appointment_id,
+            a.bookingStart,
+            a.bookingEnd,
+            a.serviceId AS service_id,
+            a.providerId AS provider_id,
+            a.internalNotes AS internal_notes,
+            a.locationId AS location_id,
+            TIMESTAMPDIFF(SECOND, a.bookingStart, a.bookingEnd) AS duration_seconds,
+            cb.id AS booking_id,
+            cb.status AS booking_status,
+            cb.customerId AS customer_id,
+            cb.persons AS persons,
+            cb.customFields AS custom_fields,
+            cb.couponId AS coupon_id
+        FROM {$prefix}amelia_appointments a
+        LEFT JOIN {$prefix}amelia_customer_bookings cb
+            ON cb.appointmentId = a.id AND cb.status != 'canceled'
+        WHERE a.id = %d
+        LIMIT 1
+    ";
+    return $wpdb->get_row($wpdb->prepare($sql, $appointment_id));
+}
+
+/**
+ * Baut aus der DB-Zeile das komplette Termin-Objekt, das Amelias
+ * "Aktualisieren"-Request erwartet (siehe README, Payload-Beispiel aus dem
+ * DevTools-Mitschnitt vom 16.08.) — alle Felder außer categoryId/serviceId/
+ * providerId kommen unverändert aus der DB.
+ */
+function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_id) {
+    $custom_fields = new stdClass();
+    if (!empty($row->custom_fields)) {
+        $decoded = json_decode($row->custom_fields, true);
+        if ($decoded !== null) {
+            $custom_fields = $decoded;
+        }
+    }
+
+    $parts = explode(' ', $row->bookingStart);
+    $date = $parts[0];
+    $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
+
+    return [
+        'bookings' => [[
+            'coupon' => ['id' => $row->coupon_id !== null ? (int) $row->coupon_id : null],
+            'customerId' => (int) $row->customer_id,
+            'customFields' => $custom_fields,
+            'duration' => (int) $row->duration_seconds,
+            'extras' => [],
+            'id' => (int) $row->booking_id,
+            'packageCustomerService' => null,
+            'persons' => (int) $row->persons,
+            'status' => $row->booking_status ?: 'pending',
+        ]],
+        'bookingStart' => $row->bookingStart,
+        'categoryId' => ST_CAT_BESTAETIGT,
+        'date' => $date,
+        'id' => (int) $row->appointment_id,
+        'internalNotes' => $row->internal_notes ?: '',
+        'lessonSpace' => false,
+        'locationId' => $row->location_id !== null ? (int) $row->location_id : null,
+        'notifyParticipants' => 1,
+        'providerId' => (int) $new_provider_id,
+        'recurring' => [],
+        'removedBookings' => [],
+        'serviceId' => (int) $confirmed_service_id,
+        'time' => $time,
+        'createPaymentLinks' => true,
+    ];
+}
+
+/**
+ * Sucht in der decodierten /slots-Antwort rekursiv nach der exakten Uhrzeit
+ * des Termins ("HH:MM" als Teilstring irgendeines String-Werts). Bewusst
+ * unspezifisch gegenüber der genauen Verschachtelung, weil das reale
+ * Antwortformat noch nicht kalibriert ist — siehe Kalibrierungshinweis oben
+ * im Datei-Header und ?debug=1 an /booking-availability.
+ */
+function st_slots_contains_time_($data, $time) {
+    if (is_string($data)) {
+        return strpos($data, $time) !== false;
+    }
+    if (is_array($data)) {
+        foreach ($data as $v) {
+            if (st_slots_contains_time_($v, $time)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 add_action('rest_api_init', function () {
     $admin_only = function () {
         return current_user_can('manage_options');
@@ -127,6 +302,28 @@ add_action('rest_api_init', function () {
     register_rest_route('st/v1', '/booking-approve', [
         'methods' => 'POST',
         'callback' => 'st_booking_approve_handler',
+        'permission_callback' => $admin_only,
+    ]);
+
+    // Smart Freigeben, Schritt 1: prüft, welche zur Geschlechts-Präferenz
+    // passenden Mitarbeiter am Termin laut Amelias eigenem /slots-Endpunkt
+    // frei sind. Rein lesend (fragt nur Amelia ab), daher GET — auch direkt
+    // im Browser mit ?debug=1 aufrufbar, siehe Datei-Header.
+    register_rest_route('st/v1', '/booking-availability', [
+        'methods' => 'GET',
+        'callback' => 'st_booking_availability_handler',
+        'permission_callback' => $admin_only,
+    ]);
+
+    // Smart Freigeben, Schritt 2: weist eine Anfrage-Buchung einem echten
+    // Mitarbeiter zu (Kategorie → Bestätigt, Service → passendes
+    // (Bestätigt)-Duplikat, providerId → gewählter Mitarbeiter) über
+    // denselben "Aktualisieren"-Request, den Amelias eigene Oberfläche
+    // benutzt. Löst noch keine Freigabe aus — das Dashboard ruft danach
+    // /booking-approve.
+    register_rest_route('st/v1', '/booking-reassign', [
+        'methods' => 'POST',
+        'callback' => 'st_booking_reassign_handler',
         'permission_callback' => $admin_only,
     ]);
 
@@ -228,6 +425,110 @@ function st_booking_approve_handler(WP_REST_Request $request) {
     return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
 }
 
+function st_booking_availability_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $appointment_id = (int) $request->get_param('appointmentId');
+    if (!$appointment_id) {
+        return new WP_REST_Response(['error' => 'missing_appointment_id'], 400);
+    }
+
+    $row = st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id);
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+    if (!$row) {
+        return new WP_REST_Response(['error' => 'appointment_not_found'], 404);
+    }
+
+    $confirmed_service_id = st_confirmed_service_id_((int) $row->service_id);
+    if (!$confirmed_service_id) {
+        return new WP_REST_Response(['error' => 'unknown_service_pairing', 'serviceId' => (int) $row->service_id], 422);
+    }
+
+    $gender = st_gender_preference_((int) $row->provider_id);
+    if ($gender === null) {
+        return new WP_REST_Response(['error' => 'unknown_gender_pseudo_provider', 'providerId' => (int) $row->provider_id], 422);
+    }
+
+    $candidates = st_candidate_providers_($gender);
+    $debug = (bool) $request->get_param('debug');
+
+    $parts = explode(' ', $row->bookingStart);
+    $date = $parts[0];
+    $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
+
+    $matches = [];
+    $raw_per_candidate = [];
+
+    foreach ($candidates as $provider_id => $name) {
+        $query = [
+            'serviceId' => $confirmed_service_id,
+            'providerIds' => [$provider_id],
+            'serviceDuration' => (int) $row->duration_seconds,
+            'dates' => [$date],
+        ];
+        $result = st_amelia_ajax_call_('GET', '/slots', $query);
+        if (is_wp_error($result)) {
+            $raw_per_candidate[$provider_id] = ['error' => $result->get_error_message()];
+            continue;
+        }
+        if ($debug) {
+            $raw_per_candidate[$provider_id] = $result['data'];
+        }
+        if (st_slots_contains_time_($result['data'], $time)) {
+            $matches[] = ['providerId' => $provider_id, 'name' => $name];
+        }
+    }
+
+    $response = [
+        'ok' => true,
+        'appointmentId' => $appointment_id,
+        'date' => $date,
+        'time' => $time,
+        'gender' => $gender,
+        'candidatesChecked' => count($candidates),
+        'matches' => $matches,
+    ];
+    if ($debug) {
+        $response['raw'] = $raw_per_candidate;
+    }
+    return new WP_REST_Response($response, 200);
+}
+
+function st_booking_reassign_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $appointment_id = (int) $request->get_param('appointmentId');
+    $new_provider_id = (int) $request->get_param('providerId');
+    if (!$appointment_id || !$new_provider_id) {
+        return new WP_REST_Response(['error' => 'missing_params'], 400);
+    }
+
+    $row = st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id);
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+    if (!$row) {
+        return new WP_REST_Response(['error' => 'appointment_not_found'], 404);
+    }
+
+    $confirmed_service_id = st_confirmed_service_id_((int) $row->service_id);
+    if (!$confirmed_service_id) {
+        return new WP_REST_Response(['error' => 'unknown_service_pairing', 'serviceId' => (int) $row->service_id], 422);
+    }
+
+    $payload = st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_id);
+    $result = st_amelia_ajax_call_('POST', '/appointments/' . $appointment_id, [], $payload);
+    if (is_wp_error($result)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message()], 502);
+    }
+
+    return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
+}
+
 function st_amelia_bootstrap_debug_handler(WP_REST_Request $request) {
     $ctx = st_scrape_amelia_nonce_();
     if (is_wp_error($ctx)) {
@@ -292,6 +593,8 @@ add_shortcode('st_booking_dashboard', function () {
     $nonce = wp_create_nonce('wp_rest');
     $endpoint = esc_url_raw(rest_url('st/v1/booking-overview'));
     $approve_endpoint = esc_url_raw(rest_url('st/v1/booking-approve'));
+    $availability_endpoint = esc_url_raw(rest_url('st/v1/booking-availability'));
+    $reassign_endpoint = esc_url_raw(rest_url('st/v1/booking-reassign'));
     $reference_endpoint = esc_url_raw(rest_url('st/v1/amelia-reference'));
     $bookings_admin_url = esc_url_raw(admin_url('admin.php?page=wpamelia-bookings'));
 
@@ -318,6 +621,8 @@ add_shortcode('st_booking_dashboard', function () {
     (function () {
       const endpoint = <?php echo wp_json_encode($endpoint); ?>;
       const approveEndpoint = <?php echo wp_json_encode($approve_endpoint); ?>;
+      const availabilityEndpoint = <?php echo wp_json_encode($availability_endpoint); ?>;
+      const reassignEndpoint = <?php echo wp_json_encode($reassign_endpoint); ?>;
       const referenceEndpoint = <?php echo wp_json_encode($reference_endpoint); ?>;
       const nonce = <?php echo wp_json_encode($nonce); ?>;
       const statusLabels = { pending: 'Ausstehend', approved: 'Freigegeben', canceled: 'Storniert', rejected: 'Abgelehnt', noshow: 'No-Show' };
@@ -390,12 +695,131 @@ add_shortcode('st_booking_dashboard', function () {
         });
       }
 
+      function findAppointment(id) {
+        return allAppointments.filter(function (a) { return String(a.appointment_id) === String(id); })[0];
+      }
+
+      // Anfrage-Buchung: erst Verfügbarkeit prüfen (Smart Freigeben).
+      // Bereits Bestätigt (nur noch pending wegen Zahlung o.ä.): direkt
+      // freigeben wie bisher.
       function approveBooking(btn) {
         const id = btn.getAttribute('data-appointment-id');
+        const appt = findAppointment(id);
+        if (appt && !isConfirmed(appt)) {
+          smartApprove(btn, id);
+        } else {
+          plainApprove(btn, id);
+        }
+      }
+
+      function plainApprove(btn, id) {
         if (!confirm('Termin #' + id + ' wirklich freigeben? Löst die Bestätigungsmail an den Kunden aus.')) {
           return;
         }
         btn.disabled = true;
+        doApprove(btn, id, 'Freigeben');
+      }
+
+      function smartApprove(btn, id) {
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Prüfe Verfügbarkeit…';
+        fetch(availabilityEndpoint + '?appointmentId=' + encodeURIComponent(id), { headers: { 'X-WP-Nonce': nonce } })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (result) {
+            if (!result.ok || result.data.error) {
+              alert('Fehler bei der Verfügbarkeitsprüfung: ' + (result.data.detail || result.data.error || 'unbekannt'));
+              btn.disabled = false;
+              btn.textContent = originalText;
+              return;
+            }
+            const matches = result.data.matches || [];
+            if (matches.length === 0) {
+              alert('Niemand Passendes frei am ' + result.data.date + ' um ' + result.data.time + ' Uhr. Bitte manuell in Amelia zuweisen.');
+              btn.disabled = false;
+              btn.textContent = originalText;
+              return;
+            }
+            if (matches.length === 1) {
+              reassignAndApprove(btn, id, matches[0], originalText);
+              return;
+            }
+            showCandidatePicker(btn, id, matches, originalText);
+          })
+          .catch(function (err) {
+            alert('Verbindungsfehler bei der Verfügbarkeitsprüfung: ' + err);
+            btn.disabled = false;
+            btn.textContent = originalText;
+          });
+      }
+
+      function showCandidatePicker(btn, id, matches, originalText) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#FBF7F0;border-radius:12px;padding:16px;max-width:320px;width:100%;';
+        const title = document.createElement('div');
+        title.style.cssText = 'color:#3E2A34;font-weight:600;margin-bottom:10px;';
+        title.textContent = 'Wer übernimmt Termin #' + id + '?';
+        box.appendChild(title);
+
+        matches.forEach(function (m) {
+          const optBtn = document.createElement('button');
+          optBtn.type = 'button';
+          optBtn.textContent = m.name;
+          optBtn.style.cssText = 'display:block;width:100%;text-align:left;background:#7E8A6F;color:#fff;border:none;border-radius:8px;padding:10px 12px;margin-bottom:6px;font-size:0.9rem;';
+          optBtn.addEventListener('click', function () {
+            document.body.removeChild(overlay);
+            reassignAndApprove(btn, id, m, originalText);
+          });
+          box.appendChild(optBtn);
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Abbrechen';
+        cancelBtn.style.cssText = 'display:block;width:100%;text-align:center;background:none;border:1px solid #E4D9C8;color:#6B5560;border-radius:8px;padding:8px 12px;margin-top:4px;font-size:0.85rem;';
+        cancelBtn.addEventListener('click', function () { document.body.removeChild(overlay); });
+        box.appendChild(cancelBtn);
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+      }
+
+      function reassignAndApprove(btn, id, candidate, originalText) {
+        if (!confirm('Termin #' + id + ' an ' + candidate.name + ' zuweisen und freigeben? Löst die Bestätigungsmail an den Kunden aus.')) {
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Weise zu…';
+        fetch(reassignEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+          body: JSON.stringify({ appointmentId: id, providerId: candidate.providerId }),
+        })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (result) {
+            if (!result.ok || result.data.error) {
+              alert('Fehler bei der Zuweisung: ' + (result.data.detail || result.data.error || 'unbekannt'));
+              btn.disabled = false;
+              btn.textContent = originalText;
+              return;
+            }
+            doApprove(btn, id, originalText);
+          })
+          .catch(function (err) {
+            alert('Verbindungsfehler bei der Zuweisung: ' + err);
+            btn.disabled = false;
+            btn.textContent = originalText;
+          });
+      }
+
+      function doApprove(btn, id, originalText) {
         btn.textContent = 'Wird freigegeben…';
         fetch(approveEndpoint, {
           method: 'POST',
@@ -407,7 +831,7 @@ add_shortcode('st_booking_dashboard', function () {
             if (!result.ok || result.data.error) {
               alert('Fehler beim Freigeben: ' + (result.data.detail || result.data.error || 'unbekannt'));
               btn.disabled = false;
-              btn.textContent = 'Freigeben';
+              btn.textContent = originalText || 'Freigeben';
               return;
             }
             load();
@@ -415,7 +839,7 @@ add_shortcode('st_booking_dashboard', function () {
           .catch(function (err) {
             alert('Verbindungsfehler: ' + err);
             btn.disabled = false;
-            btn.textContent = 'Freigeben';
+            btn.textContent = originalText || 'Freigeben';
           });
       }
 

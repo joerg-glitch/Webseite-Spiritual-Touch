@@ -27,8 +27,14 @@ Amelia-Plan-Upgrade (Elite) und ohne Umweg über Gmail.
   Login-Session des Admins. Dadurch laufen Bestätigungsmail,
   Google-Kalender-Sync und Zahlungsstatus-Folgeaktionen exakt wie bei einem
   normalen Klick in Amelia — kein Nachbau, kein rohes Datenbank-UPDATE.
-- **Kategorie/Dienstleistung/Mitarbeiter ändern:** noch nicht gebaut, siehe
-  Abschnitt "Nächster Schritt" unten — dafür fehlt noch eine Information.
+- **Smart Freigeben:** Klick auf "Freigeben" bei einer Anfrage-Buchung prüft
+  zuerst per Amelias eigenem `/slots`-Endpunkt, welche zur
+  Geschlechts-Präferenz passenden Mitarbeiter am Termin frei sind. Bei genau
+  einem Treffer werden Kategorie/Dienstleistung/Mitarbeiter automatisch
+  gesetzt und die Buchung freigegeben. Bei mehreren Treffern zeigt das
+  Dashboard eine Auswahl, bei null Treffern passiert nichts (Meldung statt
+  Aktion). Siehe Abschnitt "Nächster Schritt" unten für Referenzdaten und
+  einen offenen Kalibrierungsschritt vor dem produktiven Einsatz.
 
 ## Sicherheit
 
@@ -110,7 +116,7 @@ wechselt — das musste nicht separat nachgebaut werden):
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
 
-## Nächster Schritt: "Smart Freigeben" (17.08.2026, Jörgs Idee)
+## "Smart Freigeben" — Referenzdaten & offener Kalibrierungsschritt
 
 **Die Idee:** Klick auf "Freigeben" bei einer Anfrage-Buchung löst nicht
 mehr sofort die Freigabe aus, sondern erst eine Prüfung: welche der
@@ -126,6 +132,15 @@ Bewusst **kein Cowork/LLM** für die Entscheidungslogik — "wer ist frei"
 und "passt das Geschlecht" sind reine Ja/Nein-Abfragen auf strukturierten
 Daten, kein Sprachverständnis nötig. Gehört in deterministischen Code,
 läuft dadurch bei jedem Klick sofort und kostenlos.
+
+**Status:** gebaut (Routen `/booking-availability` und `/booking-reassign`
+in `wpcode-snippet.php`, Dashboard-UI mit Auswahl-Popup bei mehreren
+Treffern). **Vor dem ersten Vertrauen auf die Automatik unbedingt einmal**
+`GET .../booking-availability?appointmentId=<echte Anfrage-ID>&debug=1`
+**aufrufen und die rohe Amelia-`/slots`-Antwort prüfen** — siehe
+"Offener Kalibrierungsschritt" unten. Bis dahin bei jedem Klick auf
+"Freigeben" einer Anfrage-Buchung genau beobachten, ob das Ergebnis
+plausibel ist (kein Blind-Vertrauen auf 0/1/mehrere Treffer).
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
@@ -207,24 +222,41 @@ weiterer DevTools-Mitschnitt (Fetch-vor-dem-Ändern) — nur beim ersten Test
 genau prüfen, ob wirklich alle Felder korrekt befüllt sind, bevor das an
 einer echten Buchung ausprobiert wird.
 
-### Bauplan
+### Bauplan (Stand: alle 4 Schritte gebaut, siehe unten für Details)
 
-1. `booking-overview`-SQL um die oben genannten Rohfelder erweitern.
-2. Neue Route `POST /booking-reassign` (`{appointmentId, providerId}`):
+1. ✅ Statt die `booking-overview`-Liste zu erweitern (würde bei jedem
+   Dashboard-Laden interne Felder wie `customFields`/`internalNotes`/Coupon
+   für alle sichtbaren Buchungen mitschicken, siehe "Sicherheit"), holt eine
+   neue, engere Abfrage (`st_fetch_appointment_raw_()`) die Rohfelder nur für
+   die eine Buchung, die gerade freigegeben/zugewiesen wird.
+2. ✅ Neue Route `POST /booking-reassign` (`{appointmentId, providerId}`):
    baut daraus das komplette Payload-Objekt (Rest aus der DB-Zeile), setzt
    `categoryId` fest auf 7 und `serviceId` auf das zur aktuellen
-   Dienstleistung passende Bestätigt-Pendant (Tabelle oben, oder per
-   Namensmuster "X (Anfrage)" → "X (Bestätigt)" auflösen), ruft
+   Dienstleistung passende Bestätigt-Pendant (Tabelle oben), ruft
    `st_amelia_ajax_call_('POST', '/appointments/' . $id, [], $payload)`.
-3. Neue Route, die für eine Liste von Kandidaten-Mitarbeitern Amelias
-   eigenen `/slots`-Endpunkt abfragt (Tagesbereich um den Termin,
-   `serviceId` = Bestätigt-Pendant, `providerIds` = Kandidat,
-   `serviceDuration` = Dienstleistungsdauer) und prüft, ob die exakte
-   Startzeit des Termins in der Ergebnisliste auftaucht — dieselbe Abfrage,
-   die Amelias eigene Oberfläche beim Dropdown-Wechsel selbst auslöst
-   (siehe `/slots`-Beispiel im DevTools-Mitschnitt vom 16.08.).
-4. Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung löst zuerst den
+3. ✅ Neue Route `GET /booking-availability` (`?appointmentId=`, optional
+   `&debug=1`): fragt für jeden zur Geschlechts-Präferenz passenden
+   Kandidaten Amelias eigenen `/slots`-Endpunkt ab (`serviceId` =
+   Bestätigt-Pendant, `providerIds` = [Kandidat], `serviceDuration` =
+   Dienstleistungsdauer, `dates` = [Termin-Datum]) und prüft, ob die exakte
+   Uhrzeit des Termins in der Antwort auftaucht.
+   ⚠️ **Offener Kalibrierungsschritt:** Die genauen Query-Parameter und das
+   Antwortformat von `/slots` sind **nicht** aus einem echten
+   DevTools-Mitschnitt übernommen — der lag beim Bauen dieses Schritts nicht
+   vor (nur die im Abschnitt oben referenzierten Feldnamen aus der
+   ursprünglichen Planungsnotiz). Vor dem ersten produktiven Klick auf
+   "Freigeben" einer echten Anfrage-Buchung: `?debug=1` an die Route hängen,
+   die rohe Amelia-Antwort mit der wp-admin-Oberfläche vergleichen (dort
+   Mitarbeiter bei einer Anfrage-Buchung im Dropdown wechseln, DevTools
+   Network-Tab auf `/slots` prüfen) und `serviceId`/`providerIds`/
+   `serviceDuration`/`dates`-Namen sowie `st_slots_contains_time_()` in
+   `wpcode-snippet.php` bei Abweichung anpassen — dasselbe Vorgehen wie beim
+   SQL-Schema (`?debug=1`) und beim Nonce-Scraping
+   (`amelia-bootstrap-debug`).
+4. ✅ Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung (erkannt an
+   fehlendem "(bestätigt)" im Service-Namen) löst zuerst den
    Verfügbarkeits-Check aus statt direkt freizugeben — 1 Treffer: sofort
-   zuweisen + freigeben (bestehende `/booking-approve`-Route danach
-   aufrufen). Mehrere Treffer: Auswahl-Popup mit Namen. Null Treffer:
-   Meldung, keine Aktion.
+   zuweisen + freigeben (`/booking-reassign`, danach `/booking-approve`).
+   Mehrere Treffer: Auswahl-Popup mit Namen. Null Treffer: Meldung, keine
+   Aktion. Bereits "(bestätigt)"-Buchungen laufen weiter über die alte
+   Direkt-Freigeben-Route.
