@@ -139,6 +139,16 @@ add_action('rest_api_init', function () {
         'callback' => 'st_amelia_bootstrap_debug_handler',
         'permission_callback' => $admin_only,
     ]);
+
+    // Nur lesend: listet Kategorien, Dienstleistungen (mit Kategorie-ID) und
+    // Mitarbeiter/Pseudo-Mitarbeiter mit ihren echten IDs auf. Grundlage für
+    // die "Smart Freigeben"-Automatik (Kategorie/Dienstleistung/Mitarbeiter
+    // anhand von Namensmustern statt geratener IDs zuordnen).
+    register_rest_route('st/v1', '/amelia-reference', [
+        'methods' => 'GET',
+        'callback' => 'st_amelia_reference_handler',
+        'permission_callback' => $admin_only,
+    ]);
 });
 
 function st_booking_overview_handler(WP_REST_Request $request) {
@@ -232,6 +242,36 @@ function st_amelia_bootstrap_debug_handler(WP_REST_Request $request) {
         'snippet_around_categories' => st_find_snippet_($html, 'categor'),
         'snippet_around_services' => st_find_snippet_($html, '"services"'),
         'snippet_around_providers' => st_find_snippet_($html, 'provider'),
+    ], 200);
+}
+
+function st_amelia_reference_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $categories = $wpdb->get_results("SELECT id, name FROM {$prefix}amelia_categories ORDER BY name");
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'table' => 'amelia_categories', 'detail' => $wpdb->last_error], 500);
+    }
+
+    $services = $wpdb->get_results("SELECT id, name, categoryId, duration FROM {$prefix}amelia_services ORDER BY name");
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'table' => 'amelia_services', 'detail' => $wpdb->last_error], 500);
+    }
+
+    // amelia_users enthält Kunden UND Mitarbeiter/Pseudo-Mitarbeiter — über
+    // 'type' eingrenzen (Amelia-Standardspalte). Falls die Spalte anders
+    // heißt, zeigt der Fehlertext unten sofort, welche Tabelle betroffen ist.
+    $providers = $wpdb->get_results("SELECT id, firstName, lastName, email FROM {$prefix}amelia_users WHERE type = 'provider' ORDER BY firstName");
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'table' => 'amelia_users', 'detail' => $wpdb->last_error], 500);
+    }
+
+    return new WP_REST_Response([
+        'ok' => true,
+        'categories' => $categories,
+        'services' => $services,
+        'providers' => $providers,
     ], 200);
 }
 
