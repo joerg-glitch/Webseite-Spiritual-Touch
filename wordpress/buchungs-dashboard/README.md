@@ -135,12 +135,33 @@ läuft dadurch bei jedem Klick sofort und kostenlos.
 
 **Status:** gebaut (Routen `/booking-availability` und `/booking-reassign`
 in `wpcode-snippet.php`, Dashboard-UI mit Auswahl-Popup bei mehreren
-Treffern). **Vor dem ersten Vertrauen auf die Automatik unbedingt einmal**
-`GET .../booking-availability?appointmentId=<echte Anfrage-ID>&debug=1`
-**aufrufen und die rohe Amelia-`/slots`-Antwort prüfen** — siehe
-"Offener Kalibrierungsschritt" unten. Bis dahin bei jedem Klick auf
-"Freigeben" einer Anfrage-Buchung genau beobachten, ob das Ergebnis
-plausibel ist (kein Blind-Vertrauen auf 0/1/mehrere Treffer).
+Treffern). **Vor dem ersten Vertrauen auf die Automatik unbedingt einmal
+kalibrieren** — siehe "Offener Kalibrierungsschritt" unten. Bis dahin bei
+jedem Klick auf "Freigeben" einer Anfrage-Buchung genau beobachten, ob das
+Ergebnis plausibel ist (kein Blind-Vertrauen auf 0/1/mehrere Treffer).
+
+⚠️ **Direkte URL-Aufrufe von `.../booking-availability?...` in der
+Adresszeile scheitern mit `401 rest_forbidden`** — der Browser schickt beim
+reinen Navigieren keinen `X-WP-Nonce`-Header mit, den WordPress für
+eingeloggte REST-Zugriffe zusätzlich zum Cookie verlangt (betrifft aus
+demselben Grund auch die älteren Debug-Routen `booking-overview?debug=1`
+und `amelia-bootstrap-debug`, falls die je direkt per URL getestet werden).
+**Für die Kalibrierung stattdessen den Button "Verfügbarkeit-Debug (Smart
+Freigeben)" unten im Dashboard benutzen** (Termin-ID einer echten
+Anfrage-Buchung eintragen, Button klicken) — der nutzt denselben
+authentifizierten `fetch()` wie "Referenz anzeigen" und zeigt die rohe
+Amelia-`/slots`-Antwort pro Kandidat an.
+
+**Zeitzone (17.08.2026, beim ersten Testlauf gefunden):** Amelia speichert
+`bookingStart`/`bookingEnd` in der DB als UTC, die eigene Oberfläche rechnet
+für die Anzeige auf Site-Zeitzone (Berlin) um. Das Dashboard tat das
+zunächst nicht und zeigte Zeiten 2 Stunden früher an als in Amelia. Fix:
+`get_date_from_gmt()` in `st_booking_overview_handler` (Anzeige),
+`st_booking_availability_handler` (Abgleich gegen `/slots`) und
+`st_build_reassign_payload_` (`bookingStart`/`date`/`time` im
+Zuweisen-Request). Der letzte Punkt ist **noch nicht an einer echten
+Buchung verifiziert** — beim ersten Live-Test einer Zuweisung unbedingt
+prüfen, ob die Uhrzeit in Amelia danach stimmt.
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 

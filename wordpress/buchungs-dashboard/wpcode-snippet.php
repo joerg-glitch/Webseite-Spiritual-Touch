@@ -234,7 +234,15 @@ function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_i
         }
     }
 
-    $parts = explode(' ', $row->bookingStart);
+    // row->bookingStart kommt roh aus der DB (UTC). Amelias eigenes
+    // Bearbeiten-Formular zeigt und übernimmt Zeiten in Site-Zeitzone
+    // (Berlin) — deshalb hier umrechnen, sonst würde die Zuweisung den
+    // Termin unbemerkt um den UTC-Offset verschieben. ⚠️ Bei diesem Feld
+    // (anders als bei den reinen Lesefeldern) noch nicht an einer echten
+    // Buchung verifiziert — beim ersten Test genau prüfen, ob die Uhrzeit
+    // in Amelia danach stimmt.
+    $local_start = get_date_from_gmt($row->bookingStart);
+    $parts = explode(' ', $local_start);
     $date = $parts[0];
     $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
 
@@ -250,7 +258,7 @@ function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_i
             'persons' => (int) $row->persons,
             'status' => $row->booking_status ?: 'pending',
         ]],
-        'bookingStart' => $row->bookingStart,
+        'bookingStart' => $local_start,
         'categoryId' => ST_CAT_BESTAETIGT,
         'date' => $date,
         'id' => (int) $row->appointment_id,
@@ -393,6 +401,14 @@ function st_booking_overview_handler(WP_REST_Request $request) {
         ], 500);
     }
 
+    // Amelia speichert bookingStart/bookingEnd in UTC (wie WordPress selbst).
+    // Ohne diese Umrechnung zeigt das Dashboard 2 Stunden früher an als
+    // Amelias eigene Oberfläche (Berlin = UTC+2 im Sommer).
+    foreach ($rows as $row) {
+        $row->bookingStart = get_date_from_gmt($row->bookingStart);
+        $row->bookingEnd = get_date_from_gmt($row->bookingEnd);
+    }
+
     return new WP_REST_Response(['ok' => true, 'days' => $days, 'appointments' => $rows], 200);
 }
 
@@ -455,7 +471,13 @@ function st_booking_availability_handler(WP_REST_Request $request) {
     $candidates = st_candidate_providers_($gender);
     $debug = (bool) $request->get_param('debug');
 
-    $parts = explode(' ', $row->bookingStart);
+    // row->bookingStart kommt roh aus der DB (UTC, wie Amelia intern
+    // speichert). Amelias eigene Oberfläche — und damit vermutlich auch ihr
+    // /slots-Endpunkt — rechnet für Menschen auf Site-Zeitzone (Berlin) um,
+    // deshalb hier dieselbe Umrechnung wie in booking-overview, bevor Datum/
+    // Uhrzeit für den Verfügbarkeitsabgleich gebildet werden.
+    $local_start = get_date_from_gmt($row->bookingStart);
+    $parts = explode(' ', $local_start);
     $date = $parts[0];
     $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
 
@@ -616,6 +638,12 @@ add_shortcode('st_booking_dashboard', function () {
       <hr style="border:none;border-top:1px solid var(--st-line);margin:18px 0 10px;">
       <button id="st-bd-reference" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Referenz anzeigen (Kategorien/Dienstleistungen/Mitarbeiter)</button>
       <pre id="st-bd-reference-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
+
+      <div style="margin-top:10px;display:flex;gap:6px;align-items:center;">
+        <input id="st-bd-avail-id" type="number" placeholder="Termin-ID" style="width:90px;padding:6px 8px;border:1px solid var(--st-line);border-radius:6px;font-size:0.8rem;">
+        <button id="st-bd-avail-debug" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Verfügbarkeit-Debug (Smart Freigeben)</button>
+      </div>
+      <pre id="st-bd-avail-debug-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
     </div>
     <script>
     (function () {
@@ -891,6 +919,29 @@ add_shortcode('st_booking_dashboard', function () {
             text += '\nMITARBEITER\n';
             data.providers.forEach(function (p) { text += p.id + '  ' + p.firstName + ' ' + p.lastName + '  ' + p.email + '\n'; });
             out.textContent = text;
+          })
+          .catch(function (err) {
+            out.textContent = 'Verbindungsfehler: ' + err;
+          });
+      });
+
+      // Kalibrierungshilfe für Smart Freigeben: ruft /booking-availability
+      // mit Nonce auf (im Gegensatz zu einer direkt in die Adresszeile
+      // eingetippten URL, die ohne X-WP-Nonce-Header mit 401 scheitert) und
+      // zeigt die rohe Amelia-/slots-Antwort pro Kandidat an, siehe README.
+      document.getElementById('st-bd-avail-debug').addEventListener('click', function () {
+        const id = document.getElementById('st-bd-avail-id').value;
+        const out = document.getElementById('st-bd-avail-debug-out');
+        if (!id) {
+          alert('Bitte zuerst eine Termin-ID eingeben (Anfrage-Buchung).');
+          return;
+        }
+        out.style.display = 'block';
+        out.textContent = 'Lädt…';
+        fetch(availabilityEndpoint + '?appointmentId=' + encodeURIComponent(id) + '&debug=1', { headers: { 'X-WP-Nonce': nonce } })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            out.textContent = JSON.stringify(data, null, 2);
           })
           .catch(function (err) {
             out.textContent = 'Verbindungsfehler: ' + err;
