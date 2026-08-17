@@ -171,20 +171,27 @@ Zuweisen-Request). Der letzte Punkt ist **noch nicht an einer echten
 Buchung verifiziert** — beim ersten Live-Test einer Zuweisung unbedingt
 prüfen, ob die Uhrzeit in Amelia danach stimmt.
 
-⚠️ **Offen (21.08.2026): Amelia-Nonce nicht gefunden.** Der
-Verfügbarkeits-Check gegen `/slots` schlägt aktuell mit `"Amelia-Nonce
-nicht auf der Bookings-Seite gefunden."` fehl — Datum/Zeit/Geschlecht/
-Kandidat wurden dabei aber schon richtig ermittelt (nur der Amelia-interne
-Aufruf selbst kommt nicht durch). Das betrifft potenziell auch das
-bestehende Freigeben (`/booking-approve`) und die Zuweisung
-(`/booking-reassign`), da alle drei denselben `st_scrape_amelia_nonce_()`
-benutzen. Diagnose verbessert (Antwort-Code, Länge und ein Ausschnitt der
-tatsächlich abgerufenen Seite liegen jetzt bei jedem Fehler unter
-`debug` in der REST-Antwort) — nächster Schritt: einmal den
-"Verfügbarkeit-Debug"-Button erneut klicken und den `debug`-Ausschnitt
-ansehen, um zu erkennen, was `admin.php?page=wpamelia-bookings` beim
-serverseitigen Abruf tatsächlich zurückgibt (Login-Seite? richtige Seite
-mit anderem Nonce-Format? leer?).
+**Behoben (21.08.2026): Amelia-Nonce nicht gefunden.** Ursache laut
+Debug-Ausschnitt: Der serverseitige Abruf von
+`admin.php?page=wpamelia-bookings` bekam die WordPress-**Login-Seite**
+zurück statt der echten Amelia-Seite. Grund: WordPress schützt
+`/wp-admin/`-Seiten (also auch `admin.php` und `admin-ajax.php`) mit einem
+zusätzlichen Auth-Cookie, das der Browser nur an Aufrufe **innerhalb**
+`/wp-admin/` schickt (Cookie-Pfad-Beschränkung, `ADMIN_COOKIE_PATH`). Das
+Dashboard läuft bewusst außerhalb von `/wp-admin` (mobile Seite ohne
+Admin-Oberfläche), auch die REST-Route liegt unter `/wp-json/` — dieser
+Cookie landet deshalb strukturell nie in `$_COOKIE`, unabhängig davon, wie
+er weitergereicht wird. Betraf potenziell auch das bestehende Freigeben
+(`/booking-approve`) und die Zuweisung (`/booking-reassign`), da alle drei
+`st_forward_cookies_()`/`st_scrape_amelia_nonce_()` teilen.
+
+**Fix:** `st_forward_cookies_()` erzeugt den fehlenden Admin-Cookie jetzt
+selbst per `wp_generate_auth_cookie()` für den bereits per
+`manage_options` geprüften aktuellen Nutzer, statt auf einen nie
+vorhandenen Browser-Cookie zu hoffen — dieselbe WordPress-Funktion, die
+auch beim echten Login greift. Kurzlebig (10 Minuten Gültigkeit), da nur
+für den einen unmittelbaren Server-zu-Server-Request gebraucht, nirgends
+gespeichert.
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 

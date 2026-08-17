@@ -10,8 +10,12 @@
  *   2026-08-21.2  Zeitzonen-Fix (UTC→lokal) + Verfügbarkeit-Debug-Button
  *   2026-08-21.3  Service-Pairing per DB-Lookup statt fester Tabelle
  *   2026-08-21.4  Diagnosedaten bei Nonce-Fehler, Versionsnummer eingeführt
+ *   2026-08-21.5  Fix: fehlender /wp-admin-Cookie selbst erzeugt statt
+ *                 auf Browser-Weiterleitung zu hoffen (Login-Seite statt
+ *                 Amelia-Bookings-Seite war die eigentliche Ursache des
+ *                 Nonce-Fehlers)
  */
-define('ST_BD_VERSION', '2026-08-21.4');
+define('ST_BD_VERSION', '2026-08-21.5');
 
 /**
  * ST Buchungs-Dashboard
@@ -83,6 +87,28 @@ function st_forward_cookies_() {
     foreach ($_COOKIE as $name => $value) {
         $cookies[] = new WP_Http_Cookie(['name' => $name, 'value' => $value]);
     }
+
+    // WordPress schützt /wp-admin/-Seiten (admin.php, admin-ajax.php) mit
+    // einem zusätzlichen Auth-Cookie, den der Browser NUR an /wp-admin/-
+    // Aufrufe schickt (Cookie-Pfad-Beschränkung, siehe ADMIN_COOKIE_PATH).
+    // Unser Dashboard läuft bewusst außerhalb von /wp-admin, auch die
+    // REST-Route liegt unter /wp-json/ — dieser Cookie landet deshalb nie
+    // in $_COOKIE, egal von welcher Seite aus aufgerufen wird (gefunden
+    // 21.08.2026: admin.php?page=wpamelia-bookings kam server-seitig immer
+    // als Login-Seite zurück). Deshalb hier für den bereits per
+    // manage_options geprüften aktuellen Nutzer frisch erzeugen, statt auf
+    // einen nie vorhandenen Browser-Cookie zu hoffen — dieselbe
+    // WordPress-eigene Funktion, die auch beim echten Login läuft.
+    $user_id = get_current_user_id();
+    if ($user_id) {
+        $scheme = is_ssl() ? 'secure_auth' : 'auth';
+        $cookie_name = is_ssl() ? SECURE_AUTH_COOKIE : AUTH_COOKIE;
+        $cookies[] = new WP_Http_Cookie([
+            'name' => $cookie_name,
+            'value' => wp_generate_auth_cookie($user_id, time() + 10 * MINUTE_IN_SECONDS, $scheme),
+        ]);
+    }
+
     return $cookies;
 }
 
