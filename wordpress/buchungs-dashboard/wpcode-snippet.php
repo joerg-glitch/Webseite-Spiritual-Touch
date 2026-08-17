@@ -24,8 +24,14 @@
  *                 (Jörgs Vorgabe: "eigenen Termin ausschließen"). Eva als
  *                 Backup-Kandidatin für "weiblich"/"egal" ergänzt (Jörg
  *                 selbst bleibt bewusst außen vor).
+ *   2026-08-23.2  Fix: Anfragen/Bestätigt-Filter (isConfirmed) erkennt
+ *                 jetzt an der providerId (Pseudo-Mitarbeiter 36/37/38)
+ *                 statt am Servicenamen — die alte "(bestätigt)"-Text-
+ *                 Prüfung markierte normale, direkt an einen echten
+ *                 Mitarbeiter gebuchte Dienstleistungen (z. B.
+ *                 Körperarbeit) fälschlich als "Anfrage".
  */
-define('ST_BD_VERSION', '2026-08-23.1');
+define('ST_BD_VERSION', '2026-08-23.2');
 
 /**
  * ST Buchungs-Dashboard
@@ -501,6 +507,7 @@ function st_booking_overview_handler(WP_REST_Request $request) {
             a.bookingStart,
             a.bookingEnd,
             a.status AS appointment_status,
+            a.providerId AS provider_id,
             s.name AS service_name,
             CONCAT(p.firstName, ' ', p.lastName) AS employee_name,
             cb.id AS booking_id,
@@ -808,12 +815,19 @@ add_shortcode('st_booking_dashboard', function () {
       let allAppointments = [];
       let activeFilter = 'all';
 
-      // "Anfrage" = noch beim Platzhalter-Service, "Bestätigt" = auf das
-      // "(bestätigt)"-Duplikat mit echtem Mitarbeiter umgehängt (siehe Jörgs
-      // Kategorie-Mechanik: versteckte Kategorie "Bestätigt" mit einem
-      // "(bestätigt)"-Duplikat pro Dienstleistung, allen Mitarbeitern zugeordnet).
+      // "Anfrage" = noch auf einem der drei Geschlechts-Pseudo-Mitarbeiter
+      // (36/37/38, siehe README) hängend, "Bestätigt" = schon auf einen
+      // echten Mitarbeiter umgehängt. Ursprünglich wurde das am Namenszusatz
+      // "(bestätigt)" im Service erkannt — das hat aber nur die vier
+      // extra angelegten Anfrage/Bestätigt-Servicepaare erfasst und normale
+      // Dienstleistungen ohne diesen Namenszusatz (z. B. "Körperarbeit",
+      // direkt mit einem echten Mitarbeiter gebucht) fälschlich als
+      // "Anfrage" markiert (gefunden 23.08.2026 am Anfragen/Bestätigt-
+      // Filter). Die providerId ist zuverlässiger, weil sie unabhängig vom
+      // jeweiligen Servicenamen ist.
+      var PSEUDO_PROVIDER_IDS = [36, 37, 38];
       function isConfirmed(a) {
-        return (a.service_name || '').toLowerCase().indexOf('(bestätigt)') !== -1;
+        return PSEUDO_PROVIDER_IDS.indexOf(Number(a.provider_id)) === -1;
       }
 
       function fmtDate(iso) {

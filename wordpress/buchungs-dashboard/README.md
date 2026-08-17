@@ -228,6 +228,38 @@ merkt einen fehlenden männlichen Treffer daran, dass die Anfrage auf
 "Anfrage" stehen bleibt, und entscheidet dann selbst, ob er den Termin
 manuell übernimmt.
 
+**Erster echter Live-Test erfolgreich (23.08.2026):** Termin #56
+(Intuitive Tantramassage, 21.08. 15:30) automatisch Dominik zugewiesen,
+Freigeben-Klick hat funktioniert, Bestätigungsmail raus, Termin korrekt in
+Amelia/Dominiks Kalender eingetragen — Uhrzeit stimmte. Damit ist auch der
+in "Zeitzone" oben als unverifiziert markierte Reassign-Payload-Teil
+bestätigt.
+
+**Behoben (23.08.2026): Anfragen/Bestätigt-Filter zeigte falsche Werte.**
+Ursache: `isConfirmed()` im Dashboard prüfte bisher, ob `"(bestätigt)"` im
+Servicenamen steckt — das erfasst nur die vier extra angelegten
+Anfrage/Bestätigt-Servicepaare. Normale Dienstleistungen, die nie über
+dieses Namensmuster liefen (z. B. "Körperarbeit (Sexological Bodywork)",
+direkt mit einem echten Mitarbeiter gebucht), wurden dadurch fälschlich
+als "Anfrage" markiert. **Fix:** `isConfirmed()` prüft jetzt die
+`providerId` der Buchung gegen die drei Pseudo-Mitarbeiter (36/37/38) —
+dafür liefert `booking-overview` jetzt zusätzlich `provider_id` mit.
+Zuverlässiger, weil unabhängig vom jeweiligen Servicenamen.
+
+⚠️ **Offen (23.08.2026): Dominik wird trotz Blockade vorgeschlagen.**
+Jörg meldet: Für Termin/Zeitpunkt 21.08. 15:30 schlägt die Automatik
+weiterhin Dominik vor, obwohl der zu dem Zeitpunkt laut Kalender blockiert
+ist. Mögliche Ursache: Termin #56 (genau dieser Zeitpunkt) wurde durch den
+ersten Live-Test bereits Dominik zugewiesen — die Selbstblockade-
+Gegenprobe (`st_provider_has_other_appointment_()`, siehe oben)
+schließt bewusst die gerade bewertete Appointment-ID von der Konflikt-
+Prüfung aus. Wird jetzt versehentlich erneut für Termin #56 geprüft, wäre
+das nicht mehr "der eigene, noch unzugewiesene Termin", sondern Dominiks
+echte, bereits bestätigte Buchung — die Gegenprobe würde sie trotzdem
+ausschließen und ihn fälschlich als frei zeigen. Unbestätigte Vermutung,
+noch nicht mit echten Daten geprüft. **Für die Diagnose gebraucht:** die
+genaue Termin-ID und ein frischer "Verfügbarkeit-Debug"-Aufruf dafür.
+
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
 **Kategorien:** 8 = Anfrage, 7 = Bestätigt (weitere Kategorien existieren,
