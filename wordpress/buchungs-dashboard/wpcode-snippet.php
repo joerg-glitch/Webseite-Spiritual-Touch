@@ -330,7 +330,7 @@ add_shortcode('st_booking_dashboard', function () {
       // Kategorie-Mechanik: versteckte Kategorie "Bestätigt" mit einem
       // "(bestätigt)"-Duplikat pro Dienstleistung, allen Mitarbeitern zugeordnet).
       function isConfirmed(a) {
-        return (a.service_name || '').indexOf('(bestätigt)') !== -1;
+        return (a.service_name || '').toLowerCase().indexOf('(bestätigt)') !== -1;
       }
 
       function fmtDate(iso) {

@@ -110,45 +110,121 @@ wechselt — das musste nicht separat nachgebaut werden):
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
 
-## Nächster Schritt: Kategorie/Dienstleistung/Mitarbeiter direkt im Dashboard ändern
+## Nächster Schritt: "Smart Freigeben" (17.08.2026, Jörgs Idee)
 
-Noch nicht gebaut, weil beim "Aktualisieren"-Request das **komplette**
-Termin-Objekt zurückgeschickt werden muss — inklusive aller Felder, die
-gar nicht geändert werden (Kundendaten, Freitext-Nachricht, Coupon,
-Zusatzoptionen, Uhrzeit, Notiz-Feld usw.). Woher diese Werte für einen noch
-unbekannten, beliebigen Termin nehmen? Zwei Möglichkeiten:
+**Die Idee:** Klick auf "Freigeben" bei einer Anfrage-Buchung löst nicht
+mehr sofort die Freigabe aus, sondern erst eine Prüfung: welche der
+Mitarbeiter, die zur gewählten Geschlechts-Präferenz des Kunden passen,
+sind am Termin-Datum laut Amelia tatsächlich frei? Bei genau einem Treffer
+sofort automatisch zuweisen und freigeben. Bei mehreren ein Auswahl-Popup
+im Dashboard, Jörg tippt auf eine Option, der Rest (Kategorie auf
+"Bestätigt", Dienstleistung auf die passende "(Bestätigt)"-Variante,
+Mitarbeiter setzen, freigeben) läuft automatisch. Bei null Treffern:
+Meldung statt Aktion, Jörg entscheidet manuell.
 
-1. Es gibt einen eigenen Request, der beim Öffnen einer Buchung zum
-   Bearbeiten den vollständigen Termin lädt (bevor irgendetwas geändert
-   wird) — genau der fehlt im bisherigen Mitschnitt, vermutlich weil die
-   Aufnahme erst mittendrin gestartet wurde.
-2. Falls es diesen nicht gibt: die Liste, mit der die komplette
-   Bookings-Seite beim Laden befüllt wird, enthält vermutlich schon alle
-   Termine vollständig — dann reicht der allererste Request beim
-   Seitenaufruf.
+Bewusst **kein Cowork/LLM** für die Entscheidungslogik — "wer ist frei"
+und "passt das Geschlecht" sind reine Ja/Nein-Abfragen auf strukturierten
+Daten, kein Sprachverständnis nötig. Gehört in deterministischen Code,
+läuft dadurch bei jedem Klick sofort und kostenlos.
 
-**Deshalb noch einmal ca. 5 Minuten, diesmal von Anfang an mitschneiden:**
+### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
-1. In Chrome/Safari die Amelia-Bookings-Seite (Amelia → Bookings)
-   **schließen**, falls offen.
-2. DevTools öffnen (Rechtsklick → "Untersuchen"/"Inspect"), Reiter
-   **Netzwerk/Network**, Filter auf **Fetch/XHR**, Netzwerk-Liste leeren
-   (🚫-Symbol).
-3. **Erst jetzt** die Amelia-Bookings-Seite neu laden/öffnen.
-4. Die Buchung anklicken, die geändert werden soll, direkt ihr Bearbeiten-
-   Fenster öffnen — **noch nichts ändern**.
-5. Alle bis hierhin aufgetauchten Fetch/XHR-Requests durchgehen und die
-   herauskopieren (Rechtsklick → "Copy as cURL"), deren URL `/appointments`
-   oder `/bookings` enthält (nicht `/slots`, `/coupons` — die kennen wir
-   schon). Am besten alle mitschicken, die in Frage kommen — lieber zu viel
-   als zu wenig.
-6. Danach wie beim letzten Mal Kategorie, Dienstleistung und Mitarbeiter
-   ändern und speichern, den dabei auftauchenden "Aktualisieren"-Request
-   nochmal mitschicken (zur Bestätigung, dass er identisch zum vorherigen
-   Mitschnitt ist).
+**Kategorien:** 8 = Anfrage, 7 = Bestätigt (weitere Kategorien existieren,
+sind für diesen Baustein nicht relevant).
 
-⚠️ Bitte die cURL-Befehle wie letztes Mal in ein Dokument kopieren und mir
-so schicken — aber denk daran: die enthaltenen Cookie-/Token-Werte sind
-live gültig, siehe Sicherheitshinweis oben. Sobald ich die Requests habe,
-baue ich eine "Fetch aktuellen Termin → nur Kategorie/Service/Mitarbeiter
-ändern → zurückschicken"-Aktion plus Dropdowns im Dashboard.
+**Anfrage → Bestätigt Service-Paare** (per Namensmuster erkennbar, gleiche
+Dauer in beiden):
+
+| Basis-Dienstleistung | Anfrage-ID | Bestätigt-ID | Dauer |
+|---|---|---|---|
+| Intuitive Tantramassage | 37 | 33 | 5400s |
+| Frauen-Heilmassage | 39 | 35 | 7200s |
+| Intimmassage Workshop | 38 | 34 | 12600s |
+| Ritual zu Dritt | 40 | 36 | 7200s |
+
+**Die drei Geschlechts-Pseudo-Mitarbeiter** (das wählt der Kunde tatsächlich
+im Buchungsformular, landet als `providerId` auf dem Termin):
+
+| providerId | Bedeutung |
+|---|---|
+| 38 | Geschlecht egal |
+| 37 | männliche Begleitung gewünscht |
+| 36 | weibliche Begleitung gewünscht |
+
+**Echte Mitarbeiter für die Anfrage-Zuweisung** (Amelia-ID, Geschlecht laut
+Jörg 17.08.2026 — alle außer Jörg & Eva, die haben eigene feste
+Buchungswege, siehe auch `apps-script/anfragen-verfuegbarkeit-sync`):
+
+| Name | Amelia-ID | Geschlecht |
+|---|---|---|
+| Tara | 4 | weiblich |
+| Asmita | 5 | weiblich |
+| Alea | 6 | weiblich |
+| Stephanie | 7 | weiblich |
+| Karen | 8 | weiblich |
+| Sarah | 9 | weiblich |
+| Maxine | 17 | weiblich |
+| Amila | 28 | weiblich |
+| Dominik | 29 | männlich |
+
+⚠️ **Offen:** Konstantin taucht in der Amelia-Mitarbeiterliste nicht auf
+(9 statt 10 Personen aus dem Verfügbarkeits-Sync). Vor dem Bauen bei Jörg
+nachfragen, ob er in Amelia noch angelegt werden muss oder ob er bewusst
+nicht Teil der Anfrage-Zuweisung sein soll.
+
+### Payload-Form für die Zuweisung (aus dem DevTools-Mitschnitt vom 16.08. bekannt)
+
+Der "Aktualisieren"-Request (`POST admin-ajax.php?action=wpamelia_api&call=
+/appointments/{id}`) erwartet das **komplette** Termin-Objekt zurück, z. B.:
+
+```json
+{
+  "bookings": [{"coupon": {"id": null}, "customerId": 23, "customFields": {...}, "duration": 5400, "extras": [], "id": 64, "packageCustomerService": null, "persons": 1, "status": "pending"}],
+  "bookingStart": "2026-08-19 10:00:00",
+  "categoryId": 7,
+  "date": "2026-08-19",
+  "id": 38,
+  "internalNotes": "",
+  "lessonSpace": false,
+  "locationId": 11,
+  "notifyParticipants": 1,
+  "providerId": 17,
+  "recurring": [],
+  "removedBookings": [],
+  "serviceId": 33,
+  "time": "10:00",
+  "createPaymentLinks": true
+}
+```
+
+**Wichtige Erkenntnis:** Alle diese Felder (außer `categoryId`, `serviceId`,
+`providerId`, die geändert werden sollen) lassen sich vermutlich direkt aus
+der Datenbank lesen — dieselbe Erweiterung der `booking-overview`-SQL-Abfrage
+(zusätzlich `customerId`, `duration`, `persons`, `internalNotes`,
+`locationId`, `couponId`, die JSON-Spalte `customFields` roh übernehmen,
+`bookingStart` in Datum/Uhrzeit aufteilen). Damit entfällt vermutlich ein
+weiterer DevTools-Mitschnitt (Fetch-vor-dem-Ändern) — nur beim ersten Test
+genau prüfen, ob wirklich alle Felder korrekt befüllt sind, bevor das an
+einer echten Buchung ausprobiert wird.
+
+### Bauplan
+
+1. `booking-overview`-SQL um die oben genannten Rohfelder erweitern.
+2. Neue Route `POST /booking-reassign` (`{appointmentId, providerId}`):
+   baut daraus das komplette Payload-Objekt (Rest aus der DB-Zeile), setzt
+   `categoryId` fest auf 7 und `serviceId` auf das zur aktuellen
+   Dienstleistung passende Bestätigt-Pendant (Tabelle oben, oder per
+   Namensmuster "X (Anfrage)" → "X (Bestätigt)" auflösen), ruft
+   `st_amelia_ajax_call_('POST', '/appointments/' . $id, [], $payload)`.
+3. Neue Route, die für eine Liste von Kandidaten-Mitarbeitern Amelias
+   eigenen `/slots`-Endpunkt abfragt (Tagesbereich um den Termin,
+   `serviceId` = Bestätigt-Pendant, `providerIds` = Kandidat,
+   `serviceDuration` = Dienstleistungsdauer) und prüft, ob die exakte
+   Startzeit des Termins in der Ergebnisliste auftaucht — dieselbe Abfrage,
+   die Amelias eigene Oberfläche beim Dropdown-Wechsel selbst auslöst
+   (siehe `/slots`-Beispiel im DevTools-Mitschnitt vom 16.08.).
+4. Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung löst zuerst den
+   Verfügbarkeits-Check aus statt direkt freizugeben — 1 Treffer: sofort
+   zuweisen + freigeben (bestehende `/booking-approve`-Route danach
+   aufrufen). Mehrere Treffer: Auswahl-Popup mit Namen. Null Treffer:
+   Meldung, keine Aktion.
