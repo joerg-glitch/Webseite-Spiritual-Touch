@@ -292,6 +292,7 @@ add_shortcode('st_booking_dashboard', function () {
     $nonce = wp_create_nonce('wp_rest');
     $endpoint = esc_url_raw(rest_url('st/v1/booking-overview'));
     $approve_endpoint = esc_url_raw(rest_url('st/v1/booking-approve'));
+    $reference_endpoint = esc_url_raw(rest_url('st/v1/amelia-reference'));
     $bookings_admin_url = esc_url_raw(admin_url('admin.php?page=wpamelia-bookings'));
 
     ob_start();
@@ -309,11 +310,15 @@ add_shortcode('st_booking_dashboard', function () {
       </div>
       <div id="st-bd-status" style="color:var(--st-soft);font-size:0.9rem;margin-bottom:10px;"></div>
       <div id="st-bd-list"></div>
+      <hr style="border:none;border-top:1px solid var(--st-line);margin:18px 0 10px;">
+      <button id="st-bd-reference" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Referenz anzeigen (Kategorien/Dienstleistungen/Mitarbeiter)</button>
+      <pre id="st-bd-reference-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
     </div>
     <script>
     (function () {
       const endpoint = <?php echo wp_json_encode($endpoint); ?>;
       const approveEndpoint = <?php echo wp_json_encode($approve_endpoint); ?>;
+      const referenceEndpoint = <?php echo wp_json_encode($reference_endpoint); ?>;
       const nonce = <?php echo wp_json_encode($nonce); ?>;
       const statusLabels = { pending: 'Ausstehend', approved: 'Freigegeben', canceled: 'Storniert', rejected: 'Abgelehnt', noshow: 'No-Show' };
       const statusColors = { pending: '#B5654A', approved: '#7E8A6F', canceled: '#999', rejected: '#A24A3E', noshow: '#A24A3E' };
@@ -443,6 +448,31 @@ add_shortcode('st_booking_dashboard', function () {
       });
 
       document.getElementById('st-bd-refresh').addEventListener('click', load);
+
+      document.getElementById('st-bd-reference').addEventListener('click', function () {
+        const out = document.getElementById('st-bd-reference-out');
+        out.style.display = 'block';
+        out.textContent = 'Lädt…';
+        fetch(referenceEndpoint, { headers: { 'X-WP-Nonce': nonce } })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.error) {
+              out.textContent = 'Fehler (' + (data.table || '?') + '): ' + (data.detail || data.error);
+              return;
+            }
+            let text = 'KATEGORIEN\n';
+            data.categories.forEach(function (c) { text += c.id + '  ' + c.name + '\n'; });
+            text += '\nDIENSTLEISTUNGEN\n';
+            data.services.forEach(function (s) { text += s.id + '  ' + s.name + '  (Kategorie ' + s.categoryId + ', ' + s.duration + 's)\n'; });
+            text += '\nMITARBEITER\n';
+            data.providers.forEach(function (p) { text += p.id + '  ' + p.firstName + ' ' + p.lastName + '  ' + p.email + '\n'; });
+            out.textContent = text;
+          })
+          .catch(function (err) {
+            out.textContent = 'Verbindungsfehler: ' + err;
+          });
+      });
+
       load();
     })();
     </script>
