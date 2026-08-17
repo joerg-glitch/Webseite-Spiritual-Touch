@@ -258,7 +258,7 @@ add_shortcode('st_booking_dashboard', function () {
     ?>
     <div id="st-bd" style="--st-sand:#F3ECE1;--st-card:#FBF7F0;--st-plum:#3E2A34;--st-soft:#6B5560;--st-clay:#B5654A;--st-clay-d:#9E5440;--st-line:#E4D9C8;--st-danger:#A24A3E;--st-sage:#7E8A6F;font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:16px;background:var(--st-sand);border-radius:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h2 style="margin:0;color:var(--st-plum);font-size:1.2rem;">Buchungen (nächste <span id="st-bd-days">30</span> Tage)</h2>
+        <h2 style="margin:0;color:var(--st-plum);font-size:1.2rem;">Buchungen (nächste <span id="st-bd-days">90</span> Tage)</h2>
         <button id="st-bd-refresh" style="background:var(--st-clay);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.9rem;">Aktualisieren</button>
       </div>
       <a href="<?php echo $bookings_admin_url; ?>" target="_blank" rel="noopener" style="display:block;margin-bottom:14px;color:var(--st-clay-d);font-size:0.85rem;">→ Amelia-Buchungen im wp-admin öffnen (zum Freigeben/Ändern)</a>
@@ -376,12 +376,15 @@ add_shortcode('st_booking_dashboard', function () {
 
       function load() {
         document.getElementById('st-bd-status').textContent = 'Lädt…';
-        fetch(endpoint + '?days=30', { headers: { 'X-WP-Nonce': nonce } })
+        fetch(endpoint + '?days=90', { headers: { 'X-WP-Nonce': nonce } })
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (data.error) {
               document.getElementById('st-bd-status').textContent = 'Fehler: ' + (data.detail || data.error);
               return;
+            }
+            if (data.days) {
+              document.getElementById('st-bd-days').textContent = data.days;
             }
             allAppointments = data.appointments || [];
             render(allAppointments);
