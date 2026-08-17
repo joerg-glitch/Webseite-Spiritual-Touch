@@ -79,6 +79,14 @@ sondern echte WordPress-Anmeldung:
    sein) — am besten danach "Zum Home-Bildschirm hinzufügen", dann verhält
    sie sich wie eine App.
 
+**Versionsnummer prüfen:** Ganz unten im Dashboard steht seit dem
+21.08.2026 eine Versionsnummer (z. B. "Version 2026-08-21.4"). Nach jedem
+Deploy kurz die Seite neu laden und die Nummer mit der `ST_BD_VERSION` ganz
+oben in `wpcode-snippet.php` vergleichen — stimmen sie überein, ist das
+Deploy wirklich angekommen. Bei jeder inhaltlichen Änderung an der Datei
+wird die Nummer erhöht (Datum + laufende Nummer, siehe Verlauf im
+Datei-Header).
+
 ## Falls die erste Ausführung einen SQL-Fehler zeigt
 
 Die Abfrage geht von den Standard-Amelia-Tabellen/-Spalten aus
@@ -162,6 +170,21 @@ zunächst nicht und zeigte Zeiten 2 Stunden früher an als in Amelia. Fix:
 Zuweisen-Request). Der letzte Punkt ist **noch nicht an einer echten
 Buchung verifiziert** — beim ersten Live-Test einer Zuweisung unbedingt
 prüfen, ob die Uhrzeit in Amelia danach stimmt.
+
+⚠️ **Offen (21.08.2026): Amelia-Nonce nicht gefunden.** Der
+Verfügbarkeits-Check gegen `/slots` schlägt aktuell mit `"Amelia-Nonce
+nicht auf der Bookings-Seite gefunden."` fehl — Datum/Zeit/Geschlecht/
+Kandidat wurden dabei aber schon richtig ermittelt (nur der Amelia-interne
+Aufruf selbst kommt nicht durch). Das betrifft potenziell auch das
+bestehende Freigeben (`/booking-approve`) und die Zuweisung
+(`/booking-reassign`), da alle drei denselben `st_scrape_amelia_nonce_()`
+benutzen. Diagnose verbessert (Antwort-Code, Länge und ein Ausschnitt der
+tatsächlich abgerufenen Seite liegen jetzt bei jedem Fehler unter
+`debug` in der REST-Antwort) — nächster Schritt: einmal den
+"Verfügbarkeit-Debug"-Button erneut klicken und den `debug`-Ausschnitt
+ansehen, um zu erkennen, was `admin.php?page=wpamelia-bookings` beim
+serverseitigen Abruf tatsächlich zurückgibt (Login-Seite? richtige Seite
+mit anderem Nonce-Format? leer?).
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 

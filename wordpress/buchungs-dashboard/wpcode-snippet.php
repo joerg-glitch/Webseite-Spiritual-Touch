@@ -1,5 +1,19 @@
 <?php
 /**
+ * Versionsnummer, unten im Dashboard sichtbar (siehe Shortcode) — damit auf
+ * einen Blick im Browser erkennbar ist, ob ein WPCode-Deploy die neueste
+ * Version tatsächlich übernommen hat, ohne dafür in GitHub nachsehen zu
+ * müssen. Bei jeder inhaltlichen Änderung an dieser Datei erhöhen.
+ *
+ * Verlauf:
+ *   2026-08-21.1  Smart Freigeben gebaut (Verfügbarkeitsprüfung, Zuweisung)
+ *   2026-08-21.2  Zeitzonen-Fix (UTC→lokal) + Verfügbarkeit-Debug-Button
+ *   2026-08-21.3  Service-Pairing per DB-Lookup statt fester Tabelle
+ *   2026-08-21.4  Diagnosedaten bei Nonce-Fehler, Versionsnummer eingeführt
+ */
+define('ST_BD_VERSION', '2026-08-21.4');
+
+/**
  * ST Buchungs-Dashboard
  *
  * Mobile Lese-Übersicht über anstehende Amelia-Buchungen (inkl. "Ausstehend"),
@@ -89,7 +103,15 @@ function st_scrape_amelia_nonce_() {
     }
     $body = wp_remote_retrieve_body($response);
     if (!preg_match('/wpAmeliaNonce["\']?\s*[:=]\s*["\']([a-zA-Z0-9]{6,20})["\']/', $body, $m)) {
-        return new WP_Error('nonce_not_found', 'Amelia-Nonce nicht auf der Bookings-Seite gefunden.');
+        // Diagnosedaten mitgeben statt nur "nicht gefunden" — sonst lässt
+        // sich von außen nicht unterscheiden, ob z. B. eine Login-Seite,
+        // eine leere Antwort oder die richtige Seite mit geändertem
+        // Nonce-Format zurückkam.
+        return new WP_Error('nonce_not_found', 'Amelia-Nonce nicht auf der Bookings-Seite gefunden.', [
+            'response_code' => wp_remote_retrieve_response_code($response),
+            'html_length' => strlen($body),
+            'html_snippet' => substr($body, 0, 1000),
+        ]);
     }
     return ['nonce' => $m[1], 'html' => $body];
 }
@@ -466,7 +488,7 @@ function st_booking_approve_handler(WP_REST_Request $request) {
 
     $result = st_amelia_ajax_call_('POST', '/appointments/status/' . $id, [], ['status' => 'approved']);
     if (is_wp_error($result)) {
-        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message()], 502);
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
     }
 
     return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
@@ -524,7 +546,7 @@ function st_booking_availability_handler(WP_REST_Request $request) {
         ];
         $result = st_amelia_ajax_call_('GET', '/slots', $query);
         if (is_wp_error($result)) {
-            $raw_per_candidate[$provider_id] = ['error' => $result->get_error_message()];
+            $raw_per_candidate[$provider_id] = ['error' => $result->get_error_message(), 'debug' => $result->get_error_data()];
             continue;
         }
         if ($debug) {
@@ -576,7 +598,7 @@ function st_booking_reassign_handler(WP_REST_Request $request) {
     $payload = st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_id);
     $result = st_amelia_ajax_call_('POST', '/appointments/' . $appointment_id, [], $payload);
     if (is_wp_error($result)) {
-        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message()], 502);
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
     }
 
     return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
@@ -585,7 +607,7 @@ function st_booking_reassign_handler(WP_REST_Request $request) {
 function st_amelia_bootstrap_debug_handler(WP_REST_Request $request) {
     $ctx = st_scrape_amelia_nonce_();
     if (is_wp_error($ctx)) {
-        return new WP_REST_Response(['error' => $ctx->get_error_message()], 502);
+        return new WP_REST_Response(['error' => $ctx->get_error_message(), 'debug' => $ctx->get_error_data()], 502);
     }
 
     $html = $ctx['html'];
@@ -675,6 +697,7 @@ add_shortcode('st_booking_dashboard', function () {
         <button id="st-bd-avail-debug" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Verfügbarkeit-Debug (Smart Freigeben)</button>
       </div>
       <pre id="st-bd-avail-debug-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
+      <div style="text-align:center;color:var(--st-soft);font-size:0.7rem;margin-top:14px;">Version <?php echo esc_html(ST_BD_VERSION); ?></div>
     </div>
     <script>
     (function () {
