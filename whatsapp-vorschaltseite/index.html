@@ -44,7 +44,7 @@
     --wa-icon: #54656f;
   }
   @media (prefers-color-scheme: dark){
-    :root{
+    :root:not([data-theme="light"]){
       --wa-bg: #0b141a;
       --wa-bubble: #202c33;
       --wa-bubble-tail: #202c33;
@@ -53,6 +53,15 @@
       --wa-input-bg: #202c33;
       --wa-icon: #aebac1;
     }
+  }
+  :root[data-theme="dark"]{
+    --wa-bg: #0b141a;
+    --wa-bubble: #202c33;
+    --wa-bubble-tail: #202c33;
+    --wa-text: #e9edef;
+    --wa-text-muted: #8696a0;
+    --wa-input-bg: #202c33;
+    --wa-icon: #aebac1;
   }
   *{box-sizing:border-box;}
   html,body{
