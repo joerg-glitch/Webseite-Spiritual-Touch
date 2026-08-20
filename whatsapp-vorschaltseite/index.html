@@ -11,15 +11,17 @@
   // ============================================================
   window.ST_CONFIG = {
     // Deine echte WhatsApp-Nummer im Format 49xxxxxxxxxxx (ohne +, ohne Leerzeichen)
-    whatsappNumber: "4915758098028",
+    whatsappNumber: "4915781504469",
 
     // Vorausgefüllter Text, der beim Öffnen von WhatsApp schon im Feld steht
     whatsappPrefill: "Hallo Spiritual Touch, ich habe eine kurze Frage: ",
 
-    // Link zum Amelia-Buchungstool (Termin direkt buchen)
-    bookingUrl: "https://spiritual-touch.de/buchen/",
+    // Bewusst leer: "Termin buchen" hat keinen eigenen Link, sondern wird über
+    // die CSS-Klasse st-termin-buchen-trigger auf dem Button von Amelia abgefangen.
+    bookingUrl: "",
 
-    // Link zur Seite "Kostenloses Vorgespräch"
+    // Link zur Seite "Kostenloses Vorgespräch" (Fallback, falls die Amelia-Klasse
+    // st-vorgespraech-trigger auf dem Button noch nicht abgefangen wird)
     vorgesprächUrl: "https://spiritual-touch.de/kostenloses-vorgespraech/",
 
     // Link zur Preise-Seite
@@ -270,7 +272,7 @@
       </div>
 
       <div class="wa-msg-row" id="row-opt1" style="display:none">
-        <button class="wa-option" id="btn-booking" type="button">
+        <button class="wa-option st-termin-buchen-trigger" id="btn-booking" type="button">
           <span class="wa-option-emoji">📅</span>
           <span>
             <span class="wa-option-title" style="display:block">Termin buchen</span>
@@ -281,7 +283,7 @@
       </div>
 
       <div class="wa-msg-row" id="row-opt2" style="display:none">
-        <button class="wa-option" id="btn-vorgespraech" type="button">
+        <button class="wa-option st-vorgespraech-trigger" id="btn-vorgespraech" type="button">
           <span class="wa-option-emoji">🤍</span>
           <span>
             <span class="wa-option-title" style="display:block">Unsicher? Vorgespräch buchen</span>
@@ -336,12 +338,13 @@
   document.getElementById('link-preise').href = c.preiseUrl;
   document.getElementById('link-faq').href = c.faqUrl;
 
-  document.getElementById('btn-booking').addEventListener('click', function(){
-    window.open(c.bookingUrl, '_blank', 'noopener');
-  });
-  document.getElementById('btn-vorgespraech').addEventListener('click', function(){
-    window.open(c.vorgesprächUrl, '_blank', 'noopener');
-  });
+  // "Termin buchen" hat bewusst keinen eigenen Klick-Handler: die Klasse
+  // st-termin-buchen-trigger auf dem Button wird von Amelia selbst abgefangen.
+  if (c.vorgesprächUrl){
+    document.getElementById('btn-vorgespraech').addEventListener('click', function(){
+      window.open(c.vorgesprächUrl, '_blank', 'noopener');
+    });
+  }
   function openWhatsApp(){
     window.location.href = waLink(c.whatsappPrefill);
   }
