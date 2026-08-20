@@ -17,10 +17,10 @@
     whatsappPrefill: "Hallo Spiritual Touch, ich habe eine kurze Frage: ",
 
     // Link zur Preise-Seite
-    preiseUrl: "https://spiritual-touch.de/angebot-preise/",
+    preiseUrl: "https://spiritual-touch.de/praxis/honorare/",
 
     // Link zur FAQ-Seite
-    faqUrl: "https://spiritual-touch.de/faq-fuer-tantramassage-bei-spiritual-touch-in-muenchen/"
+    faqUrl: "https://spiritual-touch.de/praxis/faq/"
 
     // "Termin buchen" und "Vorgespräch" haben bewusst keinen eigenen Link mehr:
     // Beide Buttons tragen nur noch die Amelia-Trigger-Klassen
@@ -176,7 +176,7 @@
     max-width:65%;
     background:transparent;
     color:var(--wa-text-muted);
-    font-size:12.5px; line-height:1.5;
+    font-size:17.5px; line-height:1.5;
     padding:0 9px;
   }
   .wa-hint a{ color:var(--wa-link); text-decoration:none; }
@@ -233,6 +233,19 @@
   }
 
   .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* TranslatePress' schwebender Sprach-Umschalter wird sitewide vom Plugin
+     selbst eingeblendet, unabhängig vom Elementor-Template (auch bei
+     "Leer/Canvas" noch sichtbar). Auf dieser Seite soll nichts vom Theme
+     durchscheinen, deshalb hier hart ausblenden. Falls er trotzdem noch
+     auftaucht: per Rechtsklick → Untersuchen die tatsächliche
+     Klasse/ID ermitteln und hier ergänzen. */
+  #trp-floater-ls,
+  .trp-floater-ls,
+  .trp-language-switcher-container,
+  .trp-ls-shortcode-container{
+    display:none !important;
+  }
 </style>
 </head>
 <body>

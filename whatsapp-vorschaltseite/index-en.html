@@ -16,11 +16,11 @@
     // Prefilled text that's already in the field when WhatsApp opens
     whatsappPrefill: "Hi Spiritual Touch, I have a quick question: ",
 
-    // Link to the English prices page
-    preiseUrl: "https://spiritual-touch.de/en/angebot-preise/",
+    // Link to the prices page
+    preiseUrl: "https://spiritual-touch.de/praxis/honorare/",
 
-    // Link to the English FAQ page
-    faqUrl: "https://spiritual-touch.de/faq-englisch/"
+    // Link to the FAQ page
+    faqUrl: "https://spiritual-touch.de/praxis/faq/"
 
     // "Book an appointment" and "Free intro call" deliberately have no link
     // of their own: both buttons only carry the Amelia trigger classes
@@ -171,7 +171,7 @@
     max-width:65%;
     background:transparent;
     color:var(--wa-text-muted);
-    font-size:12.5px; line-height:1.5;
+    font-size:17.5px; line-height:1.5;
     padding:0 9px;
   }
   .wa-hint a{ color:var(--wa-link); text-decoration:none; }
@@ -228,6 +228,18 @@
   }
 
   .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* TranslatePress' floating language switcher is injected sitewide by the
+     plugin itself, independent of the Elementor template (still shows even
+     with "Blank/Canvas"). Nothing from the theme should show through here,
+     so hide it hard. If it still appears: right-click → Inspect to find
+     its actual class/ID and add it here. */
+  #trp-floater-ls,
+  .trp-floater-ls,
+  .trp-language-switcher-container,
+  .trp-ls-shortcode-container{
+    display:none !important;
+  }
 </style>
 </head>
 <body>
