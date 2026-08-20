@@ -16,76 +16,74 @@
     // Vorausgefüllter Text, der beim Öffnen von WhatsApp schon im Feld steht
     whatsappPrefill: "Hallo Spiritual Touch, ich habe eine kurze Frage: ",
 
-    // Bewusst leer: "Termin buchen" hat keinen eigenen Link, sondern wird über
-    // die CSS-Klasse st-termin-buchen-trigger auf dem Button von Amelia abgefangen.
-    bookingUrl: "",
-
-    // Link zur Seite "Kostenloses Vorgespräch" (Fallback, falls die Amelia-Klasse
-    // st-vorgespraech-trigger auf dem Button noch nicht abgefangen wird)
-    vorgesprächUrl: "https://spiritual-touch.de/kostenloses-vorgespraech/",
-
     // Link zur Preise-Seite
     preiseUrl: "https://spiritual-touch.de/angebot-preise/",
 
     // Link zur FAQ-Seite
     faqUrl: "https://spiritual-touch.de/faq-fuer-tantramassage-bei-spiritual-touch-in-muenchen/"
+
+    // "Termin buchen" und "Vorgespräch" haben bewusst keinen eigenen Link mehr:
+    // Beide Buttons tragen nur noch die Amelia-Trigger-Klassen
+    // st-termin-buchen-trigger / st-vorgespraech-trigger, die auf der Seite
+    // selbst abgefangen werden. Kein Fallback-Link mehr, um Doppel-Öffnungen
+    // zu vermeiden.
   };
 </script>
 <style>
   :root{
-    --wa-header: #008069;
-    --wa-header-dark: #075e54;
-    --wa-bg: #e5ddd5;
+    --wa-panel: #f0f2f5;
+    --wa-panel-border: #d1d7db;
+    --wa-bg: #efeae2;
     --wa-bubble: #ffffff;
-    --wa-bubble-tail: #ffffff;
     --wa-text: #111b21;
     --wa-text-muted: #667781;
-    --wa-green-accent: #25d366;
+    --wa-accent: #008069;
     --wa-link: #027eb5;
-    --wa-input-bg: #f0f2f5;
+    --wa-input-bg: #ffffff;
     --wa-icon: #54656f;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
+      --wa-panel: #202c33;
+      --wa-panel-border: #2f3b44;
       --wa-bg: #0b141a;
       --wa-bubble: #202c33;
-      --wa-bubble-tail: #202c33;
       --wa-text: #e9edef;
       --wa-text-muted: #8696a0;
-      --wa-input-bg: #202c33;
+      --wa-input-bg: #2a3942;
       --wa-icon: #aebac1;
     }
   }
   :root[data-theme="dark"]{
+    --wa-panel: #202c33;
+    --wa-panel-border: #2f3b44;
     --wa-bg: #0b141a;
     --wa-bubble: #202c33;
-    --wa-bubble-tail: #202c33;
     --wa-text: #e9edef;
     --wa-text-muted: #8696a0;
-    --wa-input-bg: #202c33;
+    --wa-input-bg: #2a3942;
     --wa-icon: #aebac1;
   }
   *{box-sizing:border-box;}
   html,body{
     margin:0; padding:0; height:100%;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
-    background:#111b21;
+    background:#000;
+    overflow:hidden;
   }
+  /* Nimmt den kompletten Viewport ein und legt sich vor alles, was auf der
+     WordPress-Seite sonst noch da ist (Header, Footer, Floating-Buttons). */
   .page{
+    position:fixed; inset:0;
+    background:#000;
     display:flex; justify-content:center; align-items:stretch;
-    min-height:100vh; min-height:100dvh;
+    z-index:2147483000;
   }
-  .phone{
-    width:100%; max-width:480px;
+  .app{
+    width:100%; max-width:1000px;
     display:flex; flex-direction:column;
-    min-height:100vh; min-height:100dvh;
     background:var(--wa-bg);
     position:relative;
-    box-shadow:0 0 40px rgba(0,0,0,.35);
-  }
-  @media (min-width:481px){
-    .page{ padding:24px 0; }
-    .phone{ min-height:calc(100vh - 48px); min-height:calc(100dvh - 48px); border-radius:12px; overflow:hidden; }
   }
   .chat-wallpaper{
     position:absolute; inset:0;
@@ -100,44 +98,42 @@
     pointer-events:none;
   }
 
-  /* Header */
+  /* Header – wie die WhatsApp-Web-Oberfläche: hell, keine grüne App-Leiste */
   .wa-header{
-    display:flex; align-items:center; gap:12px;
-    padding:10px 12px;
-    background:var(--wa-header);
-    color:#fff;
-    position:sticky; top:0; z-index:5;
+    display:flex; align-items:center; gap:14px;
+    padding:10px 16px;
+    background:var(--wa-panel);
+    border-bottom:1px solid var(--wa-panel-border);
+    position:relative; z-index:5;
   }
-  .wa-back{ width:22px; height:22px; flex:0 0 auto; opacity:.95; }
   .wa-avatar{
-    width:38px; height:38px; border-radius:50%; flex:0 0 auto;
-    background:linear-gradient(135deg,#7f6a9c,#b98fc9);
+    width:40px; height:40px; border-radius:50%; flex:0 0 auto;
+    background:#7f6a9c;
     display:flex; align-items:center; justify-content:center;
     color:#fff; font-weight:600; font-size:14px; letter-spacing:.5px;
   }
   .wa-header-text{ flex:1 1 auto; min-width:0; }
-  .wa-header-name{ font-size:16px; font-weight:600; line-height:1.2; }
-  .wa-header-status{ font-size:12.5px; opacity:.85; line-height:1.2; }
-  .wa-header-icons{ display:flex; align-items:center; gap:18px; flex:0 0 auto; }
-  .wa-header-icons svg{ width:20px; height:20px; opacity:.95; }
+  .wa-header-name{ font-size:16px; font-weight:600; line-height:1.2; color:var(--wa-text); }
+  .wa-header-status{ font-size:13px; color:var(--wa-text-muted); line-height:1.2; margin-top:1px; }
+  .wa-header-icons{ display:flex; align-items:center; gap:22px; flex:0 0 auto; }
+  .wa-header-icons svg{ width:21px; height:21px; color:var(--wa-icon); }
 
   /* Chat body */
   .wa-body{
     flex:1 1 auto;
     position:relative;
-    padding:14px 10px 18px;
+    padding:16px clamp(10px, 8vw, 90px) 18px;
     overflow-y:auto;
   }
   .wa-msg-row{ position:relative; z-index:1; display:flex; margin-bottom:8px; }
   .wa-msg-row.center{ justify-content:center; margin:14px 0; }
   .wa-daychip{
-    background:rgba(255,255,255,.75); color:#54656f;
+    background:var(--wa-panel); color:var(--wa-text-muted);
     font-size:12.5px; padding:5px 12px; border-radius:8px;
   }
-  @media (prefers-color-scheme: dark){ .wa-daychip{ background:#182229; color:#8696a0; } }
 
   .wa-bubble{
-    max-width:84%;
+    max-width:65%;
     background:var(--wa-bubble);
     color:var(--wa-text);
     padding:8px 9px 6px 9px;
@@ -156,7 +152,7 @@
   .wa-option{
     display:flex; align-items:center; gap:12px;
     width:100%;
-    max-width:84%;
+    max-width:65%;
     background:var(--wa-bubble);
     color:var(--wa-text);
     border:none;
@@ -177,7 +173,7 @@
   .wa-option-chevron{ margin-left:auto; flex:0 0 auto; color:var(--wa-text-muted); }
 
   .wa-hint{
-    max-width:84%;
+    max-width:65%;
     background:transparent;
     color:var(--wa-text-muted);
     font-size:12.5px; line-height:1.5;
@@ -185,6 +181,10 @@
   }
   .wa-hint a{ color:var(--wa-link); text-decoration:none; }
   .wa-hint a:hover{ text-decoration:underline; }
+
+  @media (max-width:680px){
+    .wa-bubble, .wa-option, .wa-hint{ max-width:84%; }
+  }
 
   @keyframes pop{
     from{ opacity:0; transform:translateY(6px) scale(.98); }
@@ -204,18 +204,25 @@
   .wa-typing span:nth-child(3){ animation-delay:.3s; }
   @keyframes blink{ 0%,80%,100%{ opacity:.25; } 40%{ opacity:1; } }
 
-  /* Fake input bar (decorative, opens the "sonstige Frage" WhatsApp chat) */
+  /* Fake compose bar (dekorativ, öffnet den echten WhatsApp-Chat) */
   .wa-inputbar{
-    display:flex; align-items:center; gap:8px;
-    padding:8px 10px; padding-bottom:calc(8px + env(safe-area-inset-bottom));
-    background:transparent;
+    display:flex; align-items:center; gap:16px;
+    padding:10px 16px; padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    background:var(--wa-panel);
+    border-top:1px solid var(--wa-panel-border);
     position:relative; z-index:2;
   }
+  .wa-icon-btn{
+    background:none; border:none; padding:0; flex:0 0 auto;
+    color:var(--wa-icon); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .wa-icon-btn svg{ width:22px; height:22px; }
   .wa-input{
     flex:1 1 auto;
-    display:flex; align-items:center; gap:8px;
+    display:flex; align-items:center;
     background:var(--wa-input-bg);
-    border-radius:24px;
+    border-radius:8px;
     padding:9px 12px;
     color:var(--wa-text-muted);
     font-size:14.5px;
@@ -224,34 +231,25 @@
     text-align:left;
     font-family:inherit;
   }
-  .wa-input svg{ width:20px; height:20px; color:var(--wa-icon); flex:0 0 auto; }
-  .wa-mic{
-    width:38px; height:38px; border-radius:50%;
-    background:var(--wa-header); color:#fff;
-    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
-    border:none; cursor:pointer;
-  }
-  .wa-mic svg{ width:19px; height:19px; }
 
   .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 </style>
 </head>
 <body>
 <div class="page">
-  <div class="phone">
+  <div class="app">
     <div class="chat-wallpaper" aria-hidden="true"></div>
 
     <!-- Header -->
     <header class="wa-header">
-      <svg class="wa-back" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <div class="wa-avatar">ST</div>
       <div class="wa-header-text">
         <div class="wa-header-name">Spiritual Touch</div>
         <div class="wa-header-status" id="wa-status">meist sofort online</div>
       </div>
       <div class="wa-header-icons">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M17 10.5V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3.5l4 3.5v-11l-4 3.5z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
-        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="1.6" fill="#fff"/><circle cx="12" cy="12" r="1.6" fill="#fff"/><circle cx="12" cy="19" r="1.6" fill="#fff"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
       </div>
     </header>
 
@@ -313,14 +311,19 @@
       </div>
     </main>
 
-    <!-- Fake input bar – tippt man rein, öffnet sich der echte WhatsApp-Chat -->
+    <!-- Fake Compose-Bar – tippt man rein, öffnet sich der echte WhatsApp-Chat -->
     <footer class="wa-inputbar">
-      <button class="wa-input" id="btn-input" type="button">
+      <button class="wa-icon-btn" id="btn-emoji" type="button" aria-label="Emoji">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 10.5c0-.4.2-.7.5-.7s.5.3.5.7-.2.7-.5.7-.5-.3-.5-.7zM14.5 10.5c0-.4.2-.7.5-.7s.5.3.5.7-.2.7-.5.7-.5-.3-.5-.7zM8.5 14c1 1 5.5 1 7 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="wa-icon-btn" id="btn-attach" type="button" aria-label="Anhang">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M17 8.5l-7.1 7.1a2.7 2.7 0 01-3.9-3.9L13.6 4a1.9 1.9 0 012.7 2.7l-7.2 7.2a1 1 0 01-1.5-1.5L14 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="wa-input" id="btn-input" type="button">
         <span>Nachricht</span>
       </button>
-      <button class="wa-mic" id="btn-mic" type="button" aria-label="Nachricht senden">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" fill="#fff"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <button class="wa-icon-btn" id="btn-mic" type="button" aria-label="Nachricht senden">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" stroke="currentColor" stroke-width="1.6"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
     </footer>
   </div>
@@ -338,19 +341,18 @@
   document.getElementById('link-preise').href = c.preiseUrl;
   document.getElementById('link-faq').href = c.faqUrl;
 
-  // "Termin buchen" hat bewusst keinen eigenen Klick-Handler: die Klasse
-  // st-termin-buchen-trigger auf dem Button wird von Amelia selbst abgefangen.
-  if (c.vorgesprächUrl){
-    document.getElementById('btn-vorgespraech').addEventListener('click', function(){
-      window.open(c.vorgesprächUrl, '_blank', 'noopener');
-    });
-  }
+  // "Termin buchen" und "Vorgespräch" haben keinen eigenen Klick-Handler:
+  // die Klassen st-termin-buchen-trigger / st-vorgespraech-trigger auf den
+  // Buttons werden von Amelia selbst abgefangen.
+
   function openWhatsApp(){
     window.location.href = waLink(c.whatsappPrefill);
   }
   document.getElementById('btn-message').addEventListener('click', openWhatsApp);
   document.getElementById('btn-input').addEventListener('click', openWhatsApp);
   document.getElementById('btn-mic').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-emoji').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-attach').addEventListener('click', openWhatsApp);
 
   // Zeitstempel wie in WhatsApp üblich
   var now = new Date();
