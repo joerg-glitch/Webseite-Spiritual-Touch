@@ -69,15 +69,15 @@
     margin:0; padding:0; height:100%;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
     background:#000;
-    overflow:hidden;
   }
-  /* Nimmt den kompletten Viewport ein und legt sich vor alles, was auf der
-     WordPress-Seite sonst noch da ist (Header, Footer, Floating-Buttons). */
+  /* Bewusst NICHT position:fixed mit sehr hohem z-index: das hat zuvor
+     Amelias eigenes Buchungs-Popup verdeckt, weil unser Overlay darüber
+     lag. Header/Footer/Floating-Button bitte über das Seiten-Template
+     (Elementor "Leer/Canvas") ausblenden, nicht per CSS-Trick hier. */
   .page{
-    position:fixed; inset:0;
+    min-height:100vh; min-height:100dvh;
     background:#000;
     display:flex; justify-content:center; align-items:stretch;
-    z-index:2147483000;
   }
   .app{
     width:100%; max-width:1000px;
