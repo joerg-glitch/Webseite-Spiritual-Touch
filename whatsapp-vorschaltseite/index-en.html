@@ -112,6 +112,12 @@
   .wa-header-status{ font-size:13px; color:var(--wa-text-muted); line-height:1.2; margin-top:1px; }
   .wa-header-icons{ display:flex; align-items:center; gap:22px; flex:0 0 auto; }
   .wa-header-icons svg{ width:21px; height:21px; color:var(--wa-icon); }
+  .wa-lang-switch{
+    font-size:13px; font-weight:600; color:var(--wa-icon);
+    text-decoration:none; border:1px solid var(--wa-panel-border);
+    border-radius:6px; padding:4px 9px; line-height:1.2;
+  }
+  .wa-lang-switch:hover{ background:var(--wa-panel-border); }
 
   /* Chat body */
   .wa-body{
@@ -234,10 +240,8 @@
      with "Blank/Canvas"). Nothing from the theme should show through here,
      so hide it hard. If it still appears: right-click → Inspect to find
      its actual class/ID and add it here. */
-  #trp-floater-ls,
-  .trp-floater-ls,
-  .trp-language-switcher-container,
-  .trp-ls-shortcode-container{
+  .trp-language-switcher,
+  .trp-floating-switcher{
     display:none !important;
   }
 </style>
@@ -255,6 +259,7 @@
         <div class="wa-header-status" id="wa-status">usually online right away</div>
       </div>
       <div class="wa-header-icons">
+        <a class="wa-lang-switch" href="https://spiritual-touch.de/whatsapp/" aria-label="Auf Deutsch umstellen">DE</a>
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
       </div>
