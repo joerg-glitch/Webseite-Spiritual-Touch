@@ -66,15 +66,39 @@ Termine. Das Skript überspringt die Blocker und kopiert nur den Rest.
 Bereits kopierte Termine markiert es selbst (eigener Tag
 `raumEinladungSync`), damit nichts doppelt landet.
 
+## ⚠️ Vorfall 26.08.2026: hunderte Duplikate bei Eva
+
+Eva war anfangs (mit ihrem privaten Gmail-Kalender statt einem reinen
+Amelia-Ressourcen-Konto) in `MEMBERS` enthalten. Zwei Probleme kamen
+zusammen:
+
+1. Ihr Kalender enthält ihr **ganzes Leben** (Arzttermine, "Arbeit",
+   Hotel-Aufenthalt usw.), nicht nur Amelia-Termine — das Skript hat all
+   das fälschlich als neue Termine erkannt.
+2. Das ausführende Konto (`joerg@spiritual-touch.de`) hat auf ihrem
+   privaten Kalender nur Lese-, keine Schreibrechte — das Markieren
+   "schon kopiert" (`setTag`) schlug deshalb jedes Mal mit "Action not
+   allowed" fehl. Weil das Kopieren VOR dem Markieren passierte, hat sie
+   dadurch jede Minute erneut dieselben Termine kopiert bekommen —
+   hunderte doppelte Kalendereinladungen in Raum 1.
+
+**Behoben:**
+- Eva aus `MEMBERS` entfernt (sie kopiert ihre Termine seither selbst).
+- Reihenfolge in `syncRaumEinladungen()` getauscht: **erst** markieren,
+  **dann** kopieren — schlägt das Markieren fehl, wird gar nicht erst
+  kopiert (verpasste Einladung statt Endlosschleife). Verhindert dieselbe
+  Duplikat-Kaskade künftig für jeden, nicht nur für Eva.
+- Neue Funktion `cleanupEvaMistakenCopies()` in `Code.gs` — löscht alle
+  Duplikate in Raum 1 in einem Rutsch, ohne Absage-Mails zu verschicken.
+  Braucht einmalig die "Calendar API" als erweiterten Dienst (Editor →
+  Dienste (+) → "Calendar API" hinzufügen), dann im Editor die Funktion
+  auswählen und ▶ klicken.
+
 ## Offene Punkte
 
 ✅ **Mila** ist neu im Team und hat noch keinen Hilfskalender —
 absichtlich außen vor gelassen, bis das analog zu den anderen (siehe
 `team-app`-README) eingerichtet ist. Dann hier in `MEMBERS` ergänzen.
-
-✅ **Eva** bestätigt (23.08.2026): Amelia schreibt bestätigte Termine
-tatsächlich in ihren Kalender, die Mitarbeiter-Mail landet wie bei allen
-anderen im Chat-Room — läuft wie vorgesehen, kein offener Punkt mehr.
 
 ⚠️ **Kein Re-Sync bei Terminänderung/-absage.** Sobald ein Termin einmal
 kopiert wurde (eigener Tag gesetzt), fasst das Skript ihn nicht mehr an —
@@ -89,7 +113,7 @@ später nachrüstbar (z. B. Tag durch einen Zeitstempel ersetzen und bei
 | Name | Mailadresse (für Kalender-Einladung) |
 |---|---|
 | Tara | tara.spiritual@gmail.com |
-| Eva | eva.saur1993@gmail.com |
+| Eva | eva.saur1993@gmail.com (seit 26.08.2026 **nicht** in `MEMBERS`, siehe "Vorfall" oben — kopiert ihre Termine selbst) |
 | Jörg | joerg@spiritual-touch.de (nicht Teil dieser Automatik) |
 | Asmita | rositsa.bogdanova232@gmail.com |
 | Amila | uta.schuppert@gmail.com |

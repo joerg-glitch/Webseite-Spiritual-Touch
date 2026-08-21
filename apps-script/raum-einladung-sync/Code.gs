@@ -40,15 +40,26 @@
  *    ankommt, siehe Jörgs Rückmeldung vom 23.08.2026: sein Team ist
  *    "nicht sehr technisch-affin" und soll bei "Mail da, Termin noch
  *    nicht im Kalender" nicht nachfragen müssen).
- * 5. Siehe README, "Offene Punkte" — Mila (keine Hilfskalender-ID
- *    bekannt) und Eva (privater Gmail-Kalender statt Ressourcen-Konto,
- *    Lesezugriff für dieses Skript noch nicht bestätigt) vor dem
- *    produktiven Einsatz klären.
+ * 5. Mila fehlt bewusst (keine Hilfskalender-ID bekannt, siehe README) —
+ *    vor dem Ergänzen bei Jörg nachfragen.
  *
  * SICHERHEIT: Fasst in den Hilfskalendern NUR Termine an, die es selbst
- * per Tag "raumEinladungSync"="true" markiert (nach dem Kopieren, nie
- * vorher) — echte Amelia-Termine werden nie inhaltlich verändert oder
- * gelöscht, nur gelesen und markiert.
+ * per Tag "raumEinladungSync"="true" markiert (VOR dem Kopieren, nicht
+ * danach — siehe Kommentar in syncRaumEinladungen(), warum die
+ * Reihenfolge wichtig ist) — echte Amelia-Termine werden nie inhaltlich
+ * verändert oder gelöscht, nur gelesen und markiert.
+ *
+ * ⚠️ VORFALL 26.08.2026: Eva war anfangs mit ihrem privaten Gmail-Kalender
+ * (statt einem reinen Amelia-Ressourcen-Konto) in MEMBERS enthalten. Das
+ * Skript hat all ihre privaten Termine (Arzttermine, "Arbeit", Hotel-
+ * Aufenthalt usw.) fälschlich als neue Amelia-Termine erkannt UND — weil
+ * das ausführende Konto auf ihrem Kalender nur Lese- statt Schreibrechte
+ * hatte — sie bei jedem Minuten-Lauf erneut kopiert (das Markieren als
+ * "erledigt" schlug fehl, siehe SICHERHEIT oben für den Fix). Ergebnis:
+ * hunderte doppelte Kalendereinladungen. Eva wurde aus MEMBERS entfernt,
+ * die Reihenfolge markieren-dann-kopieren behoben (verhindert dieselbe
+ * Endlosschleife künftig für jeden), und `cleanupEvaMistakenCopies()`
+ * ganz unten räumt die entstandenen Duplikate in einem Rutsch auf.
  */
 
 // ---------- KONFIGURATION ----------
@@ -62,7 +73,11 @@ var RAUM1_CALENDAR_ID = 'c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18
 // selbst").
 var MEMBERS = [
   { name: 'Tara',       hilfsCalId: 'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com', email: 'tara.spiritual@gmail.com' },
-  { name: 'Eva',        hilfsCalId: 'eva.saur1993@gmail.com', email: 'eva.saur1993@gmail.com' }, // ihr privater Kalender, kein Ressourcen-Konto — von Jörg bestätigt: Amelia schreibt dort trotzdem hin
+  // Eva ENTFERNT (26.08.2026, siehe README "Vorfall 26.08.2026") — ihr
+  // Hilfskalender ist ihr privater Gmail-Kalender voller persönlicher
+  // Termine, kein reines Amelia-Ressourcen-Konto. Nicht wieder ergänzen,
+  // ohne vorher eine Filterung auf "wirklich von Amelia" zu bauen. Eva
+  // kopiert ihre Termine seither selbst.
   { name: 'Asmita',     hilfsCalId: 'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com', email: 'rositsa.bogdanova232@gmail.com' },
   { name: 'Amila',      hilfsCalId: 'c_727306d56fd4b1755718073543de922a25edc2509fcb14f2b4e53b7a9263b72a@group.calendar.google.com', email: 'uta.schuppert@gmail.com' },
   { name: 'Sarah',      hilfsCalId: 'c_d37ba1f2e4913be355bc25873d90dc9ee115b70537adfd5a6b2a5f1e98d26361@group.calendar.google.com', email: 'sarahfriedrich321@gmail.com' },
@@ -122,13 +137,25 @@ function syncRaumEinladungen() {
           if (isTeamAppBlock(e)) return; // Verfügbarkeits-Blocker, kein echter Termin
           if (e.getTag(OWN_TAG_KEY) === OWN_TAG_VALUE) return; // schon kopiert
 
+          // ERST markieren, DANN kopieren — nicht umgekehrt. Wenn das
+          // Markieren fehlschlägt (z. B. weil dieses Konto auf dem
+          // Hilfskalender nur Lese- statt Schreibrechte hat), darf auf
+          // keinen Fall trotzdem eine Kopie entstehen: sonst hält jeder
+          // folgende Minuten-Lauf denselben Termin wieder für "neu" und
+          // häuft unbegrenzt Duplikate an — genau das ist am 26.08.2026
+          // bei Evas privatem Kalender passiert, siehe README "Vorfall".
+          // Schlägt stattdessen das Kopieren fehl, bleibt der Termin
+          // markiert und wird einmalig übersprungen statt endlos wiederholt
+          // — im Zweifel lieber eine verpasste Einladung als hunderte
+          // doppelte.
+          e.setTag(OWN_TAG_KEY, OWN_TAG_VALUE);
+
           raum1.createEvent(e.getTitle(), e.getStartTime(), e.getEndTime(), {
             description: e.getDescription(),
             location: e.getLocation(),
             guests: member.email,
             sendInvites: true,
           });
-          e.setTag(OWN_TAG_KEY, OWN_TAG_VALUE);
           copied++;
           Logger.log('Kopiert für ' + member.name + ': "' + e.getTitle() + '" am ' + e.getStartTime());
         } catch (evErr) {
@@ -159,6 +186,59 @@ function isTeamAppBlock(e) {
   if (e.getTitle() === TEAM_APP_BLOCK_TITLE) return true;
   var desc = e.getDescription() || '';
   return desc.indexOf('autoBlock:true') > -1; // alte, vor der Tag-Umstellung erzeugte Blocker
+}
+
+// ---------- EINMALIGE AUFRÄUM-FUNKTION (Vorfall 26.08.2026) ----------
+//
+// Löscht alle Termine in Raum 1, bei denen die angegebene Mailadresse als
+// Gast eingetragen ist — lässt alle anderen (echten) Raum-1-Termine
+// unangetastet. Für den Vorfall vom 26.08.2026 gebaut (Evas privater
+// Kalender wurde fälschlich als Quelle verwendet, siehe README), aber
+// allgemein nutzbar für jede Adresse.
+//
+// VORAUSSETZUNG: Im Editor links unter "Dienste" (+) einmalig die
+// "Calendar API" als erweiterten Dienst hinzufügen — nur damit lässt sich
+// beim Löschen sendUpdates:'none' setzen. Ohne das würde Google Calendar
+// für jeden gelöschten Termin eine Absage-Mail an alle Gäste verschicken
+// — also noch mehr Mails an Eva und dich obendrauf auf die
+// versehentlichen Einladungen.
+//
+// AUSFÜHREN: Im Editor die Funktion "cleanupEvaMistakenCopies" auswählen
+// und ▶ klicken. Prüft/löscht in einem Rutsch, keine Einzelklicks nötig.
+function cleanupRaum1EventsForGuest_(guestEmail) {
+  var pageToken = null;
+  var checked = 0;
+  var deleted = 0;
+  do {
+    var response = Calendar.Events.list(RAUM1_CALENDAR_ID, {
+      pageToken: pageToken,
+      maxResults: 2500,
+      singleEvents: true,
+      timeMin: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      timeMax: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    var items = response.items || [];
+    items.forEach(function (ev) {
+      checked++;
+      var attendees = ev.attendees || [];
+      var matches = attendees.some(function (a) {
+        return a.email && a.email.toLowerCase() === guestEmail.toLowerCase();
+      });
+      if (matches) {
+        Calendar.Events.remove(RAUM1_CALENDAR_ID, ev.id, { sendUpdates: 'none' });
+        deleted++;
+      }
+    });
+    pageToken = response.nextPageToken;
+  } while (pageToken);
+
+  var summary = checked + ' Termine in Raum 1 geprüft, ' + deleted + ' mit Gast ' + guestEmail + ' gelöscht (ohne Benachrichtigung).';
+  Logger.log(summary);
+  sendAlert('Aufräumen abgeschlossen', summary);
+}
+
+function cleanupEvaMistakenCopies() {
+  cleanupRaum1EventsForGuest_('eva.saur1993@gmail.com');
 }
 
 function sendAlert(subject, body) {
