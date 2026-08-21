@@ -68,8 +68,17 @@
  *                 (siehe team-app/README.md). Nur Kommentare hier
  *                 aktualisiert, keine Code-Änderung an der Route selbst
  *                 nötig, sie war bereits allgemein (aufrufer-unabhängig).
+ *   2026-08-27.2  /booking-reschedule: Fallback für Termine ohne
+ *                 "Termin-ID:"-Zeile in der Beschreibung (ältere Buchungen
+ *                 von vor der Amelia-Vorlagen-Änderung) — löst den Termin
+ *                 stattdessen über providerId + bisherige Start-/Endzeit
+ *                 auf (eindeutig, da ein:e Mitarbeiter:in nicht zwei
+ *                 Termine mit exakt gleicher Zeit haben kann). Grund:
+ *                 Jörgs ausdrücklicher Wunsch, dass das Team solche
+ *                 Alt-Termine ebenfalls selbst ändern kann, statt "bitte
+ *                 Jörg Bescheid geben" angezeigt zu bekommen.
  */
-define('ST_BD_VERSION', '2026-08-27.1');
+define('ST_BD_VERSION', '2026-08-27.2');
 
 /**
  * ST Buchungs-Dashboard
@@ -768,6 +777,10 @@ function st_booking_reassign_handler(WP_REST_Request $request) {
  * UTC (CalendarEvent.getStartTime() als ISO-String mit toISOString() bzw.
  * äquivalent, siehe Code.gs).
  */
+function st_is_mysql_datetime_($s) {
+    return is_string($s) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $s);
+}
+
 function st_booking_reschedule_handler(WP_REST_Request $request) {
     global $wpdb;
     $prefix = $wpdb->prefix;
@@ -775,12 +788,40 @@ function st_booking_reschedule_handler(WP_REST_Request $request) {
     $appointment_id = (int) $request->get_param('appointmentId');
     $new_start = $request->get_param('newBookingStart');
     $new_end = $request->get_param('newBookingEnd');
-    if (!$appointment_id || !$new_start || !$new_end) {
+    if (!$new_start || !$new_end) {
         return new WP_REST_Response(['error' => 'missing_params'], 400);
     }
-    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $new_start)
-        || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $new_end)) {
+    if (!st_is_mysql_datetime_($new_start) || !st_is_mysql_datetime_($new_end)) {
         return new WP_REST_Response(['error' => 'invalid_datetime_format', 'expected' => 'YYYY-MM-DD HH:MM:SS (UTC)'], 400);
+    }
+
+    // Fallback für Termine ohne "Termin-ID:"-Zeile in der Amelia-
+    // Kalenderbeschreibung (ältere Buchungen von vor der Vorlagen-Änderung
+    // vom 26.08.2026, siehe apps-script/raum-einladung-sync/README.md) —
+    // die Team-App kennt dafür keine Amelia-Termin-ID, kann den Termin
+    // aber eindeutig über Mitarbeiter + bisherige Start-/Endzeit
+    // identifizieren (ein:e Mitarbeiter:in kann nicht zwei Termine mit
+    // exakt identischer Start-/Endzeit haben).
+    if (!$appointment_id) {
+        $provider_id = (int) $request->get_param('providerId');
+        $old_start = $request->get_param('oldBookingStart');
+        $old_end = $request->get_param('oldBookingEnd');
+        if (!$provider_id || !$old_start || !$old_end) {
+            return new WP_REST_Response(['error' => 'missing_params'], 400);
+        }
+        if (!st_is_mysql_datetime_($old_start) || !st_is_mysql_datetime_($old_end)) {
+            return new WP_REST_Response(['error' => 'invalid_datetime_format', 'expected' => 'YYYY-MM-DD HH:MM:SS (UTC)'], 400);
+        }
+        $appointment_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$prefix}amelia_appointments WHERE providerId = %d AND bookingStart = %s AND bookingEnd = %s LIMIT 1",
+            $provider_id, $old_start, $old_end
+        ));
+        if ($wpdb->last_error) {
+            return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+        }
+        if (!$appointment_id) {
+            return new WP_REST_Response(['error' => 'appointment_not_found_by_match'], 404);
+        }
     }
 
     $row = st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id);

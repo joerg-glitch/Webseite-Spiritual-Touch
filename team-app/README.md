@@ -44,6 +44,34 @@ weiterhin rein über den Google Kalender (Raum-1-Kopie zwischen
 Raumkalendern verschieben, siehe `apps-script/raum-einladung-sync/
 README.md`), weil sich dabei am eigentlichen Amelia-Termin nichts ändert.
 
+### Nachbesserung (27.08.2026, nach dem ersten Live-Test)
+
+Zwei Dinge beim ersten Test auf dem echten Gerät aufgefallen:
+
+1. **Verfügbarkeit-Sync-Blocker erschienen fälschlich als Termine.** Der
+   ursprüngliche Filter in `listAppointments()` prüfte nur den Tag
+   (`autoBlock=true`) — ältere Blocker aus `App Script - Sync`, die noch
+   vor dessen Umstellung auf Tags angelegt wurden, tragen den Tag nicht und
+   rutschten durch. `isAvailabilityBlock_()` erkennt jetzt zusätzlich den
+   Titel ("Blockiert (Verfügbarkeit-Sync)") und die alte Text-Markierung —
+   dieselbe Logik wie `isTeamAppBlock()` in
+   `apps-script/raum-einladung-sync/Code.gs`.
+2. **Termine ohne Termin-ID zeigten "bitte Jörg Bescheid geben".** Jörgs
+   Rückmeldung: "muss hier noch nicht bitte Jörg Bescheid geben, sondern
+   die eigene Änderungsmöglichkeit gegeben sein." Für sehr alte Buchungen
+   von vor der Amelia-Vorlagenänderung (`Termin-ID: %appointment_id%`
+   fehlt in der Beschreibung) läuft das Ändern jetzt über einen Fallback:
+   Statt der Termin-ID schickt die Team-App Mitarbeiter-ID
+   (`PROVIDER_IDS` in `App Script`) + bisherige Start-/Endzeit — WordPress
+   löst die Termin-ID daraus selbst per DB-Abgleich auf (eindeutig, da
+   ein:e Mitarbeiter:in nicht zwei Termine mit exakt derselben Zeit haben
+   kann). ⚠️ **Ausnahme: Konstantin.** Seine Amelia-Mitarbeiter-ID ist laut
+   `wordpress/buchungs-dashboard/README.md` ungeklärt (er "taucht in der
+   Amelia-Mitarbeiterliste nicht auf") — bei ihm funktioniert der Fallback
+   erst, wenn das geklärt und in `PROVIDER_IDS` ergänzt ist. Betrifft nur
+   seine Alt-Termine ohne Termin-ID; neue Termine mit Termin-ID sind davon
+   nicht betroffen.
+
 ### Verworfen: eingebettetes Amelia-Mitarbeiter-Panel (16.08.2026)
 
 Eine frühere Session hat stattdessen einen PIN-Auto-Login in eine
@@ -89,6 +117,7 @@ entfernt.
   werden** — es wird ausschließlich serverseitig in `rescheduleAppointment()`
   verwendet, nie an den Client zurückgegeben.
 - Termine ohne erkannte Amelia-Termin-ID (sehr alte Buchungen von vor der
-  Vorlagenzeile `Termin-ID: %appointment_id%`) lassen sich in der
-  Termine-Ansicht bewusst nicht ändern — dafür fehlt der Schlüssel, den
-  `/booking-reschedule` braucht.
+  Vorlagenzeile `Termin-ID: %appointment_id%`) lassen sich seit der
+  Nachbesserung oben trotzdem ändern — über den Fallback
+  providerId+bisherige Zeit, mit derselben Eigentums-Prüfung wie beim
+  Termin-ID-Weg (muss exakt im eigenen Hilfskalender auftauchen).

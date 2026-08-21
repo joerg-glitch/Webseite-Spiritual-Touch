@@ -105,7 +105,6 @@
 .st-card-appt{border-left:4px solid var(--clay) !important;}
 .st-card-appt-title{font-size:14.5px !important;font-weight:500 !important;color:var(--plum) !important;margin-top:2px !important;display:block !important;}
 .st-card-appt-customer{font-size:13.5px !important;color:var(--soft) !important;margin-top:2px !important;display:block !important;}
-.st-card-appt-noid{font-size:12.5px !important;color:var(--soft) !important;font-style:italic !important;margin-top:10px !important;display:block !important;}
 /* ── MENÜLEISTE ── */
 .st-menu{
   display:flex !important;gap:8px !important;
@@ -587,8 +586,10 @@ async function stOpenTermine(){
 // Karten im selben Stil wie Jörgs Buchungs-Dashboard (farbige Randlinie,
 // Dienstleistung + Kundenname darunter, siehe wordpress/buchungs-dashboard/
 // wpcode-snippet.php). Termine ohne erkannte appointmentId sind sehr alte
-// Buchungen von vor der Vorlagen-Änderung (Termin-ID in der Beschreibung)
-// — die lassen sich hier nicht ändern, Hinweis statt Button.
+// Auch Termine ohne erkannte Amelia-Termin-ID (sehr alte Buchungen von vor
+// der Vorlagen-Änderung) sind änderbar — das Backend löst sie stattdessen
+// über Mitarbeiter+bisherige Zeit auf, siehe rescheduleAppointment() in
+// "App Script".
 function stRenderAppointments(){
   const el=document.getElementById('st-appt-entries');
   el.innerHTML='';
@@ -604,21 +605,14 @@ function stRenderAppointments(){
       <span class="st-card-time">${a.allDay?'Ganztägig':a.from+' – '+a.to+' Uhr'}</span>
       <span class="st-card-appt-title">${stEsc(a.title||'')}</span>
       ${a.customerName?`<span class="st-card-appt-customer">${stEsc(a.customerName)}</span>`:''}`;
-    if(a.appointmentId){
-      const act=document.createElement('div');
-      act.className='st-card-act';
-      const editBtn=document.createElement('button');
-      editBtn.className='st-edit';
-      editBtn.textContent='Ändern';
-      editBtn.addEventListener('click',()=>stOpenApptForm(a));
-      act.appendChild(editBtn);
-      card.appendChild(act);
-    } else {
-      const note=document.createElement('span');
-      note.className='st-card-appt-noid';
-      note.textContent='Kann hier nicht geändert werden — bitte Jörg Bescheid geben.';
-      card.appendChild(note);
-    }
+    const act=document.createElement('div');
+    act.className='st-card-act';
+    const editBtn=document.createElement('button');
+    editBtn.className='st-edit';
+    editBtn.textContent='Ändern';
+    editBtn.addEventListener('click',()=>stOpenApptForm(a));
+    act.appendChild(editBtn);
+    card.appendChild(act);
     el.appendChild(card);
   });
 }
@@ -658,7 +652,7 @@ async function stSaveAppt(){
   stLoading=true;
   document.getElementById('st-appt-save').disabled=true;
   document.getElementById('st-appt-save').textContent='Speichert …';
-  const {networkError,data}=await stApi({pin:stPin,action:'reschedule',appointmentId:stApptEditing.appointmentId,date,from,to});
+  const {networkError,data}=await stApi({pin:stPin,action:'reschedule',appointmentId:stApptEditing.appointmentId,oldDate:stApptEditing.date,oldFrom:stApptEditing.from,oldTo:stApptEditing.to,date,from,to});
   stLoading=false;
   document.getElementById('st-appt-save').textContent='Speichern';
 

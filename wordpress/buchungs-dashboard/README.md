@@ -178,10 +178,18 @@ Baustein (native Kalender-Sync/Notifications bleiben erhalten).
 **Bewusst nicht gebaut:** Keine Doppelbuchungs-/Kollisionsprüfung vor dem
 Zurückschreiben — Jörg hat dieses Risiko am 27.08.2026 ausdrücklich in
 Kenntnis akzeptiert, um ganz ohne manuellen Freigabe-Schritt auszukommen.
-Betrifft nur Termine, deren Kalender-Beschreibung eine echte Amelia-
-Termin-ID enthält (`Termin-ID: %appointment_id%`, siehe README des
-Apps-Script-Projekts) — ältere Termine ohne diese Zeile werden vom
-Apps Script beim täglichen Rücklauf übersprungen.
+
+**Fallback ohne Termin-ID:** `/booking-reschedule` akzeptiert entweder
+`appointmentId` direkt, oder — für Termine ohne `Termin-ID:`-Zeile in der
+Kalenderbeschreibung (ältere Buchungen von vor Jörgs Amelia-Vorlagen-
+Änderung) — ersatzweise `providerId` + `oldBookingStart` + `oldBookingEnd`.
+In dem Fall löst der Handler die Termin-ID selbst per DB-Abgleich auf
+(`SELECT id FROM amelia_appointments WHERE providerId = … AND
+bookingStart = … AND bookingEnd = …`) — eindeutig, weil ein:e
+Mitarbeiter:in nicht zwei Termine mit exakt derselben Start-/Endzeit haben
+kann. Der Apps-Script-Aufrufer (1) braucht diesen Fallback nicht (arbeitet
+nur mit Termin-ID); der Team-App-Aufrufer (2) nutzt ihn, damit auch sehr
+alte Buchungen ohne Termin-ID änderbar sind, siehe `team-app/README.md`.
 
 ## "Smart Freigeben" — Referenzdaten & Verlauf
 
