@@ -15,7 +15,7 @@ soll:
 Bisher hat Jörg deshalb manuell "du hast einen neuen Termin" in den
 Google-Chat-Room der Person geschrieben. Diese Automatik ersetzt das.
 
-## Zwei Teile — nur einer davon braucht Code
+## Drei Teile — Teil 1 ist ein reiner Mail-Filter, Teil 2 und 3 sind Code
 
 ### Teil 1: Mitarbeiter-Mail weiterleiten (kein Skript nötig)
 
@@ -57,6 +57,15 @@ internen Hilfskalender braucht.
    Minute"** (schnellste verfügbare Option) — damit die Kalender-
    Einladung praktisch zeitgleich mit Amelias Mitarbeiter-Mail ankommt
    und niemand im Team nachfragen muss, wo der Termin bleibt.
+5. Zweiten Trigger einrichten: Funktion `syncTeamChangesBackToAmelia`,
+   zeitgesteuert, "Tage-Timer" → einmal täglich (Uhrzeit egal, z. B.
+   nachts) — siehe "Teil 3" unten.
+6. `WP_RESCHEDULE_SECRET` in `Code.gs` (Konfigurationsbereich oben) auf
+   ein selbst gewähltes, langes Passwort setzen — und **denselben** Wert
+   in `wordpress/buchungs-dashboard/wpcode-snippet.php` bei
+   `ST_RESCHEDULE_SECRET` eintragen. Dort außerdem
+   `ST_RESCHEDULE_ADMIN_USER_ID` auf eine echte WP-Admin-Nutzer-ID setzen
+   (siehe Kommentar dort).
 
 **Wie es erkennt, was ein "echter" Termin ist:** Der Hilfskalender enthält
 zwei Arten von Einträgen — die eigenen Verfügbarkeits-Blocker von
@@ -86,16 +95,53 @@ Vorlagen-Änderung) fällt das Skript auf den alten Titel+Zeit-Fingerabdruck
 zurück — der erkennt eine Umbesetzung noch, eine Verlegung aber nicht
 (siehe "Offene Punkte" unten).
 
-**Warum das Team die Raum-1-Kopie nicht selbst verschieben kann:** Neue
-Kopien werden mit `setGuestsCanModify(false)` angelegt — Gäste sehen den
-Termin, können ihn aber nicht verschieben. Absicht: Amelia bleibt die
-einzige Quelle der Wahrheit. Würde jemand die Kopie direkt in Raum 1
-verschieben, hätte das den echten Termin nie geändert, und der nächste
-Lauf hätte die Kopie beim nächsten erkannten Unterschied unbemerkt wieder
-auf die "richtige" (alte) Zeit zurückgesetzt — verwirrender als gar keine
-Möglichkeit zum Verschieben. Eine Terminänderung muss weiterhin über
-Amelia laufen (aktuell: Jörg im wp-admin, perspektivisch ggf. das
-Buchungs-Dashboard).
+**Das Team KANN die Raum-1-Kopie selbst verschieben** — siehe "Teil 3"
+unten für die Automatik, die das täglich zurück nach Amelia einspielt.
+
+### Teil 3: Rückrichtung Kalender → Amelia (`syncTeamChangesBackToAmelia`)
+
+**Warum:** Jörgs ausdrückliche Vorgabe (27.08.2026), nachdem er den ersten
+Vorschlag (`setGuestsCanModify(false)`, Raum-1-Kopie fest sperren)
+ausdrücklich abgelehnt hat: "Das Team muss seine Termine selbst im
+Google-Kalender verschieben können. Das ist einfach. Sonst müsste es mir
+jedes Mal eine Nachricht schreiben. Dann geht es über drei Ecken, und ich
+muss die ganzen Änderungen durchführen. Dann habe ich nichts gewonnen."
+Gewünscht: eine Automatik im Hintergrund, die einmal täglich prüft, was
+das Team verändert hat, und es automatisch in Amelia einspielt — "ohne
+dass ich eingreifen muss, einfach nur im Hintergrund. Ich muss das auch
+nicht unbedingt wissen."
+
+**Wie es funktioniert:** Einmal täglich vergleicht `syncTeamChangesBack
+ToAmelia()` für jeden per echter Amelia-Termin-ID getrackten Raum-1-Termin
+die tatsächliche Start-/Endzeit mit der zuletzt bekannten Amelia-Zeit (im
+selben `PropertiesService`-Eintrag gespeichert wie beim Vorwärts-Sync).
+Weicht sie ab, hat das Team den Termin verschoben — die neue Zeit wird
+per `UrlFetchApp.fetch()` an die neue WordPress-Route `POST
+/booking-reschedule` geschickt (siehe `wordpress/buchungs-dashboard/
+wpcode-snippet.php` bzw. dessen README), abgesichert per gemeinsamem
+Geheimnis im Header `X-ST-Reschedule-Secret` (`WP_RESCHEDULE_SECRET`).
+Die Route trägt die neue Zeit über denselben internen Amelia-Endpunkt ein,
+den auch die Zuweisung im Buchungs-Dashboard benutzt (`/appointments/{id}`
+"Aktualisieren") — Amelia selbst schreibt danach die neue Zeit in den
+Hilfskalender zurück, der nächste Minuten-Lauf sieht dort dann bereits
+den neuen (mit Raum 1 übereinstimmenden) Stand und tut nichts weiter.
+
+Erfolgreiche Übertragungen laufen **komplett ohne Benachrichtigung** an
+Jörg, wie ausdrücklich gewünscht. Nur echte Fehler (WordPress nicht
+erreichbar, Amelia lehnt den Request ab) landen per Mail bei ihm
+(`sendAlert()`), damit ein hängengebliebener Termin nicht unbemerkt
+bleibt.
+
+**Bewusst nicht geprüft:** Doppelbuchungen/Kollisionen mit anderen
+Terminen — Jörg hat dieses Risiko am 27.08.2026 in Kenntnis akzeptiert, um
+ganz ohne manuellen Freigabe-Schritt auszukommen. Betrifft nur Termine mit
+echter Amelia-Termin-ID (`id_`-Schlüssel in `PropertiesService`) — Alt-
+Termine ohne `Termin-ID:`-Zeile in der Beschreibung (siehe "Offene
+Punkte") werden beim täglichen Rücklauf übersprungen, weil dafür keine
+Amelia-Termin-ID zum Zurückschreiben vorliegt.
+
+**Manueller Testlauf:** Im Editor die Funktion `runReverseSyncNow`
+auswählen und ▶ klicken (identisch zu `syncTeamChangesBackToAmelia`).
 
 ## ⚠️ Vorfall 26.08.2026: hunderte Duplikate bei Eva
 
@@ -148,18 +194,13 @@ Umbesetzung noch erkennt, eine Verlegung aber nicht. Betrifft nur
 Alt-Termine; alles ab dem 26.08.2026 hat die ID und ist davon nicht
 betroffen.
 
-**Bewusst nicht gebaut: Rückrichtung Kalender → Amelia.** Jörg hat
-gefragt, ob ein Teammitglied, das die Raum-1-Kopie manuell verschiebt,
-das über eine Dashboard-Ansicht ("Änderungen erscheinen in einem Reiter,
-per Klick übernehmen") zurück nach Amelia spielen könnte. Eingeschätzt:
-eher nicht sinnvoll, weil (1) das Team ohnehin keinen Amelia-Zugriff hat
-und eine Änderung deshalb sowieso über Jörg laufen müsste — dafür reicht
-eine kurze Chat-Nachricht, kein neues UI —, und (2) automatisiertes
-Zurückschreiben beliebiger Zeitänderungen nach Amelia echte Risiken hätte
-(Doppelbuchungen, Kollisionen mit Amelias eigener Verfügbarkeitslogik).
-Stattdessen `setGuestsCanModify(false)` (siehe oben): verhindert die
-Verwirrung strukturell, statt sie nachträglich aufzulösen. Falls sich das
-in der Praxis als zu unflexibel erweist, gerne nochmal ansprechen.
+✅ **Rückrichtung Kalender → Amelia** (27.08.2026 von Jörg gefordert,
+nachdem er die ursprünglich vorgeschlagene feste Sperre der Raum-1-Kopie
+ausdrücklich abgelehnt hat) ist seit "Teil 3" oben gebaut: Das Team
+verschiebt Raum-1-Termine frei, eine tägliche Automatik trägt die neue
+Zeit automatisch in Amelia ein — ohne Rückfrage, ohne Benachrichtigung an
+Jörg außer bei echten Fehlern. Bewusst akzeptiertes Restrisiko:
+keine Doppelbuchungsprüfung vor dem Zurückschreiben (siehe "Teil 3").
 
 ## Echte Mailadressen (Stand 23.08.2026, von Jörg)
 
@@ -183,8 +224,23 @@ in der Praxis als zu unflexibel erweist, gerne nochmal ansprechen.
 
 Das Skript **liest** die Hilfskalender nur — schreibt oder markiert dort
 nichts (seit dem Umstieg auf den Fingerabdruck-Abgleich am 26.08.2026,
-siehe oben). Echte Amelia-Termine werden nie inhaltlich verändert oder
-gelöscht. Es schreibt ausschließlich in Raum 1 (neue Events, oder
-Gästeliste bestehender Events bei einer erkannten Umbesetzung), nie in
-einen der Hilfskalender oder nach Amelia zurück. Braucht deshalb für die
-Hilfskalender nur Lesezugriff, keinen Schreibzugriff mehr.
+siehe oben). Braucht deshalb für die Hilfskalender nur Lesezugriff, keinen
+Schreibzugriff.
+
+Es schreibt in zwei Richtungen, beide bewusst begrenzt:
+- **Vorwärts** (jede Minute) ausschließlich in Raum 1 (neue Events, oder
+  Gästeliste/Zeit/Titel/Ort bestehender Events bei einer erkannten
+  Umbesetzung/Verlegung in Amelia).
+- **Rückwärts** (einmal täglich, seit 27.08.2026, siehe "Teil 3") sendet
+  ausschließlich die neue Start-/Endzeit eines vom Team verschobenen
+  Raum-1-Termins an die WordPress-Route `/booking-reschedule` — nie
+  direkt an die Amelia-Datenbank, sondern über denselben internen
+  Amelia-Endpunkt, den auch das Buchungs-Dashboard benutzt (siehe README
+  dort). Abgesichert per gemeinsamem Geheimnis (`WP_RESCHEDULE_SECRET` /
+  `ST_RESCHEDULE_SECRET`), das **nirgends im Klartext committet** werden
+  darf — beide Konfigurationsstellen enthalten nur Platzhalter, echte
+  Werte werden ausschließlich in den jeweiligen Editoren (Apps Script /
+  WPCode) eingetragen, nie ins Repo.
+
+In keinem der beiden Fälle wird ein Hilfskalender direkt beschrieben oder
+ein Amelia-Termin per rohem Datenbank-Zugriff verändert.

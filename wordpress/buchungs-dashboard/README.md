@@ -53,6 +53,19 @@ sondern echte WordPress-Anmeldung:
   (`X-WP-Nonce`-Header). Ohne aktive, eingeloggte Session gibt es keine
   Daten und keine Aktion — auch nicht, wenn jemand die REST-URL direkt
   aufruft.
+- **Ausnahme `booking-reschedule`:** Diese Route wird nicht vom Dashboard im
+  Browser aufgerufen, sondern serverseitig vom Apps-Script-Projekt
+  `apps-script/raum-einladung-sync` (kein WordPress-Login vorhanden, siehe
+  dort). Statt der Nonce-/Session-Prüfung verlangt sie ein gemeinsames
+  Geheimnis im Header `X-ST-Reschedule-Secret` (`hash_equals()`-Vergleich
+  gegen `ST_RESCHEDULE_SECRET`). Für den eigentlichen Amelia-Request wird
+  intern kurzzeitig ein fest hinterlegter Admin-Account simuliert
+  (`wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID)`), damit derselbe
+  Cookie-Mint-Mechanismus wie bei den anderen Routen greift — das ist kein
+  echter Login, wirkt nur für die Dauer dieses einen Requests. ⚠️
+  `ST_RESCHEDULE_SECRET` und `ST_RESCHEDULE_ADMIN_USER_ID` müssen vor
+  Go-Live in `wpcode-snippet.php` mit echten Werten befüllt werden (siehe
+  Kommentare direkt über der Konstante).
 - Die Freigeben-Aktion (und alles Zukünftige, das echte Amelia-Requests
   nachschickt) **speichert nirgends** Login-Cookies, Nonces oder Tokens im
   Code oder in der Datenbank. Sie liest bei jedem Aufruf live `$_COOKIE` aus
@@ -125,6 +138,41 @@ wechselt — das musste nicht separat nachgebaut werden):
   Freitext-Nachricht, Zahlungslink-Einstellung, uvm. — alles in einem
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
+
+## Rückrichtung Kalender → Amelia (`/booking-reschedule`)
+
+Gehört technisch zu `apps-script/raum-einladung-sync`, nicht zu Smart
+Freigeben — hier dokumentiert, weil die Route in dieser Datei lebt.
+
+**Hintergrund:** Das Team bekommt bestätigte Termine als Kalender-Einladung
+in einen Raum-1-Kopie-Termin (siehe README dort). Jörgs ausdrückliche
+Vorgabe (27.08.2026): Das Team muss diese Termine frei im Google-Kalender
+verschieben können, ohne ihm jedes Mal Bescheid geben zu müssen — "sonst
+geht es über drei Ecken". Eine tägliche Automatik im Apps-Script-Projekt
+erkennt verschobene Raum-1-Termine und trägt die neue Zeit automatisch in
+Amelia ein, ganz ohne Freigabe-Schritt und ohne dass Jörg davon erfährt
+(nur echte Fehler landen per Mail bei ihm).
+
+**Route:** `POST /booking-reschedule` mit Body
+`{appointmentId, newBookingStart, newBookingEnd}` — die beiden Zeitfelder
+als UTC-MySQL-Strings (`"YYYY-MM-DD HH:MM:SS"`). `st_fetch_appointment_raw_()`
+liefert dafür zusätzlich `category_id` (Join auf `amelia_services`), damit
+`st_build_reschedule_payload_()` — im Unterschied zu
+`st_build_reassign_payload_()` — `categoryId`/`serviceId`/`providerId`
+unverändert aus der DB übernehmen kann und nur `bookingStart`/`date`/`time`/
+`duration` überschreibt. Ruft danach denselben
+`st_amelia_ajax_call_('POST', '/appointments/' . $id, [], $payload)` wie
+`/booking-reassign` auf — also wieder Amelias eigener interner Endpunkt,
+kein rohes DB-UPDATE, dieselbe Begründung wie überall sonst in diesem
+Baustein (native Kalender-Sync/Notifications bleiben erhalten).
+
+**Bewusst nicht gebaut:** Keine Doppelbuchungs-/Kollisionsprüfung vor dem
+Zurückschreiben — Jörg hat dieses Risiko am 27.08.2026 ausdrücklich in
+Kenntnis akzeptiert, um ganz ohne manuellen Freigabe-Schritt auszukommen.
+Betrifft nur Termine, deren Kalender-Beschreibung eine echte Amelia-
+Termin-ID enthält (`Termin-ID: %appointment_id%`, siehe README des
+Apps-Script-Projekts) — ältere Termine ohne diese Zeile werden vom
+Apps Script beim täglichen Rücklauf übersprungen.
 
 ## "Smart Freigeben" — Referenzdaten & Verlauf
 

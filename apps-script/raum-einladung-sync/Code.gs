@@ -40,7 +40,16 @@
  *    ankommt, siehe Jörgs Rückmeldung vom 23.08.2026: sein Team ist
  *    "nicht sehr technisch-affin" und soll bei "Mail da, Termin noch
  *    nicht im Kalender" nicht nachfragen müssen).
- * 5. Mila fehlt bewusst (keine Hilfskalender-ID bekannt, siehe README) —
+ * 5. ZWEITEN Trigger einrichten: Funktion "syncTeamChangesBackToAmelia",
+ *    zeitgesteuert, "Tage-Timer" → einmal täglich, Uhrzeit egal (z. B.
+ *    nachts) — trägt vom Team im Raum-1-Kalender verschobene Termine
+ *    automatisch in Amelia ein, siehe "RÜCKRICHTUNG KALENDER → AMELIA"
+ *    unten.
+ * 6. WP_RESCHEDULE_SECRET unten (Konfiguration) auf denselben Wert
+ *    setzen wie ST_RESCHEDULE_SECRET in wordpress/buchungs-dashboard/
+ *    wpcode-snippet.php — langer zufälliger String, auf beiden Seiten
+ *    identisch.
+ * 7. Mila fehlt bewusst (keine Hilfskalender-ID bekannt, siehe README) —
  *    vor dem Ergänzen bei Jörg nachfragen.
  *
  * SICHERHEIT: Liest die Hilfskalender NUR — schreibt oder markiert dort
@@ -68,12 +77,24 @@
  * Titel, Ort) mit dem aktuellen Amelia-Termin verglichen — geändert sich
  * etwas, wird die BESTEHENDE Raum-1-Kopie angepasst (Zeit verschoben,
  * Gast umgehängt, Titel/Ort aktualisiert) statt eine zweite anzulegen.
- * Neu erzeugte Raum-1-Kopien werden außerdem mit `setGuestsCanModify
- * (false)` angelegt — Gäste (das Team) können den Termin nur sehen, nicht
- * verschieben. Grund: Amelia bleibt die alleinige Quelle der Wahrheit;
- * eine Verlegung DIREKT in Raum 1 durch ein Teammitglied würde sonst beim
- * nächsten Lauf stillschweigend wieder überschrieben (verwirrend) und
- * hätte ohnehin nie den echten Amelia-Termin verändert.
+ * RÜCKRICHTUNG KALENDER → AMELIA (27.08.2026): Das Team darf Raum-1-
+ * Termine frei verschieben (Jörgs ausdrückliche Vorgabe: alles andere
+ * bedeutet "drei Ecken" — Team müsste ihm schreiben, er müsste es dann
+ * manuell in Amelia nachtragen). Raum-1-Kopien werden deshalb NICHT mehr
+ * mit `setGuestsCanModify(false)` gesperrt. Stattdessen läuft einmal
+ * täglich `syncTeamChangesBackToAmelia()`: vergleicht für jeden per
+ * echter Termin-ID getrackten Raum-1-Termin die aktuelle Start-/Endzeit
+ * mit der zuletzt bekannten Amelia-Zeit (im selben PropertiesService-
+ * Eintrag gespeichert) und trägt eine Abweichung automatisch über die
+ * neue WordPress-Route /booking-reschedule in Amelia ein — ganz ohne
+ * Rückfrage oder Benachrichtigung an Jörg (nur echte Fehler landen per
+ * Mail bei ihm, siehe `sendAlert()`). Termine ohne echte Termin-ID
+ * (Fingerabdruck-Fallback) werden dabei übersprungen, weil dafür keine
+ * Amelia-Termin-ID zum Zurückschreiben vorliegt.
+ *
+ * Bewusst NICHT geprüft: Doppelbuchungen/Kollisionen mit anderen Terminen
+ * der Zielperson — Jörg hat dieses Risiko in Kenntnis akzeptiert
+ * (27.08.2026), um ganz ohne manuellen Freigabe-Schritt auszukommen.
  *
  * ⚠️ VORFALL 26.08.2026: Eva war anfangs mit ihrem privaten Gmail-Kalender
  * (statt einem reinen Amelia-Ressourcen-Konto) in MEMBERS enthalten. Das
@@ -133,6 +154,13 @@ var TEAM_APP_BLOCK_TITLE = 'Blockiert (Verfügbarkeit-Sync)';
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
+// WordPress-Route für die Rückrichtung Kalender → Amelia (siehe
+// "RÜCKRICHTUNG KALENDER → AMELIA" im Datei-Header). Muss zu
+// ST_RESCHEDULE_SECRET in wordpress/buchungs-dashboard/wpcode-snippet.php
+// passen (dort auch ST_RESCHEDULE_ADMIN_USER_ID setzen).
+var WP_RESCHEDULE_URL = 'https://spiritual-touch.de/wp-json/st/v1/booking-reschedule';
+var WP_RESCHEDULE_SECRET = 'DEIN-ZUFAELLIGES-PASSWORT-HIER';
+
 // ---------- HAUPTFUNKTION (Trigger: jede Minute) ----------
 
 function syncRaumEinladungen() {
@@ -185,7 +213,9 @@ function syncRaumEinladungen() {
               guests: member.email,
               sendInvites: true,
             });
-            newCopy.setGuestsCanModify(false); // Amelia bleibt alleinige Quelle der Wahrheit, siehe Datei-Header
+            // Bewusst OHNE setGuestsCanModify(false) — das Team soll den Termin
+            // selbst verschieben können, siehe "RÜCKRICHTUNG KALENDER → AMELIA"
+            // im Datei-Header.
             snapshot.raum1EventId = newCopy.getId();
             props.setProperty(key, JSON.stringify(snapshot));
             copied++;
@@ -209,7 +239,6 @@ function syncRaumEinladungen() {
               guests: member.email,
               sendInvites: true,
             });
-            raum1Event.setGuestsCanModify(false);
           } else {
             if (memberChanged) {
               try {
@@ -319,6 +348,103 @@ function pruneOldFingerprints_(props, now) {
 // Manueller Testlauf (Run-Button im Editor) — identisch zu syncRaumEinladungen.
 function runSyncNow() {
   syncRaumEinladungen();
+}
+
+// ---------- RÜCKRICHTUNG KALENDER → AMELIA (Trigger: einmal täglich) ----------
+//
+// Siehe Datei-Header, Abschnitt "RÜCKRICHTUNG KALENDER → AMELIA". Prüft für
+// jeden per echter Amelia-Termin-ID getrackten Raum-1-Termin, ob die
+// tatsächliche Start-/Endzeit von der zuletzt bekannten Amelia-Zeit
+// abweicht (= das Team hat den Termin in Raum 1 verschoben) und trägt eine
+// Abweichung automatisch in Amelia ein. Läuft bewusst NICHT im
+// Minuten-Trigger mit (einmal täglich reicht laut Jörg, spart zusätzliche
+// externe Requests bei jedem Minuten-Lauf).
+function syncTeamChangesBackToAmelia() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    Logger.log('Ein anderer Lauf ist bereits aktiv – übersprungen.');
+    return;
+  }
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var all = props.getProperties();
+    var pushed = 0;
+    var errors = [];
+
+    Object.keys(all).forEach(function (key) {
+      if (key.indexOf('id_') !== 0) return; // nur Termine mit echter Amelia-Termin-ID lassen sich zurückschreiben
+
+      var data;
+      try {
+        data = JSON.parse(all[key]);
+      } catch (parseErr) {
+        return; // unlesbarer Alteintrag, wird von pruneOldFingerprints_ im nächsten Minuten-Lauf entfernt
+      }
+      if (!data.raum1EventId) return;
+
+      var raum1Event = CalendarApp.getEventById(data.raum1EventId);
+      if (!raum1Event) return; // Kopie gelöscht — der Minuten-Lauf legt sie bei Bedarf neu an
+
+      var currentStart = raum1Event.getStartTime();
+      var currentEnd = raum1Event.getEndTime();
+      var storedStart = new Date(data.start);
+      var storedEnd = new Date(data.end);
+      if (currentStart.getTime() === storedStart.getTime() && currentEnd.getTime() === storedEnd.getTime()) {
+        return; // unverändert
+      }
+
+      var appointmentId = key.substring('id_'.length);
+      try {
+        pushRescheduleToAmelia_(appointmentId, currentStart, currentEnd);
+        data.start = currentStart.toISOString();
+        data.end = currentEnd.toISOString();
+        props.setProperty(key, JSON.stringify(data));
+        pushed++;
+        Logger.log('Rückrichtung: Termin-ID ' + appointmentId + ' (' + data.member + ') auf ' + currentStart + ' – ' + currentEnd + ' verschoben.');
+      } catch (pushErr) {
+        errors.push('Termin-ID ' + appointmentId + ' (' + data.member + '): ' + pushErr.message);
+      }
+    });
+
+    Logger.log(pushed + ' Verlegung(en) nach Amelia übertragen.');
+    if (errors.length > 0) {
+      sendAlert('Fehler bei Rückrichtung Kalender → Amelia', errors.join('\n'));
+    }
+  } catch (err) {
+    sendAlert('Fehler im Lauf (Rückrichtung)', err.message + '\n\n' + err.stack);
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Schickt die neue Zeit an die WordPress-Route /booking-reschedule (siehe
+// wordpress/buchungs-dashboard/wpcode-snippet.php). Wirft bei Fehlschlag
+// (HTTP-Fehler oder Amelia-Fehlerantwort), damit der Aufrufer den Eintrag
+// NICHT als erledigt markiert und es beim nächsten Tageslauf erneut
+// versucht.
+function pushRescheduleToAmelia_(appointmentId, startDate, endDate) {
+  var payload = {
+    appointmentId: Number(appointmentId),
+    newBookingStart: Utilities.formatDate(startDate, 'Etc/UTC', 'yyyy-MM-dd HH:mm:ss'),
+    newBookingEnd: Utilities.formatDate(endDate, 'Etc/UTC', 'yyyy-MM-dd HH:mm:ss'),
+  };
+  var response = UrlFetchApp.fetch(WP_RESCHEDULE_URL, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-ST-Reschedule-Secret': WP_RESCHEDULE_SECRET },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+  var code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error('WordPress antwortete mit HTTP ' + code + ': ' + response.getContentText());
+  }
+}
+
+// Manueller Testlauf (Run-Button im Editor) — identisch zu syncTeamChangesBackToAmelia.
+function runReverseSyncNow() {
+  syncTeamChangesBackToAmelia();
 }
 
 function isTeamAppBlock(e) {

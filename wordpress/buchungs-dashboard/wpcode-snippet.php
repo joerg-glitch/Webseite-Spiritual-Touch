@@ -47,8 +47,21 @@
  *                 zeigt jetzt einfach alle geschlechtspassenden
  *                 Kandidat:innen zur manuellen Auswahl, auch bei nur einer
  *                 Person — Jörg schaut selbst in den Kalender.
+ *   2026-08-24.1  Neue Route /booking-reschedule für die Rückrichtung
+ *                 Kalender → Amelia (siehe apps-script/raum-einladung-sync):
+ *                 Wenn das Team einen Termin im Raum-1-Kalender auf eine
+ *                 andere Zeit verschiebt, trägt ein einmal täglich
+ *                 laufendes Apps Script das automatisch in Amelia ein — auf
+ *                 Jörgs ausdrücklichen Wunsch ganz ohne Freigabe-Schritt
+ *                 und ohne Benachrichtigung an ihn (nur Fehler melden).
+ *                 Abgesichert per gemeinsamem Geheimnis (kein WP-Login
+ *                 vorhanden), dafür st_fetch_appointment_raw_() um
+ *                 categoryId erweitert (Join auf amelia_services) und
+ *                 st_build_reschedule_payload_() neu gebaut. ⚠️ Vor Go-Live
+ *                 müssen ST_RESCHEDULE_SECRET und ST_RESCHEDULE_ADMIN_USER_ID
+ *                 unten mit echten Werten befüllt werden.
  */
-define('ST_BD_VERSION', '2026-08-23.4');
+define('ST_BD_VERSION', '2026-08-24.1');
 
 /**
  * ST Buchungs-Dashboard
@@ -322,6 +335,7 @@ function st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id) {
             a.providerId AS provider_id,
             a.internalNotes AS internal_notes,
             a.locationId AS location_id,
+            s.categoryId AS category_id,
             TIMESTAMPDIFF(SECOND, a.bookingStart, a.bookingEnd) AS duration_seconds,
             cb.id AS booking_id,
             cb.status AS booking_status,
@@ -332,6 +346,8 @@ function st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id) {
         FROM {$prefix}amelia_appointments a
         LEFT JOIN {$prefix}amelia_customer_bookings cb
             ON cb.appointmentId = a.id AND cb.status != 'canceled'
+        LEFT JOIN {$prefix}amelia_services s
+            ON s.id = a.serviceId
         WHERE a.id = %d
         LIMIT 1
     ";
@@ -394,9 +410,95 @@ function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_i
     ];
 }
 
+/**
+ * Baut das Termin-Objekt für die Rückrichtung Kalender → Amelia
+ * (Terminverlegung durchs Team): categoryId/serviceId/providerId bleiben
+ * unverändert aus der DB (es ändert sich nur die Zeit), im Unterschied zu
+ * st_build_reassign_payload_(), wo umgekehrt providerId/categoryId/serviceId
+ * geändert werden und die Zeit unverändert bleibt.
+ */
+function st_build_reschedule_payload_($row, $new_start_utc_mysql, $new_end_utc_mysql) {
+    $custom_fields = new stdClass();
+    if (!empty($row->custom_fields)) {
+        $decoded = json_decode($row->custom_fields, true);
+        if ($decoded !== null) {
+            $custom_fields = $decoded;
+        }
+    }
+
+    $duration_seconds = strtotime($new_end_utc_mysql) - strtotime($new_start_utc_mysql);
+
+    $local_start = get_date_from_gmt($new_start_utc_mysql);
+    $parts = explode(' ', $local_start);
+    $date = $parts[0];
+    $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
+
+    return [
+        'bookings' => [[
+            'coupon' => ['id' => $row->coupon_id !== null ? (int) $row->coupon_id : null],
+            'customerId' => (int) $row->customer_id,
+            'customFields' => $custom_fields,
+            'duration' => (int) $duration_seconds,
+            'extras' => [],
+            'id' => (int) $row->booking_id,
+            'packageCustomerService' => null,
+            'persons' => (int) $row->persons,
+            'status' => $row->booking_status ?: 'pending',
+        ]],
+        'bookingStart' => $local_start,
+        'categoryId' => $row->category_id !== null ? (int) $row->category_id : ST_CAT_BESTAETIGT,
+        'date' => $date,
+        'id' => (int) $row->appointment_id,
+        'internalNotes' => $row->internal_notes ?: '',
+        'lessonSpace' => false,
+        'locationId' => $row->location_id !== null ? (int) $row->location_id : null,
+        'notifyParticipants' => 1,
+        'providerId' => (int) $row->provider_id,
+        'recurring' => [],
+        'removedBookings' => [],
+        'serviceId' => (int) $row->service_id,
+        'time' => $time,
+        'createPaymentLinks' => true,
+    ];
+}
+
+/**
+ * Gemeinsames Passwort für die Rückrichtung Kalender → Amelia: Das Apps
+ * Script, das einmal täglich prüft, was das Team im Raum-1-Kalender
+ * verschoben hat, läuft serverseitig (kein Browser, keine WP-Login-Session,
+ * daher kein current_user_can()-Check möglich) — Absicherung stattdessen per
+ * gemeinsamem Geheimnis im Header "X-ST-Reschedule-Secret".
+ *
+ * ⚠️ WERT UNBEDINGT ÄNDERN, BEVOR DAS APPS SCRIPT LIVE GEHT. Auf beiden
+ * Seiten identisch eintragen (hier UND in Code.gs bei WP_RESCHEDULE_SECRET).
+ * Langer zufälliger String, z. B. per Passwort-Generator.
+ */
+define('ST_RESCHEDULE_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER');
+
+/**
+ * st_amelia_ajax_call_() braucht eine eingeloggte WP-Session, um über
+ * st_forward_cookies_() einen gültigen Amelia-Admin-Cookie zu erzeugen
+ * (siehe dort) — bei /booking-reschedule gibt es aber keine Session (Apps
+ * Script ruft ohne Browser-Login auf, nur mit dem Geheimnis oben). Deshalb
+ * hier die Nutzer-ID eines echten WP-Admin-Accounts hinterlegen (z. B.
+ * Jörgs eigener Account) — wp-admin → Benutzer → auf den Namen klicken →
+ * die Zahl in der URL (user_id=...). Der Handler setzt darüber kurzzeitig
+ * nur für diesen einen Request den "aktuellen Nutzer" (wp_set_current_user),
+ * NICHT den globalen Login-Status — nach dem Request ist nichts verändert.
+ */
+define('ST_RESCHEDULE_ADMIN_USER_ID', 0);
+
 add_action('rest_api_init', function () {
     $admin_only = function () {
         return current_user_can('manage_options');
+    };
+
+    // Für /booking-reschedule: kein WP-Login vorhanden (Apps Script ruft
+    // server-zu-server auf), daher Prüfung per gemeinsamem Geheimnis statt
+    // current_user_can(). hash_equals() gegen Timing-Angriffe.
+    $reschedule_secret_ok = function (WP_REST_Request $request) {
+        $given = $request->get_header('x-st-reschedule-secret');
+        return is_string($given) && hash_equals(ST_RESCHEDULE_SECRET, $given);
     };
 
     register_rest_route('st/v1', '/booking-overview', [
@@ -451,6 +553,19 @@ add_action('rest_api_init', function () {
         'methods' => 'GET',
         'callback' => 'st_amelia_reference_handler',
         'permission_callback' => $admin_only,
+    ]);
+
+    // Rückrichtung Kalender → Amelia: Wird vom Apps Script
+    // (apps-script/raum-einladung-sync) einmal täglich aufgerufen, wenn es
+    // im Raum-1-Kalender eine vom Team verschobene Uhrzeit/Dauer erkennt.
+    // Trägt die neue Zeit über denselben "Aktualisieren"-Request ein, den
+    // auch /booking-reassign benutzt — Mitarbeiter/Kategorie/Dienstleistung
+    // bleiben dabei unverändert. Kein Freigabe-Schritt nötig (der Termin ist
+    // ja schon "Bestätigt"), keine Doppelbuchungsprüfung (siehe README).
+    register_rest_route('st/v1', '/booking-reschedule', [
+        'methods' => 'POST',
+        'callback' => 'st_booking_reschedule_handler',
+        'permission_callback' => $reschedule_secret_ok,
     ]);
 });
 
@@ -624,6 +739,52 @@ function st_booking_reassign_handler(WP_REST_Request $request) {
     }
 
     $payload = st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_id);
+    $result = st_amelia_ajax_call_('POST', '/appointments/' . $appointment_id, [], $payload);
+    if (is_wp_error($result)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
+    }
+
+    return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
+}
+
+/**
+ * Rückrichtung Kalender → Amelia: trägt eine vom Team im Raum-1-Kalender
+ * verschobene Uhrzeit/Dauer in Amelia ein. Erwartet newBookingStart/
+ * newBookingEnd als UTC-MySQL-Strings ("YYYY-MM-DD HH:MM:SS"), damit hier
+ * dieselbe get_date_from_gmt()-Umrechnung greift wie überall sonst in dieser
+ * Datei — das Apps Script schickt also KEINE lokale Berliner Zeit, sondern
+ * UTC (CalendarEvent.getStartTime() als ISO-String mit toISOString() bzw.
+ * äquivalent, siehe Code.gs).
+ */
+function st_booking_reschedule_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $appointment_id = (int) $request->get_param('appointmentId');
+    $new_start = $request->get_param('newBookingStart');
+    $new_end = $request->get_param('newBookingEnd');
+    if (!$appointment_id || !$new_start || !$new_end) {
+        return new WP_REST_Response(['error' => 'missing_params'], 400);
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $new_start)
+        || !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $new_end)) {
+        return new WP_REST_Response(['error' => 'invalid_datetime_format', 'expected' => 'YYYY-MM-DD HH:MM:SS (UTC)'], 400);
+    }
+
+    $row = st_fetch_appointment_raw_($wpdb, $prefix, $appointment_id);
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+    if (!$row) {
+        return new WP_REST_Response(['error' => 'appointment_not_found'], 404);
+    }
+
+    if (!ST_RESCHEDULE_ADMIN_USER_ID) {
+        return new WP_REST_Response(['error' => 'not_configured', 'detail' => 'ST_RESCHEDULE_ADMIN_USER_ID ist noch nicht gesetzt (siehe Kommentar im Code).'], 500);
+    }
+    wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID);
+
+    $payload = st_build_reschedule_payload_($row, $new_start, $new_end);
     $result = st_amelia_ajax_call_('POST', '/appointments/' . $appointment_id, [], $payload);
     if (is_wp_error($result)) {
         return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
