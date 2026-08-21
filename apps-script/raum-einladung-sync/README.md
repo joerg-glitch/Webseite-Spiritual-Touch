@@ -63,8 +63,17 @@ zwei Arten von Einträgen — die eigenen Verfügbarkeits-Blocker von
 `team-app/App Script - Sync` (Titel "Blockiert (Verfügbarkeit-Sync)",
 intern per Tag markiert) und die echten, von Amelia geschriebenen
 Termine. Das Skript überspringt die Blocker und kopiert nur den Rest.
-Bereits kopierte Termine markiert es selbst (eigener Tag
-`raumEinladungSync`), damit nichts doppelt landet.
+
+**Wie es Duplikate verhindert (auch bei Mitarbeiter-Wechsel):** Statt den
+Quell-Termin selbst zu markieren (das ist der 26.08.2026-Vorfall, siehe
+unten), merkt sich das Skript einen Fingerabdruck aus Titel+Start+Ende
+in `PropertiesService` — unabhängig davon, in welchem Hilfskalender der
+Termin gerade steht. Weist Jörg einer Anfrage nachträglich einen anderen
+Mitarbeiter zu, verschiebt Amelia den Termin dadurch faktisch vom alten
+in den neuen Hilfskalender (neue Event-ID, aber gleicher Titel+gleiche
+Zeit) — das Skript erkennt das am Fingerabdruck wieder und hängt die
+bestehende Raum-1-Einladung um (alten Mitarbeiter als Gast raus, neuen
+rein), statt eine zweite Kopie anzulegen.
 
 ## ⚠️ Vorfall 26.08.2026: hunderte Duplikate bei Eva
 
@@ -84,10 +93,12 @@ zusammen:
 
 **Behoben:**
 - Eva aus `MEMBERS` entfernt (sie kopiert ihre Termine seither selbst).
-- Reihenfolge in `syncRaumEinladungen()` getauscht: **erst** markieren,
-  **dann** kopieren — schlägt das Markieren fehl, wird gar nicht erst
-  kopiert (verpasste Einladung statt Endlosschleife). Verhindert dieselbe
-  Duplikat-Kaskade künftig für jeden, nicht nur für Eva.
+- Strukturell behoben (26.08.2026, zweiter Fund): Statt den Quell-Termin
+  selbst zu markieren (brauchte Schreibrechte auf dem Hilfskalender — bei
+  Eva nicht vorhanden, daher die Endlosschleife), merkt sich das Skript
+  jetzt einen Fingerabdruck in `PropertiesService` und **liest** die
+  Hilfskalender nur noch. Kann bei niemandem mehr passieren, selbst wenn
+  irgendwann bei jemand anderem nur Lesezugriff besteht.
 - Neue Funktion `cleanupEvaMistakenCopies()` in `Code.gs` — löscht alle
   Duplikate in Raum 1 in einem Rutsch, ohne Absage-Mails zu verschicken.
   Braucht einmalig die "Calendar API" als erweiterten Dienst (Editor →
@@ -100,13 +111,20 @@ zusammen:
 absichtlich außen vor gelassen, bis das analog zu den anderen (siehe
 `team-app`-README) eingerichtet ist. Dann hier in `MEMBERS` ergänzen.
 
-⚠️ **Kein Re-Sync bei Terminänderung/-absage.** Sobald ein Termin einmal
-kopiert wurde (eigener Tag gesetzt), fasst das Skript ihn nicht mehr an —
-eine spätere Verschiebung oder Stornierung in Amelia aktualisiert die
-Raum-1-Kopie/Einladung **nicht** automatisch. Für den ersten Wurf bewusst
-so belassen (Jörgs Wunsch nach der einfachsten Lösung); bei Bedarf
-später nachrüstbar (z. B. Tag durch einen Zeitstempel ersetzen und bei
-`getLastUpdated()`-Änderung erneut synchronisieren).
+✅ **Mitarbeiter-Wechsel** (23./26.08.2026 von Jörg angefragt) wird
+erkannt: Wird einer Anfrage nachträglich ein anderer Mitarbeiter
+zugewiesen, hängt das Skript die bestehende Raum-1-Einladung um, statt
+eine zweite anzulegen (siehe "Wie es Duplikate verhindert" oben).
+
+⚠️ **Kein Re-Sync bei Terminänderung/-absage, wenn sich Titel ODER
+Uhrzeit ändern** (z. B. Kunde verschiebt den Termin). Der
+Fingerabdruck-Abgleich erkennt eine Umbesetzung (gleicher Titel+Zeit,
+anderer Mitarbeiter), aber nicht mehr, wenn sich auch Titel oder Uhrzeit
+ändern — dann bleibt eine alte Raum-1-Kopie mit der alten Zeit stehen.
+Für den ersten Wurf bewusst so belassen (Jörgs Wunsch nach der
+einfachsten Lösung); bei Bedarf später nachrüstbar (bräuchte eine
+Amelia-eigene Termin-ID im Titel/Beschreibung als stabilen Anker statt
+Titel+Zeit).
 
 ## Echte Mailadressen (Stand 23.08.2026, von Jörg)
 
@@ -128,8 +146,10 @@ später nachrüstbar (z. B. Tag durch einen Zeitstempel ersetzen und bei
 
 ## Sicherheit
 
-Das Skript liest die Hilfskalender nur und markiert eigene, bereits
-kopierte Termine per Tag (unsichtbares Metadatum, ändert nichts an Titel/
-Beschreibung/Zeit) — echte Amelia-Termine werden nie inhaltlich verändert
-oder gelöscht. Es schreibt ausschließlich neue Events in Raum 1, nie in
-einen der Hilfskalender oder nach Amelia zurück.
+Das Skript **liest** die Hilfskalender nur — schreibt oder markiert dort
+nichts (seit dem Umstieg auf den Fingerabdruck-Abgleich am 26.08.2026,
+siehe oben). Echte Amelia-Termine werden nie inhaltlich verändert oder
+gelöscht. Es schreibt ausschließlich in Raum 1 (neue Events, oder
+Gästeliste bestehender Events bei einer erkannten Umbesetzung), nie in
+einen der Hilfskalender oder nach Amelia zurück. Braucht deshalb für die
+Hilfskalender nur Lesezugriff, keinen Schreibzugriff mehr.

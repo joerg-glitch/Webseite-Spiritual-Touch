@@ -43,11 +43,25 @@
  * 5. Mila fehlt bewusst (keine Hilfskalender-ID bekannt, siehe README) —
  *    vor dem Ergänzen bei Jörg nachfragen.
  *
- * SICHERHEIT: Fasst in den Hilfskalendern NUR Termine an, die es selbst
- * per Tag "raumEinladungSync"="true" markiert (VOR dem Kopieren, nicht
- * danach — siehe Kommentar in syncRaumEinladungen(), warum die
- * Reihenfolge wichtig ist) — echte Amelia-Termine werden nie inhaltlich
- * verändert oder gelöscht, nur gelesen und markiert.
+ * SICHERHEIT: Liest die Hilfskalender NUR — schreibt oder markiert dort
+ * nichts mehr (siehe "Fingerabdruck-Abgleich" unten). Schreibt
+ * ausschließlich in Raum 1. Braucht deshalb auch nur Lesezugriff auf die
+ * Hilfskalender, nie Schreibzugriff.
+ *
+ * FINGERABDRUCK-ABGLEICH (26.08.2026, zweiter Fund): Wenn Jörg einer
+ * Anfrage nachträglich einen anderen Mitarbeiter zuweist, löscht Amelia
+ * den Termin im alten Hilfskalender und legt ihn im neuen komplett neu
+ * an — neue Event-ID, kein alter Tag übernommen. Ein Tag AM Termin selbst
+ * (wie ursprünglich gebaut) kann eine Umbesetzung deshalb nie erkennen.
+ * Firmiert deshalb jetzt über einen Fingerabdruck aus Titel+Start+Ende
+ * (`PropertiesService`, unabhängig vom jeweiligen Hilfskalender) —
+ * erkennt denselben Termin auch nach einem Mitarbeiter-Wechsel wieder und
+ * hängt die bestehende Raum-1-Einladung um (alten Gast raus, neuen Gast
+ * rein), statt eine zweite Kopie anzulegen. Bekannte Grenze: Ändert sich
+ * stattdessen Titel ODER Uhrzeit (z. B. Kunde verschiebt den Termin),
+ * erkennt der Abgleich das NICHT als denselben Termin — dann bleibt eine
+ * alte Raum-1-Kopie mit der alten Zeit stehen. Für den ersten Wurf bewusst
+ * so belassen (Jörgs Wunsch nach der einfachsten Lösung).
  *
  * ⚠️ VORFALL 26.08.2026: Eva war anfangs mit ihrem privaten Gmail-Kalender
  * (statt einem reinen Amelia-Ressourcen-Konto) in MEMBERS enthalten. Das
@@ -55,11 +69,12 @@
  * Aufenthalt usw.) fälschlich als neue Amelia-Termine erkannt UND — weil
  * das ausführende Konto auf ihrem Kalender nur Lese- statt Schreibrechte
  * hatte — sie bei jedem Minuten-Lauf erneut kopiert (das Markieren als
- * "erledigt" schlug fehl, siehe SICHERHEIT oben für den Fix). Ergebnis:
- * hunderte doppelte Kalendereinladungen. Eva wurde aus MEMBERS entfernt,
- * die Reihenfolge markieren-dann-kopieren behoben (verhindert dieselbe
- * Endlosschleife künftig für jeden), und `cleanupEvaMistakenCopies()`
- * ganz unten räumt die entstandenen Duplikate in einem Rutsch auf.
+ * "erledigt" schlug fehl). Ergebnis: hunderte doppelte
+ * Kalendereinladungen. Eva wurde aus MEMBERS entfernt, `cleanupEvaMistaken
+ * Copies()` ganz unten räumt die entstandenen Duplikate in einem Rutsch
+ * auf. Der Umstieg auf den Fingerabdruck-Abgleich oben behebt zusätzlich
+ * die eigentliche Ursache (Schreibversuch auf einen Kalender ohne
+ * Schreibrechte) strukturell für jeden, nicht nur für Eva.
  */
 
 // ---------- KONFIGURATION ----------
@@ -94,8 +109,9 @@ var MEMBERS = [
 
 var SYNC_DAYS_AHEAD = 90; // gleicher Vorlauf wie das Buchungs-Dashboard
 
-var OWN_TAG_KEY = 'raumEinladungSync';
-var OWN_TAG_VALUE = 'true';
+// Präfix für die Fingerabdruck-Einträge in PropertiesService — siehe
+// Datei-Header "FINGERABDRUCK-ABGLEICH".
+var FINGERPRINT_PREFIX = 'raumSync_';
 
 // Aus "team-app/App Script - Sync" — dieselben Marker, um dessen eigene
 // Verfügbarkeits-Blocker sicher zu erkennen und zu überspringen.
@@ -119,9 +135,11 @@ function syncRaumEinladungen() {
       throw new Error('Raum-1-Kalender nicht gefunden/kein Zugriff: ' + RAUM1_CALENDAR_ID);
     }
 
+    var props = PropertiesService.getScriptProperties();
     var now = new Date();
     var horizonEnd = new Date(now.getTime() + SYNC_DAYS_AHEAD * 24 * 60 * 60 * 1000);
     var copied = 0;
+    var reassigned = 0;
     var errors = [];
 
     MEMBERS.forEach(function (member) {
@@ -135,36 +153,69 @@ function syncRaumEinladungen() {
       events.forEach(function (e) {
         try {
           if (isTeamAppBlock(e)) return; // Verfügbarkeits-Blocker, kein echter Termin
-          if (e.getTag(OWN_TAG_KEY) === OWN_TAG_VALUE) return; // schon kopiert
 
-          // ERST markieren, DANN kopieren — nicht umgekehrt. Wenn das
-          // Markieren fehlschlägt (z. B. weil dieses Konto auf dem
-          // Hilfskalender nur Lese- statt Schreibrechte hat), darf auf
-          // keinen Fall trotzdem eine Kopie entstehen: sonst hält jeder
-          // folgende Minuten-Lauf denselben Termin wieder für "neu" und
-          // häuft unbegrenzt Duplikate an — genau das ist am 26.08.2026
-          // bei Evas privatem Kalender passiert, siehe README "Vorfall".
-          // Schlägt stattdessen das Kopieren fehl, bleibt der Termin
-          // markiert und wird einmalig übersprungen statt endlos wiederholt
-          // — im Zweifel lieber eine verpasste Einladung als hunderte
-          // doppelte.
-          e.setTag(OWN_TAG_KEY, OWN_TAG_VALUE);
+          var key = fingerprintKey_(e.getTitle(), e.getStartTime(), e.getEndTime());
+          var stored = props.getProperty(key);
 
-          raum1.createEvent(e.getTitle(), e.getStartTime(), e.getEndTime(), {
-            description: e.getDescription(),
-            location: e.getLocation(),
-            guests: member.email,
-            sendInvites: true,
-          });
-          copied++;
-          Logger.log('Kopiert für ' + member.name + ': "' + e.getTitle() + '" am ' + e.getStartTime());
+          if (!stored) {
+            // Noch nie gesehen -> neu nach Raum 1 kopieren.
+            var newCopy = raum1.createEvent(e.getTitle(), e.getStartTime(), e.getEndTime(), {
+              description: e.getDescription(),
+              location: e.getLocation(),
+              guests: member.email,
+              sendInvites: true,
+            });
+            props.setProperty(key, JSON.stringify({
+              raum1EventId: newCopy.getId(),
+              member: member.name,
+              email: member.email,
+              start: e.getStartTime().toISOString(),
+            }));
+            copied++;
+            Logger.log('Kopiert für ' + member.name + ': "' + e.getTitle() + '" am ' + e.getStartTime());
+            return;
+          }
+
+          var data = JSON.parse(stored);
+          if (data.member === member.name) return; // schon bekannt, gleicher Mitarbeiter -> nichts zu tun
+
+          // Derselbe Termin (gleicher Titel+Zeit), aber ein anderer
+          // Mitarbeiter als beim letzten Mal -> Umbesetzung. Bestehende
+          // Raum-1-Einladung umhängen statt eine zweite anzulegen.
+          var raum1Event = CalendarApp.getEventById(data.raum1EventId);
+          if (!raum1Event) {
+            // Kopie existiert nicht mehr (z. B. manuell gelöscht) -> neu anlegen.
+            raum1Event = raum1.createEvent(e.getTitle(), e.getStartTime(), e.getEndTime(), {
+              description: e.getDescription(),
+              location: e.getLocation(),
+              guests: member.email,
+              sendInvites: true,
+            });
+          } else {
+            try {
+              raum1Event.removeGuest(data.email);
+            } catch (rmErr) {
+              // Gast evtl. schon entfernt/nie erfolgreich hinzugefügt — kein Abbruch.
+            }
+            raum1Event.addGuest(member.email);
+          }
+          props.setProperty(key, JSON.stringify({
+            raum1EventId: raum1Event.getId(),
+            member: member.name,
+            email: member.email,
+            start: e.getStartTime().toISOString(),
+          }));
+          reassigned++;
+          Logger.log('Umbesetzt: "' + e.getTitle() + '" am ' + e.getStartTime() + ' — ' + data.member + ' -> ' + member.name);
         } catch (evErr) {
           errors.push(member.name + ' / Termin "' + e.getTitle() + '": ' + evErr.message);
         }
       });
     });
 
-    Logger.log(copied + ' Termin(e) nach Raum 1 kopiert.');
+    var prunedCount = pruneOldFingerprints_(props, now);
+
+    Logger.log(copied + ' neu kopiert, ' + reassigned + ' umbesetzt, ' + prunedCount + ' alte Einträge aufgeräumt.');
     if (errors.length > 0) {
       sendAlert('Warnungen im Lauf', errors.join('\n'));
     }
@@ -174,6 +225,45 @@ function syncRaumEinladungen() {
   } finally {
     lock.releaseLock();
   }
+}
+
+// Baut aus Titel+Start+Ende einen kompakten, stabilen Schlüssel für
+// PropertiesService (MD5, weil Property-Keys kurz und aus unbedenklichen
+// Zeichen bestehen müssen). Bewusst NICHT die Event-ID verwendet, weil
+// Amelia bei einer Mitarbeiter-Umbesetzung ein komplett neues Event mit
+// neuer ID anlegt — der Fingerabdruck aus Titel+Zeit bleibt dabei gleich.
+function fingerprintKey_(title, start, end) {
+  var raw = title + '|' + start.toISOString() + '|' + end.toISOString();
+  var digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw);
+  var hex = digestBytes.map(function (b) {
+    return ('0' + (b & 0xFF).toString(16)).slice(-2);
+  }).join('');
+  return FINGERPRINT_PREFIX + hex;
+}
+
+// Entfernt Fingerabdruck-Einträge, deren Termin mehr als einen Tag in der
+// Vergangenheit liegt — verhindert, dass PropertiesService (Limit: 500
+// Einträge / 9 KB pro Wert / 500 KB insgesamt) über die Zeit unbegrenzt
+// vollläuft.
+function pruneOldFingerprints_(props, now) {
+  var cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  var all = props.getProperties();
+  var pruned = 0;
+  Object.keys(all).forEach(function (key) {
+    if (key.indexOf(FINGERPRINT_PREFIX) !== 0) return;
+    try {
+      var data = JSON.parse(all[key]);
+      if (data.start && new Date(data.start) < cutoff) {
+        props.deleteProperty(key);
+        pruned++;
+      }
+    } catch (parseErr) {
+      // Unlesbarer Alteintrag (z. B. vom alten Tag-basierten Format) -> löschen.
+      props.deleteProperty(key);
+      pruned++;
+    }
+  });
+  return pruned;
 }
 
 // Manueller Testlauf (Run-Button im Editor) — identisch zu syncRaumEinladungen.
