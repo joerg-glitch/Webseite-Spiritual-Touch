@@ -48,20 +48,32 @@
  * ausschließlich in Raum 1. Braucht deshalb auch nur Lesezugriff auf die
  * Hilfskalender, nie Schreibzugriff.
  *
- * FINGERABDRUCK-ABGLEICH (26.08.2026, zweiter Fund): Wenn Jörg einer
- * Anfrage nachträglich einen anderen Mitarbeiter zuweist, löscht Amelia
- * den Termin im alten Hilfskalender und legt ihn im neuen komplett neu
- * an — neue Event-ID, kein alter Tag übernommen. Ein Tag AM Termin selbst
- * (wie ursprünglich gebaut) kann eine Umbesetzung deshalb nie erkennen.
- * Firmiert deshalb jetzt über einen Fingerabdruck aus Titel+Start+Ende
- * (`PropertiesService`, unabhängig vom jeweiligen Hilfskalender) —
- * erkennt denselben Termin auch nach einem Mitarbeiter-Wechsel wieder und
- * hängt die bestehende Raum-1-Einladung um (alten Gast raus, neuen Gast
- * rein), statt eine zweite Kopie anzulegen. Bekannte Grenze: Ändert sich
- * stattdessen Titel ODER Uhrzeit (z. B. Kunde verschiebt den Termin),
- * erkennt der Abgleich das NICHT als denselben Termin — dann bleibt eine
- * alte Raum-1-Kopie mit der alten Zeit stehen. Für den ersten Wurf bewusst
- * so belassen (Jörgs Wunsch nach der einfachsten Lösung).
+ * TERMIN-ID-ABGLEICH (26.08.2026, dritter Anlauf): Wenn Jörg einer
+ * Anfrage nachträglich einen anderen Mitarbeiter zuweist ODER Datum/
+ * Uhrzeit ändert, löscht Amelia den Termin im alten Hilfskalender und
+ * legt ihn im neuen (oder mit neuer Zeit im selben) komplett neu an —
+ * neue Google-Calendar-Event-ID. Ein Tag AM Termin selbst (erster
+ * Anlauf) oder ein Fingerabdruck aus Titel+Zeit (zweiter Anlauf, siehe
+ * Git-Verlauf) übersteht das eine wie das andere nicht zuverlässig —
+ * Titel+Zeit ändert sich bei einer echten Verlegung ja gerade.
+ *
+ * Jörg hat deshalb Amelias Kalender-Vorlage um `Termin-ID: %appointment_
+ * id%` in der Beschreibung ergänzt (Amelia → Einstellungen → Termine →
+ * "Titel und Beschreibung der Veranstaltung") — die numerische Amelia-
+ * Termin-ID bleibt über Umbesetzung UND Verlegung hinweg stabil.
+ * `trackingKey_()` liest sie per Regex aus der Beschreibung und nutzt sie
+ * als Schlüssel in `PropertiesService` (Fallback auf den alten
+ * Titel+Zeit-Fingerabdruck für ältere Termine ohne diese Zeile). Bei
+ * jedem Lauf wird der gespeicherte Stand (Mitarbeiter, Start, Ende,
+ * Titel, Ort) mit dem aktuellen Amelia-Termin verglichen — geändert sich
+ * etwas, wird die BESTEHENDE Raum-1-Kopie angepasst (Zeit verschoben,
+ * Gast umgehängt, Titel/Ort aktualisiert) statt eine zweite anzulegen.
+ * Neu erzeugte Raum-1-Kopien werden außerdem mit `setGuestsCanModify
+ * (false)` angelegt — Gäste (das Team) können den Termin nur sehen, nicht
+ * verschieben. Grund: Amelia bleibt die alleinige Quelle der Wahrheit;
+ * eine Verlegung DIREKT in Raum 1 durch ein Teammitglied würde sonst beim
+ * nächsten Lauf stillschweigend wieder überschrieben (verwirrend) und
+ * hätte ohnehin nie den echten Amelia-Termin verändert.
  *
  * ⚠️ VORFALL 26.08.2026: Eva war anfangs mit ihrem privaten Gmail-Kalender
  * (statt einem reinen Amelia-Ressourcen-Konto) in MEMBERS enthalten. Das
@@ -139,7 +151,7 @@ function syncRaumEinladungen() {
     var now = new Date();
     var horizonEnd = new Date(now.getTime() + SYNC_DAYS_AHEAD * 24 * 60 * 60 * 1000);
     var copied = 0;
-    var reassigned = 0;
+    var updated = 0;
     var errors = [];
 
     MEMBERS.forEach(function (member) {
@@ -154,8 +166,16 @@ function syncRaumEinladungen() {
         try {
           if (isTeamAppBlock(e)) return; // Verfügbarkeits-Blocker, kein echter Termin
 
-          var key = fingerprintKey_(e.getTitle(), e.getStartTime(), e.getEndTime());
+          var key = trackingKey_(e);
           var stored = props.getProperty(key);
+          var snapshot = {
+            member: member.name,
+            email: member.email,
+            title: e.getTitle(),
+            start: e.getStartTime().toISOString(),
+            end: e.getEndTime().toISOString(),
+            location: e.getLocation() || '',
+          };
 
           if (!stored) {
             // Noch nie gesehen -> neu nach Raum 1 kopieren.
@@ -165,24 +185,22 @@ function syncRaumEinladungen() {
               guests: member.email,
               sendInvites: true,
             });
-            props.setProperty(key, JSON.stringify({
-              raum1EventId: newCopy.getId(),
-              member: member.name,
-              email: member.email,
-              start: e.getStartTime().toISOString(),
-            }));
+            newCopy.setGuestsCanModify(false); // Amelia bleibt alleinige Quelle der Wahrheit, siehe Datei-Header
+            snapshot.raum1EventId = newCopy.getId();
+            props.setProperty(key, JSON.stringify(snapshot));
             copied++;
             Logger.log('Kopiert für ' + member.name + ': "' + e.getTitle() + '" am ' + e.getStartTime());
             return;
           }
 
           var data = JSON.parse(stored);
-          if (data.member === member.name) return; // schon bekannt, gleicher Mitarbeiter -> nichts zu tun
+          var memberChanged = data.member !== snapshot.member;
+          var timeChanged = data.start !== snapshot.start || data.end !== snapshot.end;
+          var titleChanged = data.title !== snapshot.title;
+          var locationChanged = data.location !== snapshot.location;
+          if (!memberChanged && !timeChanged && !titleChanged && !locationChanged) return; // unverändert
 
-          // Derselbe Termin (gleicher Titel+Zeit), aber ein anderer
-          // Mitarbeiter als beim letzten Mal -> Umbesetzung. Bestehende
-          // Raum-1-Einladung umhängen statt eine zweite anzulegen.
-          var raum1Event = CalendarApp.getEventById(data.raum1EventId);
+          var raum1Event = data.raum1EventId ? CalendarApp.getEventById(data.raum1EventId) : null;
           if (!raum1Event) {
             // Kopie existiert nicht mehr (z. B. manuell gelöscht) -> neu anlegen.
             raum1Event = raum1.createEvent(e.getTitle(), e.getStartTime(), e.getEndTime(), {
@@ -191,22 +209,37 @@ function syncRaumEinladungen() {
               guests: member.email,
               sendInvites: true,
             });
+            raum1Event.setGuestsCanModify(false);
           } else {
-            try {
-              raum1Event.removeGuest(data.email);
-            } catch (rmErr) {
-              // Gast evtl. schon entfernt/nie erfolgreich hinzugefügt — kein Abbruch.
+            if (memberChanged) {
+              try {
+                raum1Event.removeGuest(data.email);
+              } catch (rmErr) {
+                // Gast evtl. schon entfernt/nie erfolgreich hinzugefügt — kein Abbruch.
+              }
+              raum1Event.addGuest(member.email);
             }
-            raum1Event.addGuest(member.email);
+            if (timeChanged) {
+              raum1Event.setTime(e.getStartTime(), e.getEndTime());
+            }
+            if (titleChanged) {
+              raum1Event.setTitle(e.getTitle());
+            }
+            if (locationChanged) {
+              raum1Event.setLocation(e.getLocation() || '');
+            }
+            raum1Event.setDescription(e.getDescription() || '');
           }
-          props.setProperty(key, JSON.stringify({
-            raum1EventId: raum1Event.getId(),
-            member: member.name,
-            email: member.email,
-            start: e.getStartTime().toISOString(),
-          }));
-          reassigned++;
-          Logger.log('Umbesetzt: "' + e.getTitle() + '" am ' + e.getStartTime() + ' — ' + data.member + ' -> ' + member.name);
+
+          snapshot.raum1EventId = raum1Event.getId();
+          props.setProperty(key, JSON.stringify(snapshot));
+          updated++;
+          Logger.log('Aktualisiert (' + key + '): "' + e.getTitle() + '" — ' + [
+            memberChanged ? (data.member + ' -> ' + member.name) : null,
+            timeChanged ? ('Zeit ' + data.start + ' -> ' + snapshot.start) : null,
+            titleChanged ? 'Titel geändert' : null,
+            locationChanged ? 'Ort geändert' : null,
+          ].filter(Boolean).join(', '));
         } catch (evErr) {
           errors.push(member.name + ' / Termin "' + e.getTitle() + '": ' + evErr.message);
         }
@@ -215,7 +248,7 @@ function syncRaumEinladungen() {
 
     var prunedCount = pruneOldFingerprints_(props, now);
 
-    Logger.log(copied + ' neu kopiert, ' + reassigned + ' umbesetzt, ' + prunedCount + ' alte Einträge aufgeräumt.');
+    Logger.log(copied + ' neu kopiert, ' + updated + ' aktualisiert (Umbesetzung/Verlegung), ' + prunedCount + ' alte Einträge aufgeräumt.');
     if (errors.length > 0) {
       sendAlert('Warnungen im Lauf', errors.join('\n'));
     }
@@ -227,11 +260,28 @@ function syncRaumEinladungen() {
   }
 }
 
+// Regex für die von Jörg am 26.08.2026 ergänzte Amelia-Vorlagenzeile
+// "Termin-ID: %appointment_id%" (siehe Datei-Header).
+var APPOINTMENT_ID_REGEX = /Termin-ID:\s*(\d+)/i;
+
+// Liefert den stabilsten verfügbaren Schlüssel für einen Termin: die
+// echte Amelia-Termin-ID aus der Beschreibung, wenn vorhanden (übersteht
+// Umbesetzung UND Verlegung) — sonst Fallback auf den alten
+// Titel+Zeit-Fingerabdruck für Termine von vor der Vorlagen-Änderung
+// (übersteht nur eine reine Umbesetzung, keine Verlegung, siehe
+// Datei-Header).
+function trackingKey_(e) {
+  var desc = e.getDescription() || '';
+  var match = desc.match(APPOINTMENT_ID_REGEX);
+  if (match) {
+    return 'id_' + match[1];
+  }
+  return fingerprintKey_(e.getTitle(), e.getStartTime(), e.getEndTime());
+}
+
 // Baut aus Titel+Start+Ende einen kompakten, stabilen Schlüssel für
 // PropertiesService (MD5, weil Property-Keys kurz und aus unbedenklichen
-// Zeichen bestehen müssen). Bewusst NICHT die Event-ID verwendet, weil
-// Amelia bei einer Mitarbeiter-Umbesetzung ein komplett neues Event mit
-// neuer ID anlegt — der Fingerabdruck aus Titel+Zeit bleibt dabei gleich.
+// Zeichen bestehen müssen). Nur noch Fallback, siehe trackingKey_().
 function fingerprintKey_(title, start, end) {
   var raw = title + '|' + start.toISOString() + '|' + end.toISOString();
   var digestBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw);
@@ -241,7 +291,7 @@ function fingerprintKey_(title, start, end) {
   return FINGERPRINT_PREFIX + hex;
 }
 
-// Entfernt Fingerabdruck-Einträge, deren Termin mehr als einen Tag in der
+// Entfernt Tracking-Einträge, deren Termin mehr als einen Tag in der
 // Vergangenheit liegt — verhindert, dass PropertiesService (Limit: 500
 // Einträge / 9 KB pro Wert / 500 KB insgesamt) über die Zeit unbegrenzt
 // vollläuft.
@@ -250,7 +300,7 @@ function pruneOldFingerprints_(props, now) {
   var all = props.getProperties();
   var pruned = 0;
   Object.keys(all).forEach(function (key) {
-    if (key.indexOf(FINGERPRINT_PREFIX) !== 0) return;
+    if (key.indexOf(FINGERPRINT_PREFIX) !== 0 && key.indexOf('id_') !== 0) return;
     try {
       var data = JSON.parse(all[key]);
       if (data.start && new Date(data.start) < cutoff) {
@@ -258,7 +308,7 @@ function pruneOldFingerprints_(props, now) {
         pruned++;
       }
     } catch (parseErr) {
-      // Unlesbarer Alteintrag (z. B. vom alten Tag-basierten Format) -> löschen.
+      // Unlesbarer Alteintrag (z. B. vom allerersten Tag-basierten Format) -> löschen.
       props.deleteProperty(key);
       pruned++;
     }

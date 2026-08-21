@@ -64,16 +64,38 @@ zwei Arten von Einträgen — die eigenen Verfügbarkeits-Blocker von
 intern per Tag markiert) und die echten, von Amelia geschriebenen
 Termine. Das Skript überspringt die Blocker und kopiert nur den Rest.
 
-**Wie es Duplikate verhindert (auch bei Mitarbeiter-Wechsel):** Statt den
-Quell-Termin selbst zu markieren (das ist der 26.08.2026-Vorfall, siehe
-unten), merkt sich das Skript einen Fingerabdruck aus Titel+Start+Ende
-in `PropertiesService` — unabhängig davon, in welchem Hilfskalender der
-Termin gerade steht. Weist Jörg einer Anfrage nachträglich einen anderen
-Mitarbeiter zu, verschiebt Amelia den Termin dadurch faktisch vom alten
-in den neuen Hilfskalender (neue Event-ID, aber gleicher Titel+gleiche
-Zeit) — das Skript erkennt das am Fingerabdruck wieder und hängt die
-bestehende Raum-1-Einladung um (alten Mitarbeiter als Gast raus, neuen
-rein), statt eine zweite Kopie anzulegen.
+**Wie es Duplikate verhindert (auch bei Mitarbeiter-Wechsel UND
+Verlegung):** Statt den Quell-Termin selbst zu markieren (das ist der
+26.08.2026-Vorfall, siehe unten), verfolgt das Skript jeden Termin über
+seine **echte Amelia-Termin-ID** — Jörg hat dafür Amelias
+Kalender-Vorlage um `Termin-ID: %appointment_id%` in der Beschreibung
+ergänzt (Amelia → Einstellungen → Termine → "Titel und Beschreibung der
+Veranstaltung"). Diese ID bleibt stabil, auch wenn Amelia bei einer
+Umbesetzung oder Verlegung den Kalendereintrag komplett neu anlegt (neue
+Google-Event-ID, aber gleiche Amelia-Termin-ID). Bei jedem Lauf
+vergleicht das Skript den gespeicherten Stand (Mitarbeiter, Zeit, Titel,
+Ort) mit dem aktuellen Amelia-Termin:
+- **Unverändert** → nichts zu tun.
+- **Anderer Mitarbeiter** → bestehende Raum-1-Einladung umhängen (alten
+  Gast raus, neuen rein) statt eine zweite Kopie anzulegen.
+- **Andere Zeit/Titel/Ort** (z. B. Kunde verschiebt den Termin) →
+  bestehende Raum-1-Kopie wird auf die neue Zeit/Titel/Ort aktualisiert.
+
+Für ältere Termine ohne diese Beschreibungszeile (vor der
+Vorlagen-Änderung) fällt das Skript auf den alten Titel+Zeit-Fingerabdruck
+zurück — der erkennt eine Umbesetzung noch, eine Verlegung aber nicht
+(siehe "Offene Punkte" unten).
+
+**Warum das Team die Raum-1-Kopie nicht selbst verschieben kann:** Neue
+Kopien werden mit `setGuestsCanModify(false)` angelegt — Gäste sehen den
+Termin, können ihn aber nicht verschieben. Absicht: Amelia bleibt die
+einzige Quelle der Wahrheit. Würde jemand die Kopie direkt in Raum 1
+verschieben, hätte das den echten Termin nie geändert, und der nächste
+Lauf hätte die Kopie beim nächsten erkannten Unterschied unbemerkt wieder
+auf die "richtige" (alte) Zeit zurückgesetzt — verwirrender als gar keine
+Möglichkeit zum Verschieben. Eine Terminänderung muss weiterhin über
+Amelia laufen (aktuell: Jörg im wp-admin, perspektivisch ggf. das
+Buchungs-Dashboard).
 
 ## ⚠️ Vorfall 26.08.2026: hunderte Duplikate bei Eva
 
@@ -111,20 +133,33 @@ zusammen:
 absichtlich außen vor gelassen, bis das analog zu den anderen (siehe
 `team-app`-README) eingerichtet ist. Dann hier in `MEMBERS` ergänzen.
 
-✅ **Mitarbeiter-Wechsel** (23./26.08.2026 von Jörg angefragt) wird
-erkannt: Wird einer Anfrage nachträglich ein anderer Mitarbeiter
-zugewiesen, hängt das Skript die bestehende Raum-1-Einladung um, statt
-eine zweite anzulegen (siehe "Wie es Duplikate verhindert" oben).
+✅ **Mitarbeiter-Wechsel** (23.08.2026 von Jörg angefragt) wird erkannt:
+bestehende Raum-1-Einladung wird umgehängt statt eine zweite anzulegen.
 
-⚠️ **Kein Re-Sync bei Terminänderung/-absage, wenn sich Titel ODER
-Uhrzeit ändern** (z. B. Kunde verschiebt den Termin). Der
-Fingerabdruck-Abgleich erkennt eine Umbesetzung (gleicher Titel+Zeit,
-anderer Mitarbeiter), aber nicht mehr, wenn sich auch Titel oder Uhrzeit
-ändern — dann bleibt eine alte Raum-1-Kopie mit der alten Zeit stehen.
-Für den ersten Wurf bewusst so belassen (Jörgs Wunsch nach der
-einfachsten Lösung); bei Bedarf später nachrüstbar (bräuchte eine
-Amelia-eigene Termin-ID im Titel/Beschreibung als stabilen Anker statt
-Titel+Zeit).
+✅ **Terminverlegung** (26.08.2026 von Jörg angefragt, Amelia → Kalender)
+wird seit dem Umstieg auf die echte Termin-ID ebenfalls erkannt: ändert
+sich Datum/Uhrzeit/Titel/Ort in Amelia, wird die bestehende Raum-1-Kopie
+automatisch mitverschoben statt eine Karteileiche stehen zu lassen.
+
+⚠️ **Kein Re-Sync bei Terminen ohne `Termin-ID:`-Zeile** in der
+Beschreibung (vor der Vorlagen-Änderung vom 26.08.2026 erzeugt) — die
+fallen auf den alten Titel+Zeit-Fingerabdruck zurück, der eine
+Umbesetzung noch erkennt, eine Verlegung aber nicht. Betrifft nur
+Alt-Termine; alles ab dem 26.08.2026 hat die ID und ist davon nicht
+betroffen.
+
+**Bewusst nicht gebaut: Rückrichtung Kalender → Amelia.** Jörg hat
+gefragt, ob ein Teammitglied, das die Raum-1-Kopie manuell verschiebt,
+das über eine Dashboard-Ansicht ("Änderungen erscheinen in einem Reiter,
+per Klick übernehmen") zurück nach Amelia spielen könnte. Eingeschätzt:
+eher nicht sinnvoll, weil (1) das Team ohnehin keinen Amelia-Zugriff hat
+und eine Änderung deshalb sowieso über Jörg laufen müsste — dafür reicht
+eine kurze Chat-Nachricht, kein neues UI —, und (2) automatisiertes
+Zurückschreiben beliebiger Zeitänderungen nach Amelia echte Risiken hätte
+(Doppelbuchungen, Kollisionen mit Amelias eigener Verfügbarkeitslogik).
+Stattdessen `setGuestsCanModify(false)` (siehe oben): verhindert die
+Verwirrung strukturell, statt sie nachträglich aufzulösen. Falls sich das
+in der Praxis als zu unflexibel erweist, gerne nochmal ansprechen.
 
 ## Echte Mailadressen (Stand 23.08.2026, von Jörg)
 
