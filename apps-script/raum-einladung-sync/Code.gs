@@ -34,7 +34,12 @@
  * 3. Einmal manuell "runSyncNow" ausführen (Run-Button) → Google fragt
  *    nach Kalender-Berechtigungen → erlauben.
  * 4. Zeitgesteuerten Trigger einrichten (Uhr-Symbol links): Funktion
- *    "syncRaumEinladungen", zeitgesteuert, alle 15 Minuten.
+ *    "syncRaumEinladungen", zeitgesteuert, "Minuten-Timer" → "Jede
+ *    Minute" (schnellste verfügbare Option — damit die Kalender-
+ *    Einladung praktisch zeitgleich mit Amelias eigener Mitarbeiter-Mail
+ *    ankommt, siehe Jörgs Rückmeldung vom 23.08.2026: sein Team ist
+ *    "nicht sehr technisch-affin" und soll bei "Mail da, Termin noch
+ *    nicht im Kalender" nicht nachfragen müssen).
  * 5. Siehe README, "Offene Punkte" — Mila (keine Hilfskalender-ID
  *    bekannt) und Eva (privater Gmail-Kalender statt Ressourcen-Konto,
  *    Lesezugriff für dieses Skript noch nicht bestätigt) vor dem
@@ -57,7 +62,7 @@ var RAUM1_CALENDAR_ID = 'c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18
 // selbst").
 var MEMBERS = [
   { name: 'Tara',       hilfsCalId: 'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com', email: 'tara.spiritual@gmail.com' },
-  { name: 'Eva',        hilfsCalId: 'eva.saur1993@gmail.com', email: 'eva.saur1993@gmail.com' }, // ACHTUNG: kein Ressourcen-Konto, siehe README "Offene Punkte"
+  { name: 'Eva',        hilfsCalId: 'eva.saur1993@gmail.com', email: 'eva.saur1993@gmail.com' }, // ihr privater Kalender, kein Ressourcen-Konto — von Jörg bestätigt: Amelia schreibt dort trotzdem hin
   { name: 'Asmita',     hilfsCalId: 'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com', email: 'rositsa.bogdanova232@gmail.com' },
   { name: 'Amila',      hilfsCalId: 'c_727306d56fd4b1755718073543de922a25edc2509fcb14f2b4e53b7a9263b72a@group.calendar.google.com', email: 'uta.schuppert@gmail.com' },
   { name: 'Sarah',      hilfsCalId: 'c_d37ba1f2e4913be355bc25873d90dc9ee115b70537adfd5a6b2a5f1e98d26361@group.calendar.google.com', email: 'sarahfriedrich321@gmail.com' },
@@ -85,7 +90,7 @@ var TEAM_APP_BLOCK_TITLE = 'Blockiert (Verfügbarkeit-Sync)';
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
-// ---------- HAUPTFUNKTION (Trigger: alle 15 Minuten) ----------
+// ---------- HAUPTFUNKTION (Trigger: jede Minute) ----------
 
 function syncRaumEinladungen() {
   var lock = LockService.getScriptLock();

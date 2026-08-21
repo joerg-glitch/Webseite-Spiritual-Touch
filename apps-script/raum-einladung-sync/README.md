@@ -53,7 +53,10 @@ internen Hilfskalender braucht.
 3. Einmal manuell "runSyncNow" ausführen (▶-Button) → Google fragt nach
    Kalender-Berechtigungen → erlauben.
 4. Zeitgesteuerten Trigger einrichten (Uhr-Symbol links): Funktion
-   `syncRaumEinladungen`, zeitgesteuert, alle 15 Minuten.
+   `syncRaumEinladungen`, zeitgesteuert, "Minuten-Timer" → **"Jede
+   Minute"** (schnellste verfügbare Option) — damit die Kalender-
+   Einladung praktisch zeitgleich mit Amelias Mitarbeiter-Mail ankommt
+   und niemand im Team nachfragen muss, wo der Termin bleibt.
 
 **Wie es erkennt, was ein "echter" Termin ist:** Der Hilfskalender enthält
 zwei Arten von Einträgen — die eigenen Verfügbarkeits-Blocker von
@@ -65,25 +68,13 @@ Bereits kopierte Termine markiert es selbst (eigener Tag
 
 ## Offene Punkte
 
-⚠️ **Mila fehlt.** In Jörgs Liste der echten Mailadressen taucht "Mila"
-(`annamilena369@gmail.com`) auf, aber in keinem bisherigen Sync-Skript
-(weder `team-app/App Script - Sync` noch hier) — es gibt also keine
-bekannte Hilfskalender-ID für sie. Vor dem Ergänzen bei Jörg nachfragen:
-Ist sie neu im Team und braucht noch einen Hilfskalender (analog zu den
-anderen, siehe `team-app`-README), oder wird sie aus einem anderen Grund
-bewusst anders behandelt?
+✅ **Mila** ist neu im Team und hat noch keinen Hilfskalender —
+absichtlich außen vor gelassen, bis das analog zu den anderen (siehe
+`team-app`-README) eingerichtet ist. Dann hier in `MEMBERS` ergänzen.
 
-⚠️ **Evas Hilfskalender ist ihr privater Gmail-Kalender**
-(`eva.saur1993@gmail.com`), kein Ressourcen-Konto wie bei den anderen —
-laut `team-app/App Script - Sync` ist er dort absichtlich als `inactive`
-markiert ("Eva regelt ihre Verfügbarkeit direkt selbst"). Für dieses
-Skript wieder aktiv aufgenommen, weil Jörgs neue Mailadressen-Liste sie
-explizit enthält — aber ungeprüft, ob 1) `joerg@spiritual-touch.de`
-überhaupt Lesezugriff auf ihren privaten Kalender hat (das Skript läuft
-als er) und 2) Amelia dort überhaupt bestätigte Termine hineinschreibt
-wie bei den anderen. Falls der erste Testlauf für sie nichts kopiert oder
-einen Zugriffsfehler in den "Warnungen im Lauf"-Mails zeigt, liegt es
-vermutlich daran.
+✅ **Eva** bestätigt (23.08.2026): Amelia schreibt bestätigte Termine
+tatsächlich in ihren Kalender, die Mitarbeiter-Mail landet wie bei allen
+anderen im Chat-Room — läuft wie vorgesehen, kein offener Punkt mehr.
 
 ⚠️ **Kein Re-Sync bei Terminänderung/-absage.** Sobald ein Termin einmal
 kopiert wurde (eigener Tag gesetzt), fasst das Skript ihn nicht mehr an —
@@ -109,7 +100,7 @@ später nachrüstbar (z. B. Tag durch einen Zeitstempel ersetzen und bei
 | Stephanie | stephanie@primal-living.de |
 | Karen | karenzeiler24@gmail.com |
 | Maxine | parampampas@yahoo.com |
-| Mila | annamilena369@gmail.com (siehe "Offene Punkte") |
+| Mila | annamilena369@gmail.com (noch nicht in `MEMBERS`, siehe "Offene Punkte") |
 
 ## Sicherheit
 
