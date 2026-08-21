@@ -60,8 +60,16 @@
  *                 st_build_reschedule_payload_() neu gebaut. ⚠️ Vor Go-Live
  *                 müssen ST_RESCHEDULE_SECRET und ST_RESCHEDULE_ADMIN_USER_ID
  *                 unten mit echten Werten befüllt werden.
+ *   2026-08-27.1  /booking-reschedule bekommt einen zweiten Aufrufer: die
+ *                 Team-App (team-app/App Script, Menüpunkt "Termine →
+ *                 Ändern") ruft jetzt direkt auf, wenn ein Teammitglied
+ *                 Datum/Uhrzeit eines eigenen Termins anpasst — ersetzt den
+ *                 zuvor angedachten Ansatz mit eingebettetem Amelia-Panel
+ *                 (siehe team-app/README.md). Nur Kommentare hier
+ *                 aktualisiert, keine Code-Änderung an der Route selbst
+ *                 nötig, sie war bereits allgemein (aufrufer-unabhängig).
  */
-define('ST_BD_VERSION', '2026-08-24.1');
+define('ST_BD_VERSION', '2026-08-27.1');
 
 /**
  * ST Buchungs-Dashboard
@@ -555,9 +563,13 @@ add_action('rest_api_init', function () {
         'permission_callback' => $admin_only,
     ]);
 
-    // Rückrichtung Kalender → Amelia: Wird vom Apps Script
-    // (apps-script/raum-einladung-sync) einmal täglich aufgerufen, wenn es
-    // im Raum-1-Kalender eine vom Team verschobene Uhrzeit/Dauer erkennt.
+    // Rückrichtung Kalender/Team-App → Amelia: zwei Aufrufer.
+    // (1) apps-script/raum-einladung-sync ruft einmal täglich auf, wenn es
+    //     im Raum-1-Kalender eine vom Team verschobene Uhrzeit/Dauer
+    //     erkennt.
+    // (2) team-app/App Script ruft direkt auf, wenn ein Teammitglied in
+    //     der Team-App selbst über "Termine → Ändern" Datum/Uhrzeit anpasst
+    //     (seit 27.08.2026).
     // Trägt die neue Zeit über denselben "Aktualisieren"-Request ein, den
     // auch /booking-reassign benutzt — Mitarbeiter/Kategorie/Dienstleistung
     // bleiben dabei unverändert. Kein Freigabe-Schritt nötig (der Termin ist

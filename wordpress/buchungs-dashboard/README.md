@@ -139,19 +139,28 @@ wechselt — das musste nicht separat nachgebaut werden):
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
 
-## Rückrichtung Kalender → Amelia (`/booking-reschedule`)
+## Rückrichtung Kalender/Team-App → Amelia (`/booking-reschedule`)
 
-Gehört technisch zu `apps-script/raum-einladung-sync`, nicht zu Smart
-Freigeben — hier dokumentiert, weil die Route in dieser Datei lebt.
+Gehört technisch zu `apps-script/raum-einladung-sync` und `team-app/`,
+nicht zu Smart Freigeben — hier dokumentiert, weil die Route in dieser
+Datei lebt. **Zwei unabhängige Aufrufer:**
 
-**Hintergrund:** Das Team bekommt bestätigte Termine als Kalender-Einladung
-in einen Raum-1-Kopie-Termin (siehe README dort). Jörgs ausdrückliche
-Vorgabe (27.08.2026): Das Team muss diese Termine frei im Google-Kalender
-verschieben können, ohne ihm jedes Mal Bescheid geben zu müssen — "sonst
-geht es über drei Ecken". Eine tägliche Automatik im Apps-Script-Projekt
-erkennt verschobene Raum-1-Termine und trägt die neue Zeit automatisch in
-Amelia ein, ganz ohne Freigabe-Schritt und ohne dass Jörg davon erfährt
-(nur echte Fehler landen per Mail bei ihm).
+1. **`apps-script/raum-einladung-sync`** (täglich): Das Team bekommt
+   bestätigte Termine als Kalender-Einladung in einen Raum-1-Kopie-Termin
+   (siehe README dort). Jörgs ausdrückliche Vorgabe (27.08.2026): Das Team
+   muss diese Termine frei im Google-Kalender verschieben können, ohne ihm
+   jedes Mal Bescheid geben zu müssen — "sonst geht es über drei Ecken".
+   Eine tägliche Automatik im Apps-Script-Projekt erkennt verschobene
+   Raum-1-Termine und trägt die neue Zeit automatisch in Amelia ein.
+2. **`team-app/App Script`** (sofort, bei Bedarf): Im Menüpunkt "Termine"
+   der Team-App kann jedes Mitglied eigene Termine direkt über einen
+   "Ändern"-Button anpassen (siehe `team-app/README.md`) — ruft dieselbe
+   Route synchron auf, sobald gespeichert wird. Ersetzt den ursprünglich
+   angedachten Ansatz mit eingebettetem Amelia-Mitarbeiter-Panel.
+
+Beide Wege laufen ganz ohne Freigabe-Schritt und ohne dass Jörg davon
+erfährt (nur echte Fehler landen per Mail bei ihm, bei der Team-App direkt
+als Fehlermeldung in der App).
 
 **Route:** `POST /booking-reschedule` mit Body
 `{appointmentId, newBookingStart, newBookingEnd}` — die beiden Zeitfelder

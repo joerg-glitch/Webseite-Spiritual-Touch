@@ -1,0 +1,398 @@
+/**
+ * VERFÜGBARKEIT → HILFSKALENDER SYNC
+ * ========================================
+ * Eigenständiges Apps-Script-Projekt (getrennt vom Team-App-Skript).
+ *
+ * Zweck:
+ * Übersetzt die "Verfügbarkeit"-Einträge des Teams (Team-App schreibt dort,
+ * WENN jemand da ist) in pro-Mitglied-Hilfskalender, die Amelia liest
+ * (Amelia interpretiert: frei, es sei denn geblockt).
+ *
+ * Erkennt zwei Eintrags-Formate im Verfügbarkeit-Kalender:
+ *  - Neu (Team-App): "member"/"from"/"to"-Tags am Event (setTag/getTag)
+ *  - Alt (manuell vor der App getippt): Name als Titel-Präfix + Freitext
+ *    ("Tara bis 15h", "Alea (ab 12:30)" usw.) — bestmögliche Erkennung.
+ *
+ * PERFORMANCE: Jeder Kalender wird pro Lauf genau EINMAL für den ganzen
+ * Zeitraum gelesen (statt pro Tag/Person einzeln) — das war der Grund für
+ * die Zeitüberschreitung einer früheren Version (>1000 Einzelabfragen).
+ *
+ * EINRICHTUNG:
+ * 1. Neues Apps-Script-Projekt unter script.google.com anlegen
+ *    (nicht ins bestehende Team-App-Skript einfügen!).
+ * 2. Diesen kompletten Code einfügen.
+ * 3. Projekteinstellungen → Zeitzone auf "Europe/Berlin" prüfen.
+ * 4. Einmal manuell "runSyncNow" ausführen (Run-Button) → Google fragt
+ *    nach Berechtigungen (Kalender + Gmail + Sheets) → erlauben.
+ * 5. Trigger (Uhr-Symbol links) → Trigger hinzufügen:
+ *    - Funktion: syncAll        | zeitgesteuert | Stunden-Timer | jede Stunde
+ *    - Funktion: checkWatchdog  | zeitgesteuert | Stunden-Timer | alle 3 Stunden
+ * 6. Nach dem Lauf: Hilfskalender stichprobenartig prüfen + Tab "Sync-Log"
+ *    im Team-Roster-Sheet prüfen.
+ *
+ * SICHERHEIT:
+ * Der Sync fasst in den Hilfskalendern AUSSCHLIESSLICH Events an, die er
+ * selbst über Tag "autoBlock"="true" markiert hat (oder alte, vor der
+ * Tag-Umstellung von einem Cowork-Agent per Hand erzeugte Blocker mit
+ * "autoBlock:true" in der Beschreibung — werden beim ersten Lauf sauber
+ * übernommen/ersetzt). Echte Amelia-Buchungen werden nie gelesen,
+ * verändert oder gelöscht.
+ */
+
+// ---------- KONFIGURATION ----------
+
+var VERFUEGBARKEIT_CAL_ID = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85c915@group.calendar.google.com';
+
+var MEMBERS = [
+  { name: 'Tara',       hilfsCalId: 'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com', active: true },
+  { name: 'Eva',        hilfsCalId: 'eva.saur1993@gmail.com', active: false }, // ACHTUNG: Evas persönlicher Gmail-Kalender, kein Ressourcen-Konto — Eva regelt ihre Verfügbarkeit direkt selbst, absichtlich inaktiv.
+  { name: 'Asmita',     hilfsCalId: 'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com', active: true },
+  { name: 'Amila',      hilfsCalId: 'c_727306d56fd4b1755718073543de922a25edc2509fcb14f2b4e53b7a9263b72a@group.calendar.google.com', active: true },
+  { name: 'Sarah',      hilfsCalId: 'c_d37ba1f2e4913be355bc25873d90dc9ee115b70537adfd5a6b2a5f1e98d26361@group.calendar.google.com', active: true },
+  { name: 'Dominik',    hilfsCalId: 'c_0d3ba2a1dde3033c512dfd51c12fd0bb0c23b3e41297c169c214e76ced530669@group.calendar.google.com', active: true },
+  { name: 'Konstantin', hilfsCalId: 'c_459599398173cc57da9c45a996d1946f1ea0f3b057bdcb1732fd752d298ae15e@group.calendar.google.com', active: true },
+  { name: 'Alea',       hilfsCalId: 'c_bee7bf11c2bdae2e7d8bda28b87fd27c5f4bd3cf45124c65da06d799ae9edb7f@group.calendar.google.com', active: true },
+  { name: 'Stephanie',  hilfsCalId: 'c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com', active: true },
+  { name: 'Karen',      hilfsCalId: 'c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com', active: true },
+  { name: 'Maxine',     hilfsCalId: 'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com', active: true }
+  // Jörg absichtlich nicht enthalten: sein Kalender wird laut Spezifikation
+  // direkt von Amelia gelesen (Standard frei 9-23 Uhr minus geblockt).
+];
+
+var SYNC_DAYS = 45;
+var BUSINESS_START_HOUR = 9;  // Amelia-Öffnungszeit Beginn
+var BUSINESS_END_HOUR = 23;   // Amelia-Öffnungszeit Ende
+
+var TAG_KEY = 'autoBlock';
+var TAG_VALUE = 'true';
+var BLOCK_TITLE = 'Blockiert (Verfügbarkeit-Sync)';
+
+var ROSTER_SHEET_ID = '11NHzH0TRGUvoIsl26C8uoxwo4W9JEIJuylzxkvc87_A';
+var LOG_SHEET_NAME = 'Sync-Log';
+
+var ALERT_EMAIL = 'joerg@spiritual-touch.de';
+var WATCHDOG_MAX_AGE_MIN = 180; // Alarm, wenn seit 3h kein erfolgreicher Lauf
+
+var TZ = 'Europe/Berlin';
+
+// ---------- HAUPTFUNKTION (Trigger: stündlich) ----------
+
+var logBuffer = [];
+
+function syncAll() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    Logger.log('Ein anderer Sync-Lauf ist bereits aktiv – übersprungen.');
+    return;
+  }
+  logBuffer = [];
+  try {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var horizonEnd = new Date(today.getTime() + SYNC_DAYS * 24 * 60 * 60 * 1000);
+
+    // Verfügbarkeit-Kalender EINMAL für den ganzen Zeitraum lesen, nach
+    // Tag gruppiert (statt pro Tag/Person einzeln abzufragen).
+    var availByDate = loadAvailabilityByDate(today, horizonEnd);
+
+    MEMBERS.filter(function (m) { return m.active; }).forEach(function (member) {
+      var helperCal = CalendarApp.getCalendarById(member.hilfsCalId);
+      // Hilfskalender ebenfalls EINMAL für den ganzen Zeitraum lesen.
+      var autoByDate = loadAutoBlocksByDate(helperCal, today, horizonEnd);
+
+      for (var i = 0; i < SYNC_DAYS; i++) {
+        var date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+        var dateStr = Utilities.formatDate(date, TZ, 'yyyy-MM-dd');
+        var businessStart = new Date(date);
+        businessStart.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+        var businessEnd = new Date(date);
+        businessEnd.setHours(BUSINESS_END_HOUR, 0, 0, 0);
+
+        var dayEvents = (availByDate[dateStr] || []).filter(function (e) { return resolveMember(e) === member.name; });
+        var freeWindows = computeFreeWindowsFromEvents(dayEvents, businessStart, businessEnd);
+        var blocked = computeBlockedIntervals(freeWindows, businessStart, businessEnd);
+
+        reconcileDayForMember(helperCal, member, date, dateStr, blocked, autoByDate[dateStr] || []);
+      }
+    });
+
+    flushLog();
+    PropertiesService.getScriptProperties().setProperty('lastSuccessRun', new Date().toISOString());
+  } catch (err) {
+    sendAlert('Fehler im Sync-Lauf', err.message + '\n\n' + err.stack);
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Manueller Testlauf (Run-Button im Editor) — identisch zu syncAll.
+function runSyncNow() {
+  syncAll();
+}
+
+// ---------- EINMALIGES EINLESEN ----------
+
+// Alle Verfügbarkeit-Events im Zeitraum, gruppiert nach Kalendertag
+// ('yyyy-MM-dd'). Mehrtägige Ganztages-Events (z.B. Urlaub) zählen für
+// jeden Tag ihrer Spanne.
+function loadAvailabilityByDate(rangeStart, rangeEnd) {
+  var cal = CalendarApp.getCalendarById(VERFUEGBARKEIT_CAL_ID);
+  var events = cal.getEvents(rangeStart, rangeEnd);
+  var byDate = {};
+  events.forEach(function (e) {
+    eachDateInRange(e, rangeStart, rangeEnd).forEach(function (dateStr) {
+      if (!byDate[dateStr]) byDate[dateStr] = [];
+      byDate[dateStr].push(e);
+    });
+  });
+  return byDate;
+}
+
+// Alle eigenen Sync-Blocker eines Hilfskalenders im Zeitraum, gruppiert
+// nach Kalendertag.
+function loadAutoBlocksByDate(helperCal, rangeStart, rangeEnd) {
+  var events = helperCal.getEvents(rangeStart, rangeEnd);
+  var byDate = {};
+  events.filter(isAutoBlock).forEach(function (e) {
+    var dateStr = Utilities.formatDate(e.getStartTime(), TZ, 'yyyy-MM-dd');
+    if (!byDate[dateStr]) byDate[dateStr] = [];
+    byDate[dateStr].push(e);
+  });
+  return byDate;
+}
+
+function isAutoBlock(e) {
+  if (e.getTag(TAG_KEY) === TAG_VALUE) return true;
+  var desc = e.getDescription() || '';
+  return desc.indexOf('autoBlock:true') > -1; // alte, vor der Tag-Umstellung erzeugte Blocker
+}
+
+function eachDateInRange(e, rangeStart, rangeEnd) {
+  var dates = [];
+  if (e.isAllDayEvent()) {
+    var d = e.getAllDayStartDate();
+    var end = e.getAllDayEndDate(); // exklusiv
+    while (d < end) {
+      if (d >= rangeStart && d < rangeEnd) dates.push(Utilities.formatDate(d, TZ, 'yyyy-MM-dd'));
+      d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+    }
+  } else {
+    var s = e.getStartTime();
+    if (s >= rangeStart && s < rangeEnd) dates.push(Utilities.formatDate(s, TZ, 'yyyy-MM-dd'));
+  }
+  return dates;
+}
+
+// ---------- KERNLOGIK ----------
+
+// Liefert die freien Zeitfenster (innerhalb Geschäftszeit) aus den
+// Verfügbarkeit-Events eines Mitglieds an einem Tag. Leeres Array = kein
+// Eintrag vorhanden = nichts frei.
+function computeFreeWindowsFromEvents(events, businessStart, businessEnd) {
+  if (events.length === 0) return []; // kein Eintrag -> ganzer Tag blockiert
+
+  var intervals = events
+    .map(function (e) { return eventFreeWindow(e, businessStart, businessEnd); })
+    .filter(function (iv) { return iv !== null; })
+    .sort(function (a, b) { return a.start - b.start; });
+
+  if (intervals.length === 0) return []; // nichts auswertbar -> sicherheitshalber blockiert
+
+  var merged = [];
+  intervals.forEach(function (iv) {
+    var last = merged[merged.length - 1];
+    if (last && iv.start <= last.end) {
+      if (iv.end > last.end) last.end = iv.end;
+    } else {
+      merged.push({ start: iv.start, end: iv.end });
+    }
+  });
+
+  return merged;
+}
+
+// Freies Fenster eines einzelnen Verfügbarkeit-Events. null = nicht
+// auswertbar (Tag wird dann sicherheitshalber komplett blockiert).
+function eventFreeWindow(e, businessStart, businessEnd) {
+  // Neues Format (Team-App): from/to-Tags am Ganztages-Event
+  var fromTag = e.getTag('from');
+  var toTag = e.getTag('to');
+  if (fromTag && toTag) {
+    return clipToBusinessHours(timeOnDate(businessStart, fromTag), timeOnDate(businessStart, toTag), businessStart, businessEnd);
+  }
+  if (e.isAllDayEvent()) {
+    var title = (e.getTitle() || '').trim();
+    var pureNameTitle = MEMBERS.some(function (m) { return title === m.name; });
+    if (!pureNameTitle) {
+      // Legacy: manuell getippter Ganztages-Eintrag mit Zeit im Titel
+      var legacy = parseLegacyTimes(title);
+      if (legacy.from || legacy.to) {
+        var f = legacy.from || formatHM(businessStart);
+        var t = legacy.to || formatHM(businessEnd);
+        return clipToBusinessHours(timeOnDate(businessStart, f), timeOnDate(businessStart, t), businessStart, businessEnd);
+      }
+    }
+    return { start: businessStart, end: businessEnd }; // ganztägig verfügbar
+  }
+  // Legacy: echter Uhrzeit-Termin (vor der Umstellung auf Ganztages-Events angelegt)
+  return clipToBusinessHours(e.getStartTime(), e.getEndTime(), businessStart, businessEnd);
+}
+
+function timeOnDate(date, hhmm) {
+  var parts = hhmm.split(':');
+  var d = new Date(date);
+  d.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10), 0, 0);
+  return d;
+}
+function formatHM(d) { return Utilities.formatDate(d, TZ, 'HH:mm'); }
+
+// Sucht ab dem Wort "ab"/"bis" nach der NÄCHSTEN Uhrzeit im restlichen Text
+// — erlaubt beliebige Wörter dazwischen ("bis M.ende 17:00", "bis Ende 17
+// Uhr") statt nur eine Uhrzeit direkt nach dem Schlüsselwort zu akzeptieren.
+function parseLegacyTimes(text) {
+  var out = {};
+  var from = extractTimeAfter(text, /ab\b/i);
+  if (from) out.from = from;
+  var to = extractTimeAfter(text, /bis\b/i);
+  if (to) out.to = to;
+  return out;
+}
+
+function extractTimeAfter(text, keywordRe) {
+  var idx = text.search(keywordRe);
+  if (idx === -1) return null;
+  var rest = text.slice(idx);
+  var m = rest.match(/(\d{1,2})[:.](\d{2})/); // "11:30" oder "11.30"
+  if (m) return pad(m[1]) + ':' + m[2];
+  m = rest.match(/(\d{1,2})\s*(?:h\b|uhr)/i); // "15h" oder "17 Uhr"
+  if (m) return pad(m[1]) + ':00';
+  return null;
+}
+function pad(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
+
+function clipToBusinessHours(start, end, businessStart, businessEnd) {
+  var s = start < businessStart ? businessStart : start;
+  var e = end > businessEnd ? businessEnd : end;
+  if (s >= e) return null;
+  return { start: s, end: e };
+}
+
+// Komplement: Geschäftszeit minus freie Fenster = zu blockierende Fenster
+function computeBlockedIntervals(freeWindows, businessStart, businessEnd) {
+  var blocked = [];
+  var cursor = businessStart;
+
+  freeWindows.forEach(function (fw) {
+    if (fw.start > cursor) {
+      blocked.push({ start: cursor, end: fw.start });
+    }
+    if (fw.end > cursor) {
+      cursor = fw.end;
+    }
+  });
+
+  if (cursor < businessEnd) {
+    blocked.push({ start: cursor, end: businessEnd });
+  }
+
+  return blocked;
+}
+
+function resolveMember(e) {
+  var tagged = e.getTag('member');
+  if (tagged) return tagged;
+  var title = (e.getTitle() || '').trim();
+  for (var i = 0; i < MEMBERS.length; i++) {
+    var name = MEMBERS[i].name;
+    if (title === name || title.indexOf(name + ' ') === 0 || title.indexOf(name + '(') === 0) return name;
+  }
+  return null;
+}
+
+// Gleicht die gewünschten Blockierungen mit den (bereits eingelesenen)
+// eigenen Sync-Blockern dieses Tages ab.
+function reconcileDayForMember(helperCal, member, date, dateStr, blockedIntervals, autoEvents) {
+  var desiredMap = {};
+  blockedIntervals.forEach(function (iv) { desiredMap[intervalKey(iv)] = iv; });
+
+  var matched = {};
+  autoEvents.forEach(function (ev) {
+    var k = intervalKey({ start: ev.getStartTime(), end: ev.getEndTime() });
+    if (desiredMap[k]) {
+      matched[k] = true; // unverändert, kein Schreibzugriff nötig
+    } else {
+      ev.deleteEvent();
+      logRow('DELETE', member.name, dateStr, k);
+    }
+  });
+
+  blockedIntervals.forEach(function (iv) {
+    var k = intervalKey(iv);
+    if (!matched[k]) {
+      var newEvent = helperCal.createEvent(BLOCK_TITLE, iv.start, iv.end);
+      newEvent.setTag(TAG_KEY, TAG_VALUE);
+      newEvent.setTag('sourceDate', dateStr);
+      newEvent.setTag('member', member.name);
+      logRow('CREATE', member.name, dateStr, k);
+    }
+  });
+}
+
+function intervalKey(iv) {
+  return iv.start.getTime() + '_' + iv.end.getTime();
+}
+
+// ---------- LOGGING & ALARM ----------
+
+// Log-Zeilen werden gesammelt und am Ende des Laufs in einem Schreibzugriff
+// eingefügt (statt einer Sheets-Anfrage pro Änderung).
+function logRow(action, memberName, dateStr, detail) {
+  logBuffer.push([new Date(), memberName, dateStr, action, detail]);
+}
+
+function flushLog() {
+  if (logBuffer.length === 0) return;
+  try {
+    var ss = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+    var sheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (!sheet) {
+      sheet = ss.insertSheet(LOG_SHEET_NAME);
+      sheet.appendRow(['Zeitstempel', 'Mitglied', 'Datum', 'Aktion', 'Details']);
+    }
+    sheet.getRange(sheet.getLastRow() + 1, 1, logBuffer.length, 5).setValues(logBuffer);
+  } catch (e) {
+    Logger.log('Log-Fehler: ' + e.message);
+  } finally {
+    logBuffer = [];
+  }
+}
+
+function sendAlert(subject, body) {
+  try {
+    MailApp.sendEmail(ALERT_EMAIL, '[Verfügbarkeit-Sync] ' + subject, body);
+  } catch (e) {
+    Logger.log('Mail-Fehler: ' + e.message);
+  }
+}
+
+// Trigger: alle 3 Stunden. Prüft unabhängig vom Sync selbst, ob überhaupt
+// noch erfolgreiche Läufe stattfinden (fängt z.B. gelöschte Trigger,
+// aufgebrauchte Quota o.ä. ab).
+function checkWatchdog() {
+  var props = PropertiesService.getScriptProperties();
+  var last = props.getProperty('lastSuccessRun');
+
+  if (!last) {
+    sendAlert('Noch kein erfolgreicher Lauf', 'Der Verfügbarkeit-Sync ist seit Einrichtung noch nie erfolgreich durchgelaufen.');
+    return;
+  }
+
+  var ageMin = (new Date() - new Date(last)) / 60000;
+  if (ageMin > WATCHDOG_MAX_AGE_MIN) {
+    sendAlert(
+      'Kein erfolgreicher Lauf seit ' + Math.round(ageMin) + ' Minuten',
+      'Letzter erfolgreicher Lauf: ' + last + '\nBitte Trigger und Ausführungsprotokoll prüfen.'
+    );
+  }
+}

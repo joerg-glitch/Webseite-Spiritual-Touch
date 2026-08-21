@@ -1,0 +1,272 @@
+// ═══════════════════════════════════════════════════════
+// ST Verfügbarkeits-API  —  einmal einrichten, fertig.
+// ═══════════════════════════════════════════════════════
+//
+// 27.08.2026: Aktion "reschedule" ergänzt — Team-Mitglieder können ihre
+// eigenen Amelia-Termine (Datum/Uhrzeit/Dauer) jetzt direkt in der
+// Team-App ändern. Das läuft NICHT mehr über ein eingebettetes
+// Amelia-Mitarbeiter-Panel (früherer Ansatz, siehe Git-Verlauf/
+// team-app/README.md, "Verworfen") — stattdessen direkt über Amelias
+// internen Update-Endpunkt, den WordPress unter /wp-json/st/v1/
+// booking-reschedule bereitstellt (siehe wordpress/buchungs-dashboard/
+// wpcode-snippet.php). WP_RESCHEDULE_SECRET unten muss exakt zu
+// ST_RESCHEDULE_SECRET dort passen.
+
+const SHEET_ID = '11NHzH0TRGUvoIsl26C8uoxwo4W9JEIJuylzxkvc87_A';
+const CAL_ID   = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85c915@group.calendar.google.com';
+const TIMEZONE = 'Europe/Berlin';
+const SECRET   = 'ST2026geheim'; // Stimmt mit WordPress-Snippet überein
+
+// Für die Rückrichtung Team-App -> Amelia (Aktion "reschedule" unten).
+// WP_RESCHEDULE_SECRET MUSS exakt ST_RESCHEDULE_SECRET in
+// wordpress/buchungs-dashboard/wpcode-snippet.php entsprechen — anders als
+// SECRET oben (das ist nur eine Formalität, echte Legitimation ist der
+// PIN) ist dieser Wert ein echtes Server-zu-Server-Geheimnis und darf
+// nirgends im Browser sichtbar werden. Dieselbe Route nutzt auch das
+// tägliche Rückrichtungs-Skript in apps-script/raum-einladung-sync.
+const WP_RESCHEDULE_URL    = 'https://spiritual-touch.de/wp-json/st/v1/booking-reschedule';
+const WP_RESCHEDULE_SECRET = 'DEIN-ZUFAELLIGES-PASSWORT-HIER';
+
+// Hilfskalender je Mitglied — MUSS mit der MEMBERS-Liste in
+// "App Script - Sync" übereinstimmen (dort die führende Quelle für
+// Kalender-IDs; hier nur für den Lesezugriff auf echte Amelia-Termine
+// dupliziert, weil beide Apps-Script-Projekte getrennt bleiben).
+const HELPER_CAL_IDS = {
+  'Tara':       'c_fe6664e01f568080774112156e255089ea2ea2877109d6ddb241d046ebff58fb@group.calendar.google.com',
+  'Asmita':     'c_72c5bf2bb1c90f5424d77c3f1f6593cf2cf6fe05f27204ff1c73f3632350cabd@group.calendar.google.com',
+  'Amila':      'c_727306d56fd4b1755718073543de922a25edc2509fcb14f2b4e53b7a9263b72a@group.calendar.google.com',
+  'Sarah':      'c_d37ba1f2e4913be355bc25873d90dc9ee115b70537adfd5a6b2a5f1e98d26361@group.calendar.google.com',
+  'Dominik':    'c_0d3ba2a1dde3033c512dfd51c12fd0bb0c23b3e41297c169c214e76ced530669@group.calendar.google.com',
+  'Konstantin': 'c_459599398173cc57da9c45a996d1946f1ea0f3b057bdcb1732fd752d298ae15e@group.calendar.google.com',
+  'Alea':       'c_bee7bf11c2bdae2e7d8bda28b87fd27c5f4bd3cf45124c65da06d799ae9edb7f@group.calendar.google.com',
+  'Stephanie':  'c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com',
+  'Karen':      'c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com',
+  'Maxine':     'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com'
+};
+
+// ── Eintrittspunkt ──────────────────────────────────────
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.secret !== SECRET) return json({error: 'unauthorized'});
+
+    const member = getByPin(data.pin);
+    if (!member) return json({error: 'wrong_pin'});
+
+    switch (data.action) {
+      case 'list':   return json({ok: true, name: member.name, entries: listEntries(member.name)});
+      case 'create': return json({ok: true, id: createEntry(member.name, data.date, data.from, data.to, data.allDay)});
+      case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to, data.allDay)});
+      case 'delete': return json({ok: deleteEntry(member.name, data.id)});
+      // Echte Amelia-Buchungen aus dem Hilfskalender (nicht die
+      // "Verfügbarkeit"-Einträge — anderer Kalender, andere Funktion).
+      case 'appointments': return json({ok: true, name: member.name, appointments: listAppointments(member.name)});
+      // Ändert Datum/Uhrzeit eines eigenen Amelia-Termins — echtes
+      // Zurückschreiben nach Amelia, siehe rescheduleAppointment() unten.
+      case 'reschedule': return rescheduleAppointment(member.name, data.appointmentId, data.date, data.from, data.to);
+      default:       return json({error: 'unknown_action'});
+    }
+  } catch (error) {
+    // Wenn ein Fehler passiert, MUSS Google das im JSON-Format erfahren:
+    return json({
+      error: "internal_catch_error",
+      details: error.toString()
+    });
+  }
+}
+
+// Health-Check — zum Testen im Browser aufrufbar
+function doGet() {
+  return ContentService.createTextOutput('ST API aktiv ✓');
+}
+
+// ── Kalender ────────────────────────────────────────────
+// Zuordnung/Zeiten liegen als Apps-Script-Tags am Event (setTag/getTag) —
+// unsichtbar für den Nutzer, robuster als Text in der Beschreibung zu
+// parsen, und derselbe Mechanismus, den der Verfügbarkeit-Sync nutzt.
+function listEntries(name) {
+  const cal   = CalendarApp.getCalendarById(CAL_ID);
+  const start = new Date();
+  const end   = new Date();
+  end.setDate(end.getDate() + 60); // reicht zum Bearbeiten/Planen, hält die Abfrage bei jedem Login/Speichern klein
+
+  return cal.getEvents(start, end)
+    .filter(ev => getMember(ev) === name)
+    .map(ev => {
+      const from = ev.getTag('from');
+      const to   = ev.getTag('to');
+      return {
+        id:     ev.getId(),
+        date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+        from:   from || '',
+        to:     to   || '',
+        allDay: !(from && to)
+      };
+    });
+}
+
+// Echte Amelia-Termine aus dem persönlichen Hilfskalender des Mitglieds —
+// Grundlage sowohl für die reine Anzeige als auch fürs Ändern (der
+// "appointmentId"-Wert hier ist die echte Amelia-Termin-ID aus der von
+// Amelia geschriebenen Beschreibung, nötig für rescheduleAppointment()
+// unten). Blendet die eigenen "autoBlock"-Platzhalter des
+// Verfügbarkeit-Syncs aus (Tag autoBlock=true) — das sind keine echten
+// Termine.
+function listAppointments(name) {
+  const calId = HELPER_CAL_IDS[name];
+  if (!calId) return []; // Person hat (noch) keinen Hilfskalender hinterlegt
+
+  const cal   = CalendarApp.getCalendarById(calId);
+  const start = new Date();
+  const end   = new Date();
+  end.setDate(end.getDate() + 90);
+
+  return cal.getEvents(start, end)
+    .filter(ev => ev.getTag('autoBlock') !== 'true')
+    .map(ev => {
+      const desc = ev.getDescription() || '';
+      const idMatch   = desc.match(/Termin-ID:\s*(\d+)/i);
+      const nameMatch = desc.match(/Vorname:\s*(.+)/i);
+      return {
+        id:            ev.getId(),
+        appointmentId: idMatch ? idMatch[1] : null, // fehlt bei sehr alten Terminen ohne die Vorlagenzeile -> dann kein Ändern möglich
+        date:          fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+        from:          fmt(ev.getStartTime(), 'HH:mm'),
+        to:            fmt(ev.getEndTime(), 'HH:mm'),
+        title:         ev.getTitle(),
+        customerName:  nameMatch ? nameMatch[1].trim() : '',
+        allDay:        ev.isAllDayEvent()
+      };
+    })
+    .sort((a, b) => (a.date + a.from).localeCompare(b.date + b.from));
+}
+
+// Ändert Datum/Uhrzeit eines eigenen Termins direkt in Amelia — über
+// denselben internen Amelia-Endpunkt, den auch Jörgs Buchungs-Dashboard
+// benutzt (WordPress-Route /booking-reschedule), NICHT durch Bearbeiten
+// des Kalender-Termins selbst (der wird von Amelia sowieso neu
+// geschrieben, sobald die Änderung durch ist).
+//
+// Sicherheit: appointmentId kommt vom Client — bevor irgendetwas nach
+// Amelia geschickt wird, wird deshalb geprüft, dass genau diese Termin-ID
+// gerade wirklich im EIGENEN Hilfskalender dieses Mitglieds auftaucht.
+// Ohne diese Prüfung könnte ein manipulierter Request fremde Termine
+// verändern.
+function rescheduleAppointment(name, appointmentId, date, from, to) {
+  if (!appointmentId || !date || !from || !to) {
+    return json({ok: false, error: 'missing_params'});
+  }
+  if (to <= from) {
+    return json({ok: false, error: 'end_before_start'});
+  }
+
+  const ownEvent = listAppointments(name).find(a => a.appointmentId === String(appointmentId));
+  if (!ownEvent) {
+    return json({ok: false, error: 'not_your_appointment'});
+  }
+
+  const newStartUtc = localToUtcMysql_(date, from);
+  const newEndUtc   = localToUtcMysql_(date, to);
+
+  try {
+    const response = UrlFetchApp.fetch(WP_RESCHEDULE_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {'X-ST-Reschedule-Secret': WP_RESCHEDULE_SECRET},
+      payload: JSON.stringify({
+        appointmentId: Number(appointmentId),
+        newBookingStart: newStartUtc,
+        newBookingEnd: newEndUtc,
+      }),
+      muteHttpExceptions: true,
+    });
+    const code = response.getResponseCode();
+    if (code < 200 || code >= 300) {
+      return json({ok: false, error: 'wordpress_error', detail: response.getContentText()});
+    }
+    return json({ok: true});
+  } catch (err) {
+    return json({ok: false, error: 'request_failed', detail: err.toString()});
+  }
+}
+
+// Wandelt ein Datum+Uhrzeit-Paar in Berliner Ortszeit (aus dem Formular
+// des Teammitglieds) in einen UTC-MySQL-String um, wie ihn
+// /booking-reschedule erwartet. Bewusst über Utilities.parseDate() statt
+// "new Date(string)" — Letzteres interpretiert einen zeitzonenlosen
+// ISO-String je nach Laufzeitumgebung uneinheitlich (derselbe Fehlertyp,
+// der ursprünglich die 2-Stunden-Zeitzonen-Abweichung im Buchungs-
+// Dashboard verursacht hat, siehe dessen README).
+function localToUtcMysql_(dateStr, timeStr) {
+  const d = Utilities.parseDate(dateStr + ' ' + timeStr, TIMEZONE, 'yyyy-MM-dd HH:mm');
+  return Utilities.formatDate(d, 'Etc/UTC', 'yyyy-MM-dd HH:mm:ss');
+}
+
+// Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
+// Bei Teilverfügbarkeit steht die Uhrzeit zusätzlich im Titel.
+function createEntry(name, date, from, to, allDay) {
+  const cal = CalendarApp.getCalendarById(CAL_ID);
+  let event;
+  if (allDay) {
+    event = cal.createAllDayEvent(name, new Date(date + 'T12:00:00'));
+  } else {
+    const title = name + ' ' + from + '–' + to + ' Uhr';
+    event = cal.createAllDayEvent(title, new Date(date + 'T12:00:00'));
+    event.setTag('from', from);
+    event.setTag('to', to);
+  }
+  event.setTag('member', name);
+  event.setTransparency(CalendarApp.EventTransparency.TRANSPARENT);
+  return event.getId();
+}
+
+// Ganztägig-Status kann sich beim Ändern ändern (z.B. Uhrzeit -> Ganztägig) —
+// dafür alten Eintrag löschen und mit den neuen Werten neu anlegen statt
+// setTime() zu verwenden (funktioniert bei Ganztages-Events nicht sauber).
+function updateEntry(name, id, date, from, to, allDay) {
+  const ev = safeGet(name, id);
+  if (!ev) return false;
+  ev.deleteEvent();
+  createEntry(name, date, from, to, allDay);
+  return true;
+}
+
+function deleteEntry(name, id) {
+  const ev = safeGet(name, id);
+  if (!ev) return false;
+  ev.deleteEvent();
+  return true;
+}
+
+// Sicherheit: Gehört das Event wirklich dieser Person?
+function safeGet(name, id) {
+  const ev = CalendarApp.getCalendarById(CAL_ID).getEventById(id);
+  return (ev && getMember(ev) === name) ? ev : null;
+}
+
+// Fallback auf den Titel für alte, manuell angelegte Ganztages-Einträge
+// ohne "member"-Tag (Titel besteht dann nur aus dem Namen).
+function getMember(ev) {
+  return ev.getTag('member') || ev.getTitle();
+}
+
+// ── Hilfsfunktionen ─────────────────────────────────────
+function getByPin(pin) {
+  const rows = SpreadsheetApp.openById(SHEET_ID)
+    .getSheetByName('Tabellenblatt1').getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][2]).trim() === String(pin).trim())
+      return { name: rows[i][0], email: rows[i][1] };
+  }
+  return null;
+}
+
+function fmt(date, pattern) {
+  return Utilities.formatDate(date, TIMEZONE, pattern);
+}
+
+function json(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
