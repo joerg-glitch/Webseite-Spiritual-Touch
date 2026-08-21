@@ -38,8 +38,17 @@
  *                 (st_slots_gap_width_minutes_()): nur noch als
  *                 Selbstblockade werten, wenn die belegte Lücke ungefähr
  *                 zur Dauer des gerade bewerteten Termins passt.
+ *   2026-08-23.4  Vereinfacht auf Jörgs Wunsch: Die komplette /slots-
+ *                 Verfügbarkeitsprüfung entfernt (lieferte für jeden
+ *                 Kandidaten dieselbe generische Antwort statt einer
+ *                 echten personenbezogenen Prüfung — an einem echten Fall
+ *                 fälschlich alle 9 Frauen als frei gemeldet, dazu langsam
+ *                 durch 9 sequenzielle externe Requests). Smart Freigeben
+ *                 zeigt jetzt einfach alle geschlechtspassenden
+ *                 Kandidat:innen zur manuellen Auswahl, auch bei nur einer
+ *                 Person — Jörg schaut selbst in den Kalender.
  */
-define('ST_BD_VERSION', '2026-08-23.3');
+define('ST_BD_VERSION', '2026-08-23.4');
 
 /**
  * ST Buchungs-Dashboard
@@ -87,18 +96,18 @@ define('ST_BD_VERSION', '2026-08-23.3');
  * Kein Secret/Token wird im Code gespeichert.
  *
  * SMART FREIGEBEN (siehe README, Abschnitt "Nächster Schritt: Smart
- * Freigeben" für Herkunft/Referenzdaten): Bei einer Anfrage-Buchung prüft
- * "Freigeben" zuerst per Amelias eigenem /slots-Endpunkt, welche zur
- * Geschlechts-Präferenz passenden Mitarbeiter am Termin frei sind, und
- * übernimmt bei genau einem Treffer automatisch Zuweisung + Freigabe (Route
- * /booking-reassign, dann die bestehende /booking-approve). Bei mehreren
- * Treffern wählt das Dashboard-UI aus, bei null Treffern passiert nichts.
- * Antwortformat von /slots am 21.08.2026 an einer echten Buchung kalibriert
- * (data.slots[Datum][Uhrzeit], siehe st_slots_has_time_()) — bei
- * Unsicherheit weiterhin über den "Verfügbarkeit-Debug"-Button im
- * Dashboard nachvollziehbar (GET .../booking-availability?appointmentId=
- * <ID>&debug=1), zeigt jetzt nur den Tages-Ausschnitt statt der vollen,
- * mehrjährigen Amelia-Antwort.
+ * Freigeben" für Herkunft/Referenzdaten): Bei einer Anfrage-Buchung
+ * ermittelt "Freigeben", welche Mitarbeiter:innen zur Geschlechts-
+ * Präferenz passen, und zeigt sie im Dashboard zur Auswahl — auch wenn
+ * nur eine Person infrage kommt. Jörg wählt nach einem kurzen Blick in
+ * den eigenen Kalender manuell aus, danach läuft Zuweisung + Freigabe
+ * automatisch (Route /booking-reassign, dann die bestehende
+ * /booking-approve). Bewusst KEINE automatische Verfügbarkeitsprüfung
+ * mehr (siehe Versionsverlauf 2026-08-23.4): ein Versuch darüber, Amelias
+ * eigenen /slots-Endpunkt abzufragen, lieferte am 23.08.2026 an einem
+ * echten Fall für jede Kandidatin dieselbe generische (falsche) Antwort
+ * und war dazu sehr langsam — auf Jörgs Wunsch entfernt zugunsten von
+ * "System schlägt Kandidat:innen vor, Mensch entscheidet".
  */
 
 /**
@@ -385,103 +394,6 @@ function st_build_reassign_payload_($row, $new_provider_id, $confirmed_service_i
     ];
 }
 
-/**
- * Prüft, ob die exakte Uhrzeit des Termins in der decodierten /slots-
- * Antwort als freier Slot auftaucht. Kalibriert am 21.08.2026 an einer
- * echten Antwort: Amelia liefert `data.slots[<Datum>][<Uhrzeit>]` als
- * Objekt/Array — die Uhrzeit ist dabei der SCHLÜSSEL (z. B. "15:30"), kein
- * Text-Wert irgendwo verschachtelt. `$date`/`$time` im Format "YYYY-MM-DD"
- * / "HH:MM".
- */
-function st_slots_has_time_($data, $date, $time) {
-    if (!is_array($data) || empty($data['data']['slots'][$date][$time])) {
-        return false;
-    }
-    return true;
-}
-
-/**
- * Gegenprobe zu st_slots_has_time_(): Amelias /slots blockiert die Zeit
- * des gerade bewerteten, noch nicht zugewiesenen Termins offenbar auch für
- * ANDERE Mitarbeiter mit (bestätigt von Jörg 23.08.2026 an Termin #57 —
- * Dominik wurde als "nicht frei" gemeldet, obwohl sein einziger echter
- * Termin an dem Tag zeitlich gar nicht überschnitt). Da unklar ist, WARUM
- * (Standort/Ressource/Pseudo-Mitarbeiter-Zählung?) und Amelias
- * Backend-Dropdown keine eigene Verfügbarkeitsprüfung anbietet, mit der man
- * das kalibrieren könnte, prüft diese Funktion direkt in der DB, ob der
- * Kandidat einen ANDEREN echten Termin (außer dem gerade bewerteten) im
- * fraglichen Zeitfenster hat. Kein anderer Termin gefunden → wird als
- * Selbstblockade gewertet, /slots-Ergebnis für genau diesen einen Zeitpunkt
- * wird überschrieben. $exclude_appointment_id, $start, $end roh (UTC), wie
- * aus der DB gelesen — keine Zeitzonenumrechnung nötig, da nur mit anderen
- * DB-Zeilen verglichen wird.
- *
- * Bekannte Grenze: Erkennt keine Nichtverfügbarkeit, die nicht als Zeile in
- * amelia_appointments steht (z. B. ein als "Frei-Tag"/Sonderzeiten
- * hinterlegter Block statt eines echten Termins) — betrifft aber nur den
- * seltenen Fall, dass so ein Block exakt mit der Startzeit des gerade
- * bewerteten Termins zusammenfällt.
- */
-function st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $exclude_appointment_id, $start, $end) {
-    $sql = "
-        SELECT a.id
-        FROM {$prefix}amelia_appointments a
-        LEFT JOIN {$prefix}amelia_customer_bookings cb ON cb.appointmentId = a.id
-        WHERE a.providerId = %d
-          AND a.id != %d
-          AND a.bookingStart < %s
-          AND a.bookingEnd > %s
-          AND (cb.status IS NULL OR cb.status NOT IN ('canceled', 'rejected'))
-        LIMIT 1
-    ";
-    $found = $wpdb->get_var($wpdb->prepare($sql, $provider_id, $exclude_appointment_id, $end, $start));
-    return $found !== null;
-}
-
-/**
- * Misst, wie breit (in Minuten) die zusammenhängende "belegt"-Lücke rund
- * um $time in $slots_for_date ist (30-Minuten-Raster, wie von Amelia
- * geliefert). Grund: Amelia liest laut apps-script/../team-app "App
- * Script - Sync" echte, mehrstündige Google-Kalender-Blockaden
- * ("Blockiert (Verfügbarkeit-Sync)") als Verfügbarkeit — das ist also kein
- * Amelia-internes Artefakt, sondern eine ECHTE Nichtverfügbarkeit, die
- * st_provider_has_other_appointment_() (nur amelia_appointments) niemals
- * sehen kann. Eine echte Selbstblockade durch den gerade bewerteten
- * Termin sollte ungefähr dessen eigene Dauer breit sein; eine mehrstündige
- * Lücke ist es mit hoher Wahrscheinlichkeit nicht — siehe README, "Offen:
- * Dominik wird trotz Blockade vorgeschlagen" (23.08.2026, noch nicht mit
- * Jörg endgültig bestätigt, aber deutlich plausibler als die erste
- * Vermutung).
- */
-function st_slots_gap_width_minutes_($slots_for_date, $time) {
-    if (!is_array($slots_for_date)) {
-        return null;
-    }
-    $to_minutes = function ($hhmm) {
-        $parts = explode(':', $hhmm);
-        return ((int) $parts[0]) * 60 + (int) $parts[1];
-    };
-    $to_hhmm = function ($mins) {
-        $mins = (($mins % 1440) + 1440) % 1440;
-        return sprintf('%02d:%02d', intdiv($mins, 60), $mins % 60);
-    };
-    $start_min = $to_minutes($time);
-    $width = 30;
-    for ($m = $start_min - 30; $m >= 0; $m -= 30) {
-        if (isset($slots_for_date[$to_hhmm($m)])) {
-            break;
-        }
-        $width += 30;
-    }
-    for ($m = $start_min + 30; $m < 24 * 60; $m += 30) {
-        if (isset($slots_for_date[$to_hhmm($m)])) {
-            break;
-        }
-        $width += 30;
-    }
-    return $width;
-}
-
 add_action('rest_api_init', function () {
     $admin_only = function () {
         return current_user_can('manage_options');
@@ -655,89 +567,37 @@ function st_booking_availability_handler(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'unknown_gender_pseudo_provider', 'providerId' => (int) $row->provider_id], 422);
     }
 
-    $candidates = st_candidate_providers_($gender);
-    $debug = (bool) $request->get_param('debug');
+    // Bewusst KEINE Verfügbarkeitsprüfung mehr gegen Amelias /slots-Endpunkt
+    // (siehe README, "Vereinfacht 23.08.2026"): Der lieferte für jeden
+    // Kandidaten dieselbe generische Antwort statt einer echten
+    // personenbezogenen Prüfung, war dazu sehr langsam (9 sequenzielle
+    // externe Requests bei "weiblich"/"egal") und hat bei einem echten Test
+    // fälschlich alle 9 Frauen als frei gemeldet, obwohl nur 2 es wirklich
+    // waren. Auf Jörgs eigenen Wunsch zeigt Smart Freigeben jetzt einfach
+    // alle zur Geschlechts-Präferenz passenden Kandidat:innen zur Auswahl —
+    // er wirft selbst kurz einen Blick in den Kalender und entscheidet.
+    $matches = [];
+    foreach (st_candidate_providers_($gender) as $provider_id => $name) {
+        $matches[] = ['providerId' => $provider_id, 'name' => $name];
+    }
 
     // row->bookingStart kommt roh aus der DB (UTC, wie Amelia intern
-    // speichert). Amelias eigene Oberfläche — und damit vermutlich auch ihr
-    // /slots-Endpunkt — rechnet für Menschen auf Site-Zeitzone (Berlin) um,
-    // deshalb hier dieselbe Umrechnung wie in booking-overview, bevor Datum/
-    // Uhrzeit für den Verfügbarkeitsabgleich gebildet werden.
+    // speichert) — für die Anzeige auf Site-Zeitzone (Berlin) umrechnen,
+    // wie überall sonst im Dashboard.
     $local_start = get_date_from_gmt($row->bookingStart);
     $parts = explode(' ', $local_start);
     $date = $parts[0];
     $time = isset($parts[1]) ? substr($parts[1], 0, 5) : '00:00';
 
-    $matches = [];
-    $raw_per_candidate = [];
-
-    foreach ($candidates as $provider_id => $name) {
-        $query = [
-            'serviceId' => $confirmed_service_id,
-            'providerIds' => [$provider_id],
-            'serviceDuration' => (int) $row->duration_seconds,
-            'dates' => [$date],
-        ];
-        $result = st_amelia_ajax_call_('GET', '/slots', $query);
-        if (is_wp_error($result)) {
-            $raw_per_candidate[$provider_id] = ['error' => $result->get_error_message(), 'debug' => $result->get_error_data()];
-            continue;
-        }
-        $slots_for_date = isset($result['data']['data']['slots'][$date]) ? $result['data']['data']['slots'][$date] : null;
-        if ($debug) {
-            // Amelia liefert hier oft einen mehrjährigen Zeitraum an Slots
-            // zurück (gefunden 21.08.2026: ~2 Jahre, Minuten-Takt) — die
-            // komplette Rohantwort ins Dashboard zu schreiben lässt den
-            // Browser hängen. Für die Kalibrierung reicht der Ausschnitt des
-            // angefragten Tages.
-            $raw_per_candidate[$provider_id] = [
-                'message' => isset($result['data']['message']) ? $result['data']['message'] : null,
-                'requestedDate' => $date,
-                'requestedTime' => $time,
-                'slotsForRequestedDate' => $slots_for_date,
-            ];
-        }
-        $free = st_slots_has_time_($result['data'], $date, $time);
-        if (!$free) {
-            // /slots sagt "belegt" — Gegenprobe, ob das nur an dem gerade
-            // bewerteten Termin selbst liegt (siehe st_provider_has_other_
-            // appointment_()-Kommentar). Erst mal prüfen, ob die Lücke
-            // überhaupt schmal genug ist, um plausibel nur vom gerade
-            // bewerteten Termin selbst zu stammen (siehe
-            // st_slots_gap_width_minutes_()-Kommentar) — sonst NICHT
-            // überschreiben, das wäre vermutlich eine echte, mehrstündige
-            // Kalender-Blockade (Google-Calendar-Sync).
-            $own_duration_minutes = (int) round(((int) $row->duration_seconds) / 60);
-            $gap_minutes = st_slots_gap_width_minutes_($slots_for_date, $time);
-            $plausible_self_block = $gap_minutes !== null && $gap_minutes <= ($own_duration_minutes * 2 + 60);
-            if ($plausible_self_block) {
-                $free = !st_provider_has_other_appointment_($wpdb, $prefix, $provider_id, $appointment_id, $row->bookingStart, $row->bookingEnd);
-            }
-            if ($debug) {
-                $raw_per_candidate[$provider_id]['gapMinutes'] = $gap_minutes;
-                $raw_per_candidate[$provider_id]['ownDurationMinutes'] = $own_duration_minutes;
-                $raw_per_candidate[$provider_id]['plausibleSelfBlock'] = $plausible_self_block;
-                $raw_per_candidate[$provider_id]['overriddenAsSelfBlock'] = $free;
-            }
-        }
-        if ($free) {
-            $matches[] = ['providerId' => $provider_id, 'name' => $name];
-        }
-    }
-
-    $response = [
+    return new WP_REST_Response([
         'ok' => true,
         'appointmentId' => $appointment_id,
         'date' => $date,
         'time' => $time,
         'gender' => $gender,
-        'candidatesChecked' => count($candidates),
+        'candidatesChecked' => count($matches),
         'matches' => $matches,
-    ];
-    if ($debug) {
-        $response['raw'] = $raw_per_candidate;
-    }
-    return new WP_REST_Response($response, 200);
+    ], 200);
 }
 
 function st_booking_reassign_handler(WP_REST_Request $request) {
@@ -860,11 +720,6 @@ add_shortcode('st_booking_dashboard', function () {
       <button id="st-bd-reference" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Referenz anzeigen (Kategorien/Dienstleistungen/Mitarbeiter)</button>
       <pre id="st-bd-reference-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
 
-      <div style="margin-top:10px;display:flex;gap:6px;align-items:center;">
-        <input id="st-bd-avail-id" type="number" placeholder="Termin-ID" style="width:90px;padding:6px 8px;border:1px solid var(--st-line);border-radius:6px;font-size:0.8rem;">
-        <button id="st-bd-avail-debug" style="background:none;border:1px solid var(--st-line);color:var(--st-soft);border-radius:8px;padding:6px 12px;font-size:0.8rem;">Verfügbarkeit-Debug (Smart Freigeben)</button>
-      </div>
-      <pre id="st-bd-avail-debug-out" style="display:none;white-space:pre-wrap;word-break:break-word;background:var(--st-card);border:1px solid var(--st-line);border-radius:8px;padding:10px;font-size:0.75rem;margin-top:8px;max-height:340px;overflow:auto;"></pre>
       <div style="text-align:center;color:var(--st-soft);font-size:0.7rem;margin-top:14px;">Version <?php echo esc_html(ST_BD_VERSION); ?></div>
     </div>
     <script>
@@ -980,31 +835,30 @@ add_shortcode('st_booking_dashboard', function () {
       function smartApprove(btn, id) {
         btn.disabled = true;
         const originalText = btn.textContent;
-        btn.textContent = 'Prüfe Verfügbarkeit…';
+        btn.textContent = 'Lade Kandidat:innen…';
         fetch(availabilityEndpoint + '?appointmentId=' + encodeURIComponent(id), { headers: { 'X-WP-Nonce': nonce } })
           .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
           .then(function (result) {
             if (!result.ok || result.data.error) {
-              alert('Fehler bei der Verfügbarkeitsprüfung: ' + (result.data.detail || result.data.error || 'unbekannt'));
+              alert('Fehler beim Laden der Kandidat:innen: ' + (result.data.detail || result.data.error || 'unbekannt'));
               btn.disabled = false;
               btn.textContent = originalText;
               return;
             }
             const matches = result.data.matches || [];
             if (matches.length === 0) {
-              alert('Niemand Passendes frei am ' + result.data.date + ' um ' + result.data.time + ' Uhr. Bitte manuell in Amelia zuweisen.');
+              alert('Keine passenden Mitarbeiter:innen gefunden. Bitte manuell in Amelia zuweisen.');
               btn.disabled = false;
               btn.textContent = originalText;
               return;
             }
-            if (matches.length === 1) {
-              reassignAndApprove(btn, id, matches[0], originalText);
-              return;
-            }
+            // Immer auswählen lassen (auch bei nur einer Person) — kein
+            // automatischer Verfügbarkeits-Check mehr, siehe Datei-Header
+            // "SMART FREIGEBEN". Jörg schaut selbst kurz in den Kalender.
             showCandidatePicker(btn, id, matches, originalText);
           })
           .catch(function (err) {
-            alert('Verbindungsfehler bei der Verfügbarkeitsprüfung: ' + err);
+            alert('Verbindungsfehler: ' + err);
             btn.disabled = false;
             btn.textContent = originalText;
           });
@@ -1147,36 +1001,6 @@ add_shortcode('st_booking_dashboard', function () {
             data.services.forEach(function (s) { text += s.id + '  ' + s.name + '  (Kategorie ' + s.categoryId + ', ' + s.duration + 's)\n'; });
             text += '\nMITARBEITER\n';
             data.providers.forEach(function (p) { text += p.id + '  ' + p.firstName + ' ' + p.lastName + '  ' + p.email + '\n'; });
-            out.textContent = text;
-          })
-          .catch(function (err) {
-            out.textContent = 'Verbindungsfehler: ' + err;
-          });
-      });
-
-      // Kalibrierungshilfe für Smart Freigeben: ruft /booking-availability
-      // mit Nonce auf (im Gegensatz zu einer direkt in die Adresszeile
-      // eingetippten URL, die ohne X-WP-Nonce-Header mit 401 scheitert) und
-      // zeigt die rohe Amelia-/slots-Antwort pro Kandidat an, siehe README.
-      document.getElementById('st-bd-avail-debug').addEventListener('click', function () {
-        const id = document.getElementById('st-bd-avail-id').value;
-        const out = document.getElementById('st-bd-avail-debug-out');
-        if (!id) {
-          alert('Bitte zuerst eine Termin-ID eingeben (Anfrage-Buchung).');
-          return;
-        }
-        out.style.display = 'block';
-        out.textContent = 'Lädt…';
-        fetch(availabilityEndpoint + '?appointmentId=' + encodeURIComponent(id) + '&debug=1', { headers: { 'X-WP-Nonce': nonce } })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            let text = JSON.stringify(data, null, 2);
-            // Sicherheitsnetz: eine unerwartet riesige Amelia-Antwort (z. B.
-            // ein mehrjähriger Slot-Zeitraum) sonst nicht 1:1 ins DOM
-            // schreiben — das ließ den Browser am 21.08.2026 hängen.
-            if (text.length > 50000) {
-              text = text.slice(0, 50000) + '\n\n… (gekürzt, Antwort war ' + text.length + ' Zeichen lang)';
-            }
             out.textContent = text;
           })
           .catch(function (err) {

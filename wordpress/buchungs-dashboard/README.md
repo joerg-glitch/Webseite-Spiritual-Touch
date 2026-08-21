@@ -8,13 +8,13 @@ Amelia-Plan-Upgrade (Elite) und ohne Umweg über Gmail.
 - Zeigt alle Buchungen der nächsten 30 Tage (Zeit, Service, Mitarbeiter,
   Kunde, Telefon, Status) als mobil-optimierte Kartenliste, sortiert nach
   Datum. "Ausstehend" ist farblich hervorgehoben.
-- Filter "Alle / Anfragen / Bestätigt": erkennt an "(bestätigt)" im
-  Service-Namen, ob eine Buchung noch beim Anfrage-Platzhalter
-  ("Individuelle Anfrage") hängt oder schon auf das (bestätigt)-Duplikat mit
-  echtem Mitarbeiter umgehängt wurde — passend zu Jörgs Kategorie-Mechanik
-  (versteckte Kategorie "Bestätigt" mit einem Duplikat pro Dienstleistung,
-  allen Mitarbeitern zugeordnet, damit im Nachhinein ein freier Mitarbeiter
-  eingesetzt werden kann). Rein clientseitig, kein zusätzlicher Request.
+- Filter "Alle / Anfragen / Bestätigt": erkennt an der `providerId` der
+  Buchung, ob sie noch bei einem der drei Geschlechts-Pseudo-Mitarbeiter
+  hängt oder schon auf einen echten Mitarbeiter umgehängt wurde — passend
+  zu Jörgs Kategorie-Mechanik (versteckte Kategorie "Bestätigt" mit einem
+  Duplikat pro Dienstleistung, damit im Nachhinein ein freier Mitarbeiter
+  eingesetzt werden kann). Rein clientseitig, kein zusätzlicher Request
+  (siehe "Anfragen/Bestätigt-Filter"-Fix weiter unten für die Historie).
 - Liest **direkt aus der Amelia-Datenbank** (read-only SQL) — kein
   Amelia-REST-API-Produkt nötig, das ist ab Elite-Plan gated. Diese Lösung
   läuft in jedem Plan, weil sie einfach dieselbe Datenbank liest, die Amelia
@@ -27,14 +27,15 @@ Amelia-Plan-Upgrade (Elite) und ohne Umweg über Gmail.
   Login-Session des Admins. Dadurch laufen Bestätigungsmail,
   Google-Kalender-Sync und Zahlungsstatus-Folgeaktionen exakt wie bei einem
   normalen Klick in Amelia — kein Nachbau, kein rohes Datenbank-UPDATE.
-- **Smart Freigeben:** Klick auf "Freigeben" bei einer Anfrage-Buchung prüft
-  zuerst per Amelias eigenem `/slots`-Endpunkt, welche zur
-  Geschlechts-Präferenz passenden Mitarbeiter am Termin frei sind. Bei genau
-  einem Treffer werden Kategorie/Dienstleistung/Mitarbeiter automatisch
-  gesetzt und die Buchung freigegeben. Bei mehreren Treffern zeigt das
-  Dashboard eine Auswahl, bei null Treffern passiert nichts (Meldung statt
-  Aktion). Siehe Abschnitt "Nächster Schritt" unten für Referenzdaten und
-  einen offenen Kalibrierungsschritt vor dem produktiven Einsatz.
+- **Smart Freigeben:** Klick auf "Freigeben" bei einer Anfrage-Buchung
+  ermittelt, welche Mitarbeiter:innen zur Geschlechts-Präferenz des Kunden
+  passen, und zeigt sie zur Auswahl — auch wenn nur eine Person infrage
+  kommt. Jörg wählt nach einem kurzen Blick in den eigenen Kalender
+  manuell aus, danach laufen Kategorie/Dienstleistung/Mitarbeiter setzen
+  und Freigeben automatisch. Bewusst **keine** automatische
+  Verfügbarkeitsprüfung (siehe Abschnitt "Smart Freigeben" unten, warum
+  ein erster Versuch darüber verworfen wurde). Siehe dort auch für
+  Referenzdaten.
 
 ## Sicherheit
 
@@ -46,6 +47,7 @@ sondern echte WordPress-Anmeldung:
 - Der Shortcode `[st_booking_dashboard]` rendert nur etwas, wenn der
   aufrufende Nutzer eingeloggt ist und `manage_options` hat (Admin).
 - Jede REST-Route (`booking-overview`, `booking-approve`,
+  `booking-availability`, `booking-reassign`, `amelia-reference`,
   `amelia-bootstrap-debug`) prüft dieselbe Berechtigung serverseitig,
   unabhängig vom Shortcode, und verlangt einen gültigen WordPress-REST-Nonce
   (`X-WP-Nonce`-Header). Ohne aktive, eingeloggte Session gibt es keine
@@ -124,116 +126,87 @@ wechselt — das musste nicht separat nachgebaut werden):
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
 
-## "Smart Freigeben" — Referenzdaten & offener Kalibrierungsschritt
+## "Smart Freigeben" — Referenzdaten & Verlauf
 
-**Die Idee:** Klick auf "Freigeben" bei einer Anfrage-Buchung löst nicht
-mehr sofort die Freigabe aus, sondern erst eine Prüfung: welche der
-Mitarbeiter, die zur gewählten Geschlechts-Präferenz des Kunden passen,
-sind am Termin-Datum laut Amelia tatsächlich frei? Bei genau einem Treffer
-sofort automatisch zuweisen und freigeben. Bei mehreren ein Auswahl-Popup
-im Dashboard, Jörg tippt auf eine Option, der Rest (Kategorie auf
-"Bestätigt", Dienstleistung auf die passende "(Bestätigt)"-Variante,
-Mitarbeiter setzen, freigeben) läuft automatisch. Bei null Treffern:
-Meldung statt Aktion, Jörg entscheidet manuell.
+**Die Idee:** Klick auf "Freigeben" bei einer Anfrage-Buchung ermittelt,
+welche Mitarbeiter:innen zur Geschlechts-Präferenz des Kunden passen, und
+zeigt sie im Dashboard zur Auswahl — auch wenn nur eine Person infrage
+kommt. Jörg tippt auf eine Option (nach einem kurzen Blick in seinen
+eigenen Kalender), der Rest (Kategorie auf "Bestätigt", Dienstleistung auf
+die passende "(Bestätigt)"-Variante, Mitarbeiter setzen, freigeben) läuft
+automatisch.
 
-Bewusst **kein Cowork/LLM** für die Entscheidungslogik — "wer ist frei"
-und "passt das Geschlecht" sind reine Ja/Nein-Abfragen auf strukturierten
-Daten, kein Sprachverständnis nötig. Gehört in deterministischen Code,
-läuft dadurch bei jedem Klick sofort und kostenlos.
+Bewusst **kein Cowork/LLM** für die Entscheidungslogik — "passt das
+Geschlecht" ist eine reine Ja/Nein-Abfrage auf strukturierten Daten, kein
+Sprachverständnis nötig. Gehört in deterministischen Code, läuft dadurch
+bei jedem Klick sofort und kostenlos.
 
-**Status:** gebaut (Routen `/booking-availability` und `/booking-reassign`
-in `wpcode-snippet.php`, Dashboard-UI mit Auswahl-Popup bei mehreren
-Treffern) und am 21.08.2026 an einer echten Buchung kalibriert (siehe
-"Kalibriert" bei Schritt 3 im Bauplan unten). **Die eigentliche
-Zuweisung+Freigabe (Schreib-Aktion) ist aber noch nicht an einer echten
-Buchung getestet** — beim ersten Klick auf "Freigeben" einer echten
-Anfrage-Buchung genau beobachten, ob Zuweisung und Uhrzeit in Amelia danach
-stimmen (kein Blind-Vertrauen beim allerersten Live-Lauf).
+**Status:** gebaut und am 23.08.2026 live erfolgreich getestet (Termin
+#57 automatisch Dominik zugewiesen, Freigeben hat funktioniert,
+Bestätigungsmail raus, Termin korrekt in Amelia/Dominiks Kalender
+eingetragen, Uhrzeit stimmte). Routen `/booking-availability` und
+`/booking-reassign` in `wpcode-snippet.php`, Dashboard-UI mit
+Auswahl-Popup.
 
-⚠️ **Direkte URL-Aufrufe von `.../booking-availability?...` in der
-Adresszeile scheitern mit `401 rest_forbidden`** — der Browser schickt beim
-reinen Navigieren keinen `X-WP-Nonce`-Header mit, den WordPress für
-eingeloggte REST-Zugriffe zusätzlich zum Cookie verlangt (betrifft aus
-demselben Grund auch die älteren Debug-Routen `booking-overview?debug=1`
-und `amelia-bootstrap-debug`, falls die je direkt per URL getestet werden).
-**Für die Kalibrierung stattdessen den Button "Verfügbarkeit-Debug (Smart
-Freigeben)" unten im Dashboard benutzen** (Termin-ID einer echten
-Anfrage-Buchung eintragen, Button klicken) — der nutzt denselben
-authentifizierten `fetch()` wie "Referenz anzeigen" und zeigt die rohe
-Amelia-`/slots`-Antwort pro Kandidat an.
+### Verworfen: automatische Verfügbarkeitsprüfung gegen Amelias `/slots`
 
-**Zeitzone (17.08.2026, beim ersten Testlauf gefunden):** Amelia speichert
-`bookingStart`/`bookingEnd` in der DB als UTC, die eigene Oberfläche rechnet
-für die Anzeige auf Site-Zeitzone (Berlin) um. Das Dashboard tat das
-zunächst nicht und zeigte Zeiten 2 Stunden früher an als in Amelia. Fix:
-`get_date_from_gmt()` in `st_booking_overview_handler` (Anzeige),
-`st_booking_availability_handler` (Abgleich gegen `/slots`) und
-`st_build_reassign_payload_` (`bookingStart`/`date`/`time` im
-Zuweisen-Request). Der letzte Punkt ist **noch nicht an einer echten
-Buchung verifiziert** — beim ersten Live-Test einer Zuweisung unbedingt
-prüfen, ob die Uhrzeit in Amelia danach stimmt.
+Ursprünglich (21.–23.08.2026) sollte "Freigeben" zusätzlich prüfen,
+welche der geschlechtspassenden Kandidat:innen am Termin tatsächlich frei
+sind, über Amelias eigenen `/slots`-Endpunkt (derselbe interne AJAX-Call
+wie bei den Schreib-Aktionen, siehe unten). Nach mehreren Korrekturrunden
+(Selbstblockade durch den gerade bewerteten Termin selbst, dann eine
+Breiten-Plausibilitätsprüfung dagegen) zeigte ein Test mit 9
+Kandidatinnen am 23.08.2026 den entscheidenden Fund: **Amelias `/slots`
+lieferte für jede einzelne Kandidatin exakt dieselbe generische Antwort**
+— keine echte, personenbezogene Verfügbarkeitsprüfung, sondern
+offensichtlich ein von der angefragten `providerId` unabhängiges Muster.
+Ergebnis: alle 9 Kandidatinnen wurden fälschlich als frei gemeldet,
+obwohl real nur 2 es waren. Dazu kam die Prüfung durch 9 sequenzielle
+externe Requests spürbar langsam daher.
 
-**Behoben (21.08.2026): Amelia-Nonce nicht gefunden.** Ursache laut
-Debug-Ausschnitt: Der serverseitige Abruf von
-`admin.php?page=wpamelia-bookings` bekam die WordPress-**Login-Seite**
-zurück statt der echten Amelia-Seite. Grund: WordPress schützt
-`/wp-admin/`-Seiten (also auch `admin.php` und `admin-ajax.php`) mit einem
-zusätzlichen Auth-Cookie, das der Browser nur an Aufrufe **innerhalb**
-`/wp-admin/` schickt (Cookie-Pfad-Beschränkung, `ADMIN_COOKIE_PATH`). Das
-Dashboard läuft bewusst außerhalb von `/wp-admin` (mobile Seite ohne
-Admin-Oberfläche), auch die REST-Route liegt unter `/wp-json/` — dieser
-Cookie landet deshalb strukturell nie in `$_COOKIE`, unabhängig davon, wie
-er weitergereicht wird. Betraf potenziell auch das bestehende Freigeben
-(`/booking-approve`) und die Zuweisung (`/booking-reassign`), da alle drei
-`st_forward_cookies_()`/`st_scrape_amelia_nonce_()` teilen.
+Auf Jörgs Wunsch entfernt (Version 2026-08-23.4) — Details zum
+verworfenen Ansatz stehen im Git-Verlauf (Versionen 2026-08-21.6 bis
+2026-08-23.3), falls das je wieder aufgegriffen werden soll (z. B. mit
+Amelias öffentlichem Buchungsformular als Vergleichsquelle statt des
+internen `/slots`-Calls). Smart Freigeben zeigt seither einfach **alle**
+zur Geschlechts-Präferenz passenden Kandidat:innen — "System schlägt vor,
+Mensch entscheidet" statt automatischer Verfügbarkeitslogik.
 
+### Weiterhin gültige Fixes (betreffen die Schreib-Aktionen)
+
+**Zeitzone (17.08.2026):** Amelia speichert `bookingStart`/`bookingEnd`
+in der DB als UTC, die eigene Oberfläche rechnet für die Anzeige auf
+Site-Zeitzone (Berlin) um. Fix: `get_date_from_gmt()` in
+`st_booking_overview_handler` (Anzeige) und `st_build_reassign_payload_`
+(`bookingStart`/`date`/`time` im Zuweisen-Request) — Letzteres am
+23.08.2026 live bestätigt (siehe "Status" oben).
+
+**Amelia-Nonce nicht gefunden (behoben 21.08.2026):** Der serverseitige
+Abruf von `admin.php?page=wpamelia-bookings` (nötig, um Amelias Sicherheits-
+Nonce für die internen Schreib-Aufrufe frisch zu holen) bekam die
+WordPress-**Login-Seite** zurück statt der echten Amelia-Seite. Grund:
+WordPress schützt `/wp-admin/`-Seiten (auch `admin.php`/`admin-ajax.php`)
+mit einem zusätzlichen Auth-Cookie, das der Browser nur an Aufrufe
+**innerhalb** `/wp-admin/` schickt (Cookie-Pfad-Beschränkung,
+`ADMIN_COOKIE_PATH`). Das Dashboard läuft bewusst außerhalb von
+`/wp-admin`, dieser Cookie landet deshalb strukturell nie in `$_COOKIE`.
 **Fix:** `st_forward_cookies_()` erzeugt den fehlenden Admin-Cookie jetzt
 selbst per `wp_generate_auth_cookie()` für den bereits per
-`manage_options` geprüften aktuellen Nutzer, statt auf einen nie
-vorhandenen Browser-Cookie zu hoffen — dieselbe WordPress-Funktion, die
-auch beim echten Login greift. Kurzlebig (10 Minuten Gültigkeit), da nur
-für den einen unmittelbaren Server-zu-Server-Request gebraucht, nirgends
-gespeichert.
-
-**Behoben (23.08.2026): Selbstblockade durch den gerade bewerteten Termin.**
-An Termin #57 gefunden: Dominik wurde als "nicht frei" um 10:00 gemeldet,
-obwohl sein einziger echter Termin an dem Tag (privates Training, 08:00–
-09:00) gar nicht überschnitt. Grund vermutlich: Amelias `/slots` zählt den
-gerade bewerteten, noch unzugewiesenen Anfrage-Termin selbst als Konflikt
-mit (Standort/Ressource/Pseudo-Mitarbeiter-Zählung — genau warum bleibt
-offen, siehe Grenze unten). Ein Abgleich mit dem Amelia-Backend-Dropdown
-war dafür keine Hilfe: Jörg bestätigte, dass das Dropdown gar keine
-Verfügbarkeit prüft, sondern einfach alle Mitarbeiter listet, die die
-Dienstleistung anbieten — kein geeigneter Vergleichsmaßstab.
-
-**Fix:** `st_provider_has_other_appointment_()` prüft per direkter
-DB-Abfrage, ob der Kandidat einen **anderen** echten Termin (außer dem
-gerade bewerteten) im fraglichen Zeitfenster hat. Sagt `/slots` "belegt",
-aber es gibt keinen anderen echten Konflikt in der DB → wird als
-Selbstblockade gewertet und übergangen. Bekannte Grenze: Erkennt keine
-Nichtverfügbarkeit, die nicht als Zeile in `amelia_appointments` steht
-(z. B. ein als Sonderzeiten/Frei-Tag hinterlegter Block) — nur relevant,
-wenn so ein Block exakt mit der Startzeit des gerade bewerteten Termins
-zusammenfällt.
+`manage_options` geprüften aktuellen Nutzer — dieselbe WordPress-Funktion,
+die auch beim echten Login greift. Kurzlebig (10 Minuten Gültigkeit), da
+nur für den einen unmittelbaren Server-zu-Server-Request gebraucht,
+nirgends gespeichert.
 
 **Entschieden (23.08.2026): Eva als Backup, Jörg bewusst nicht.** Auf
 Nachfrage bestätigt: Ist niemand der regulären Mitarbeiterinnen frei, soll
-Eva automatisch als Backup einspringen (eigener Kalender, ganz normal
-gegen `/slots` geprüft) — "die Verfügbarkeitslogik, die der Kunde sieht,
-[soll] immer verfügbar [sein], solange irgendein Teammitglied da ist oder
-Eva". Sie steht deshalb jetzt mit ihrer echten Amelia-ID (2) in
+Eva als Backup zur Auswahl stehen — "die Verfügbarkeitslogik, die der
+Kunde sieht, [soll] immer verfügbar [sein], solange irgendein Teammitglied
+da ist oder Eva". Sie steht deshalb mit ihrer echten Amelia-ID (2) in
 `st_real_providers_()`, wie jede andere Mitarbeiterin auch. Jörg selbst
-bleibt bewusst außen vor (siehe Entscheidung vom 21.08.2026 oben) — er
-merkt einen fehlenden männlichen Treffer daran, dass die Anfrage auf
-"Anfrage" stehen bleibt, und entscheidet dann selbst, ob er den Termin
-manuell übernimmt.
-
-**Erster echter Live-Test erfolgreich (23.08.2026):** Termin #57
-(Intuitive Tantramassage, 23.08. 10:00, siehe Selbstblockade-Fix oben)
-automatisch Dominik zugewiesen, Freigeben-Klick hat funktioniert,
-Bestätigungsmail raus, Termin korrekt in Amelia/Dominiks Kalender
-eingetragen — Uhrzeit stimmte. Damit ist auch der in "Zeitzone" oben als
-unverifiziert markierte Reassign-Payload-Teil bestätigt.
+bleibt bewusst außen vor (eigene Entscheidung vom 21.08.2026) — er merkt
+einen fehlenden männlichen Treffer daran, dass die Anfrage auf "Anfrage"
+stehen bleibt, und entscheidet dann selbst, ob er den Termin manuell
+übernimmt.
 
 **Behoben (23.08.2026): Anfragen/Bestätigt-Filter zeigte falsche Werte.**
 Ursache: `isConfirmed()` im Dashboard prüfte bisher, ob `"(bestätigt)"` im
@@ -245,52 +218,6 @@ als "Anfrage" markiert. **Fix:** `isConfirmed()` prüft jetzt die
 `providerId` der Buchung gegen die drei Pseudo-Mitarbeiter (36/37/38) —
 dafür liefert `booking-overview` jetzt zusätzlich `provider_id` mit.
 Zuverlässiger, weil unabhängig vom jeweiligen Servicenamen.
-
-⚠️ **Behoben mit Vorbehalt (23.08.2026): Dominik wurde trotz Blockade vorgeschlagen.**
-Jörg meldet: Für Termin #56 (21.08. 15:30, zu dem Zeitpunkt noch
-unzugewiesene Anfrage, Service-Titel zeigt weiter "männliche Begleitung")
-schlägt die Automatik weiterhin Dominik vor, obwohl er laut Kalender
-blockiert ist. (Korrektur einer ersten, inzwischen verworfenen Vermutung:
-Der erfolgreiche erste Live-Test betraf tatsächlich **Termin #57**
-(23.08., Sonntag — "Dominik … neuen Termin am Sonntag"), nicht #56. Eine
-erneute Prüfung von #56 nach einer Zuweisung hätte ohnehin mit
-`unknown_gender_pseudo_provider` abgebrochen, nicht fälschlich Dominik
-gezeigt — diese erste Erklärung passt also nicht.)
-
-**Tatsächliche Ursache gefunden:** Im Kalender-Screenshot vom 21.08. ist
-in Dominiks Spalte ein Block **"Blockiert (Verfügbarkeit-Sync) 09:00–18:00"**
-zu sehen — das deckt die Anfrage-Zeit (15:30) vollständig ab. Dieser Titel
-stammt **nicht** aus `apps-script/anfragen-verfuegbarkeit-sync` (das
-schreibt "Blockiert (**Anfragen**-Sync)" in einen separaten Sammelkalender)
-— sondern aus `team-app/App Script - Sync`, Branch
-`claude/amelia-appointments-team-app-m43p57`, per Git durchsuchbar. Dessen
-eigener Docblock sagt es explizit: Es überträgt "Verfügbarkeit"-Einträge
-der Team-App in **pro-Mitarbeiter Hilfskalender, die Amelia liest** ("Amelia
-interpretiert: frei, es sei denn geblockt") — das ist also kein
-Amelia-fremdes System, sondern **der reguläre Mechanismus, über den Amelia
-selbst weiß, wann ein Mitarbeiter Zeit hat**. Amelias `/slots` hat diesen
-9-Stunden-Block also vermutlich völlig korrekt als "belegt" gemeldet.
-
-**Das eigentliche Problem war die 23.1-Selbstblockade-Gegenprobe selbst:**
-Sie hat jede "belegt"-Antwort ohne anderen `amelia_appointments`-Eintrag
-pauschal als Selbstblockade gewertet und überschrieben — auch echte,
-mehrstündige Google-Kalender-Blockaden wie diese, die naturgemäß nie als
-`amelia_appointments`-Zeile auftauchen. **Fix (23.3):** Neue
-Breiten-Plausibilitätsprüfung `st_slots_gap_width_minutes_()` — misst,
-wie viele zusammenhängende Minuten um die angefragte Uhrzeit als "belegt"
-markiert sind, und wertet nur noch als Selbstblockade, wenn diese Lücke
-ungefähr zur Dauer des gerade bewerteten Termins passt (`Dauer × 2 + 60
-Min` Toleranz für Amelia-Puffer). Gegen die zwei bekannten echten Fälle
-durchgerechnet: Termin #57 (Lücke 210 Min bei 90 Min Dauer → knapp
-plausibel, korrekt als Selbstblockade erkannt) vs. Dominiks 21.08.-Block
-(Lücke 540 Min bei 90 Min Dauer → weit über der Grenze, korrekt **nicht**
-mehr überschrieben).
-
-⚠️ Die genaue Schwelle (`× 2 + 60`) ist an nur zwei bekannten Datenpunkten
-kalibriert, kein verifizierter Amelia-Wert — bei ungewöhnlich langen
-Dienstleistungen (z. B. "Tantramassage lernen für Paare", 14400s = 4h)
-oder sehr kurzen Lücken-Rundungen könnte sie noch nachjustiert werden
-müssen. Noch nicht mit echten Daten nach dem Fix erneut getestet.
 
 ### Referenzdaten (Stand 17.08.2026, über den "Referenz anzeigen"-Button geholt)
 
@@ -428,7 +355,7 @@ weiterer DevTools-Mitschnitt (Fetch-vor-dem-Ändern) — nur beim ersten Test
 genau prüfen, ob wirklich alle Felder korrekt befüllt sind, bevor das an
 einer echten Buchung ausprobiert wird.
 
-### Bauplan (Stand: alle 4 Schritte gebaut, siehe unten für Details)
+### Bauplan (Stand: gebaut, live getestet, vereinfacht)
 
 1. ✅ Statt die `booking-overview`-Liste zu erweitern (würde bei jedem
    Dashboard-Laden interne Felder wie `customFields`/`internalNotes`/Coupon
@@ -440,27 +367,16 @@ einer echten Buchung ausprobiert wird.
    `categoryId` fest auf 7 und `serviceId` auf das zur aktuellen
    Dienstleistung passende Bestätigt-Pendant (Tabelle oben), ruft
    `st_amelia_ajax_call_('POST', '/appointments/' . $id, [], $payload)`.
-3. ✅ Neue Route `GET /booking-availability` (`?appointmentId=`, optional
-   `&debug=1`): fragt für jeden zur Geschlechts-Präferenz passenden
-   Kandidaten Amelias eigenen `/slots`-Endpunkt ab (`serviceId` =
-   Bestätigt-Pendant, `providerIds` = [Kandidat], `serviceDuration` =
-   Dienstleistungsdauer, `dates` = [Termin-Datum]) und prüft, ob die exakte
-   Uhrzeit des Termins in der Antwort auftaucht.
-   ✅ **Kalibriert (21.08.2026)** an Termin #56: Die Query-Parameter
-   (`serviceId`, `providerIds`, `serviceDuration`, `dates`) liefern eine
-   gültige Antwort; Amelia ignoriert `dates` allerdings und gibt immer einen
-   mehrjährigen Zeitraum zurück (bei diesem Test: 17.08.2025–17.08.2027,
-   30-Minuten-Takt). Freie Zeiten stehen als **Schlüssel** unter
-   `data.slots[Datum][Uhrzeit]` (z. B. `"2026-08-21": {"15:30": [[29, 11]]}`),
-   nicht als Text-Wert — `st_slots_has_time_()` prüft jetzt genau diesen
-   Pfad. Die Debug-Ausgabe im Dashboard zeigt seither nur noch den
-   Tages-Ausschnitt für das angefragte Datum, weil die volle Antwort (durch
-   den ignorierten `dates`-Filter mehrere MB) den Browser zum Hängen
-   brachte.
-4. ✅ Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung (erkannt an
-   fehlendem "(bestätigt)" im Service-Namen) löst zuerst den
-   Verfügbarkeits-Check aus statt direkt freizugeben — 1 Treffer: sofort
-   zuweisen + freigeben (`/booking-reassign`, danach `/booking-approve`).
-   Mehrere Treffer: Auswahl-Popup mit Namen. Null Treffer: Meldung, keine
-   Aktion. Bereits "(bestätigt)"-Buchungen laufen weiter über die alte
-   Direkt-Freigeben-Route.
+3. ✅ Route `GET /booking-availability` (`?appointmentId=`): liefert die zur
+   Geschlechts-Präferenz passenden Kandidat:innen (per
+   `st_gender_preference_()` + `st_candidate_providers_()`). Enthielt
+   zwischenzeitlich (21.–23.08.2026) zusätzlich eine Prüfung gegen Amelias
+   `/slots`-Endpunkt, ob die jeweilige Person am Termin frei ist — auf
+   Jörgs Wunsch wieder entfernt, siehe Abschnitt "Verworfen: automatische
+   Verfügbarkeitsprüfung" oben.
+4. ✅ Dashboard-UI: "Freigeben" bei einer Anfrage-Buchung (erkannt an der
+   `providerId`, siehe "Anfragen/Bestätigt-Filter"-Fix oben) zeigt immer
+   die Kandidat:innen-Auswahl, auch bei nur einer Person — Jörg wählt
+   manuell aus, danach laufen Zuweisung (`/booking-reassign`) und Freigabe
+   (`/booking-approve`) automatisch. Bereits "(bestätigt)"-Buchungen laufen
+   weiter über die alte Direkt-Freigeben-Route.
