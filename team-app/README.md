@@ -40,9 +40,14 @@ anfragenden Person auftaucht — verhindert, dass ein manipulierter Request
 fremde Termine ändern könnte.
 
 Raumwechsel (Raum 1/2/3) sind **nicht** Teil dieser Funktion — die laufen
-weiterhin rein über den Google Kalender (Raum-1-Kopie zwischen
-Raumkalendern verschieben, siehe `apps-script/raum-einladung-sync/
-README.md`), weil sich dabei am eigentlichen Amelia-Termin nichts ändert.
+rein über den Google Kalender: Jörg gibt jedes Hilfskalender direkt für
+das jeweilige Mitglied frei (siehe `apps-script/raum-einladung-sync/
+README.md`, Abschnitt "Hilfskalender freigeben"), die Person legt den
+Termin bei Bedarf selbst in einen Raumkalender. Ein separates, einmal
+täglich laufendes Skript (`apps-script/raum-einladung-sync`) findet den
+Termin über die Termin-ID, egal in welchem Kalender er gerade liegt, und
+meldet nur eine geänderte Zeit/Dauer zurück — Raumwechsel selbst ändern
+nichts am Amelia-Termin und werden deshalb nicht gemeldet.
 
 ### Nachbesserung (27.08.2026, nach dem ersten Live-Test)
 
@@ -54,8 +59,8 @@ Zwei Dinge beim ersten Test auf dem echten Gerät aufgefallen:
    vor dessen Umstellung auf Tags angelegt wurden, tragen den Tag nicht und
    rutschten durch. `isAvailabilityBlock_()` erkennt jetzt zusätzlich den
    Titel ("Blockiert (Verfügbarkeit-Sync)") und die alte Text-Markierung —
-   dieselbe Logik wie `isTeamAppBlock()` in
-   `apps-script/raum-einladung-sync/Code.gs`.
+   dieselbe Erkennungslogik wie im Verfügbarkeit-Sync selbst
+   (`team-app/App Script - Sync`).
 2. **Termine ohne Termin-ID zeigten "bitte Jörg Bescheid geben".** Jörgs
    Rückmeldung: "muss hier noch nicht bitte Jörg Bescheid geben, sondern
    die eigene Änderungsmöglichkeit gegeben sein." Für sehr alte Buchungen

@@ -77,8 +77,19 @@
  *                 Jörgs ausdrücklicher Wunsch, dass das Team solche
  *                 Alt-Termine ebenfalls selbst ändern kann, statt "bitte
  *                 Jörg Bescheid geben" angezeigt zu bekommen.
+ *   2026-08-27.3  Neue Route /amelia-appointment-times (rein lesend,
+ *                 Sammel-Abfrage für mehrere Termin-IDs auf einmal).
+ *                 Hintergrund: Jörgs Kurswechsel bei apps-script/
+ *                 raum-einladung-sync — statt Termine automatisch in eine
+ *                 Raum-1-Kopie zu spiegeln, gibt er jetzt jedem
+ *                 Teammitglied den eigenen Hilfskalender direkt frei
+ *                 (Google-Calendar-Freigabe, "ein Automatisierungsschritt
+ *                 weniger"). Das dortige Skript braucht deshalb einen
+ *                 Weg, den zuletzt bekannten Amelia-Stand für gefundene
+ *                 Termin-IDs frisch abzufragen, statt ihn selbst zu
+ *                 speichern (zustandsloses Design, siehe README dort).
  */
-define('ST_BD_VERSION', '2026-08-27.2');
+define('ST_BD_VERSION', '2026-08-27.3');
 
 /**
  * ST Buchungs-Dashboard
@@ -574,8 +585,11 @@ add_action('rest_api_init', function () {
 
     // Rückrichtung Kalender/Team-App → Amelia: zwei Aufrufer.
     // (1) apps-script/raum-einladung-sync ruft einmal täglich auf, wenn es
-    //     im Raum-1-Kalender eine vom Team verschobene Uhrzeit/Dauer
-    //     erkennt.
+    //     bei einem der bekannten Kalender (Hilfskalender oder Raum) eine
+    //     vom Team verschobene Uhrzeit/Dauer erkennt (Termin überall dort
+    //     per "Termin-ID:"-Zeile in der Beschreibung gefunden — seit dem
+    //     27.08.2026-Kurswechsel gibt es keine feste "Raum-1-Kopie" mehr,
+    //     siehe README des Skripts).
     // (2) team-app/App Script ruft direkt auf, wenn ein Teammitglied in
     //     der Team-App selbst über "Termine → Ändern" Datum/Uhrzeit anpasst
     //     (seit 27.08.2026).
@@ -586,6 +600,19 @@ add_action('rest_api_init', function () {
     register_rest_route('st/v1', '/booking-reschedule', [
         'methods' => 'POST',
         'callback' => 'st_booking_reschedule_handler',
+        'permission_callback' => $reschedule_secret_ok,
+    ]);
+
+    // Rein lesend: liefert für eine Liste von Amelia-Termin-IDs den
+    // aktuellen bookingStart/bookingEnd/providerId direkt aus der DB.
+    // Einziger Aufrufer: apps-script/raum-einladung-sync — fragt damit bei
+    // jedem täglichen Lauf frisch den "zuletzt bekannten Amelia-Stand" ab,
+    // statt ihn selbst zu speichern (zustandsloses Design, siehe README
+    // des Skripts). Direkter DB-SELECT statt Amelias internem Endpunkt,
+    // weil rein lesend — dieselbe Begründung wie bei /booking-overview.
+    register_rest_route('st/v1', '/amelia-appointment-times', [
+        'methods' => 'POST',
+        'callback' => 'st_amelia_appointment_times_handler',
         'permission_callback' => $reschedule_secret_ok,
     ]);
 });
@@ -844,6 +871,41 @@ function st_booking_reschedule_handler(WP_REST_Request $request) {
     }
 
     return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
+}
+
+/**
+ * Liefert für eine Liste von Amelia-Termin-IDs den aktuellen
+ * bookingStart/bookingEnd/providerId direkt aus der DB — rein lesend,
+ * kein Amelia-AJAX-Umweg nötig (siehe Kommentar bei der Routen-
+ * Registrierung). Einziger Aufrufer: apps-script/raum-einladung-sync,
+ * einmal täglich, ein Sammel-Request für alle an dem Tag im Kalender
+ * gefundenen Termin-IDs statt vieler Einzelabfragen.
+ */
+function st_amelia_appointment_times_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $ids = $request->get_param('appointmentIds');
+    if (!is_array($ids) || !count($ids)) {
+        return new WP_REST_Response(['error' => 'missing_params'], 400);
+    }
+    $ids = array_map('intval', $ids);
+    $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+    $sql = "SELECT id, bookingStart, bookingEnd, providerId FROM {$prefix}amelia_appointments WHERE id IN ($placeholders)";
+    $rows = $wpdb->get_results($wpdb->prepare($sql, $ids));
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+
+    $out = [];
+    foreach ($rows as $row) {
+        $out[(string) $row->id] = [
+            'bookingStart' => $row->bookingStart,
+            'bookingEnd' => $row->bookingEnd,
+            'providerId' => (int) $row->providerId,
+        ];
+    }
+    return new WP_REST_Response(['ok' => true, 'appointments' => $out], 200);
 }
 
 function st_amelia_bootstrap_debug_handler(WP_REST_Request $request) {

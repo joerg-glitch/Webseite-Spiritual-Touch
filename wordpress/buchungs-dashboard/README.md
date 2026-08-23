@@ -53,19 +53,21 @@ sondern echte WordPress-Anmeldung:
   (`X-WP-Nonce`-Header). Ohne aktive, eingeloggte Session gibt es keine
   Daten und keine Aktion — auch nicht, wenn jemand die REST-URL direkt
   aufruft.
-- **Ausnahme `booking-reschedule`:** Diese Route wird nicht vom Dashboard im
-  Browser aufgerufen, sondern serverseitig vom Apps-Script-Projekt
-  `apps-script/raum-einladung-sync` (kein WordPress-Login vorhanden, siehe
-  dort). Statt der Nonce-/Session-Prüfung verlangt sie ein gemeinsames
-  Geheimnis im Header `X-ST-Reschedule-Secret` (`hash_equals()`-Vergleich
-  gegen `ST_RESCHEDULE_SECRET`). Für den eigentlichen Amelia-Request wird
-  intern kurzzeitig ein fest hinterlegter Admin-Account simuliert
-  (`wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID)`), damit derselbe
-  Cookie-Mint-Mechanismus wie bei den anderen Routen greift — das ist kein
-  echter Login, wirkt nur für die Dauer dieses einen Requests. ⚠️
-  `ST_RESCHEDULE_SECRET` und `ST_RESCHEDULE_ADMIN_USER_ID` müssen vor
-  Go-Live in `wpcode-snippet.php` mit echten Werten befüllt werden (siehe
-  Kommentare direkt über der Konstante).
+- **Ausnahme `booking-reschedule` und `amelia-appointment-times`:** Diese
+  Routen werden nicht vom Dashboard im Browser aufgerufen, sondern
+  serverseitig von `apps-script/raum-einladung-sync` und `team-app/App
+  Script` (kein WordPress-Login vorhanden, siehe dort). Statt der Nonce-/
+  Session-Prüfung verlangen sie ein gemeinsames Geheimnis im Header
+  `X-ST-Reschedule-Secret` (`hash_equals()`-Vergleich gegen
+  `ST_RESCHEDULE_SECRET`). Für den eigentlichen Amelia-Request (nur bei
+  `booking-reschedule`, `amelia-appointment-times` liest nur direkt aus
+  der DB) wird intern kurzzeitig ein fest hinterlegter Admin-Account
+  simuliert (`wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID)`), damit
+  derselbe Cookie-Mint-Mechanismus wie bei den anderen Routen greift —
+  das ist kein echter Login, wirkt nur für die Dauer dieses einen
+  Requests. ⚠️ `ST_RESCHEDULE_SECRET` und `ST_RESCHEDULE_ADMIN_USER_ID`
+  müssen vor Go-Live in `wpcode-snippet.php` mit echten Werten befüllt
+  werden (siehe Kommentare direkt über der Konstante).
 - Die Freigeben-Aktion (und alles Zukünftige, das echte Amelia-Requests
   nachschickt) **speichert nirgends** Login-Cookies, Nonces oder Tokens im
   Code oder in der Datenbank. Sie liest bei jedem Aufruf live `$_COOKIE` aus
@@ -139,19 +141,24 @@ wechselt — das musste nicht separat nachgebaut werden):
   Objekt). Das ist vermutlich die Aktion hinter Kategorie/Dienstleistung/
   Mitarbeiter ändern.
 
-## Rückrichtung Kalender/Team-App → Amelia (`/booking-reschedule`)
+## Rückrichtung Kalender/Team-App → Amelia (`/booking-reschedule`, `/amelia-appointment-times`)
 
 Gehört technisch zu `apps-script/raum-einladung-sync` und `team-app/`,
-nicht zu Smart Freigeben — hier dokumentiert, weil die Route in dieser
-Datei lebt. **Zwei unabhängige Aufrufer:**
+nicht zu Smart Freigeben — hier dokumentiert, weil die Routen in dieser
+Datei leben. **Zwei unabhängige Aufrufer:**
 
-1. **`apps-script/raum-einladung-sync`** (täglich): Das Team bekommt
-   bestätigte Termine als Kalender-Einladung in einen Raum-1-Kopie-Termin
-   (siehe README dort). Jörgs ausdrückliche Vorgabe (27.08.2026): Das Team
-   muss diese Termine frei im Google-Kalender verschieben können, ohne ihm
-   jedes Mal Bescheid geben zu müssen — "sonst geht es über drei Ecken".
-   Eine tägliche Automatik im Apps-Script-Projekt erkennt verschobene
-   Raum-1-Termine und trägt die neue Zeit automatisch in Amelia ein.
+1. **`apps-script/raum-einladung-sync`** (täglich): Jörgs ausdrückliche
+   Vorgabe (27.08.2026): Das Team muss bestätigte Termine frei im
+   Google-Kalender verschieben können, ohne ihm jedes Mal Bescheid geben
+   zu müssen — "sonst geht es über drei Ecken". Statt einer automatischen
+   Kalender-Kopie (früherer Ansatz, siehe README des Skripts, Abschnitt
+   "Kurswechsel") gibt Jörg dafür jedem Teammitglied direkten Zugriff auf
+   den eigenen Hilfskalender. Eine tägliche Automatik im Apps-Script-
+   Projekt findet jeden Amelia-Termin über seine Termin-ID — egal in
+   welchem der bekannten Kalender (Hilfskalender oder Raum) er gerade
+   liegt —, fragt über die rein lesende Route `/amelia-appointment-times`
+   den aktuellen Amelia-Stand ab und trägt eine erkannte Abweichung über
+   `/booking-reschedule` automatisch nach.
 2. **`team-app/App Script`** (sofort, bei Bedarf): Im Menüpunkt "Termine"
    der Team-App kann jedes Mitglied eigene Termine direkt über einen
    "Ändern"-Button anpassen (siehe `team-app/README.md`) — ruft dieselbe
@@ -174,6 +181,14 @@ unverändert aus der DB übernehmen kann und nur `bookingStart`/`date`/`time`/
 `/booking-reassign` auf — also wieder Amelias eigener interner Endpunkt,
 kein rohes DB-UPDATE, dieselbe Begründung wie überall sonst in diesem
 Baustein (native Kalender-Sync/Notifications bleiben erhalten).
+
+**Route `/amelia-appointment-times`:** `POST` mit Body
+`{appointmentIds: [12, 45, …]}`, Antwort
+`{ok: true, appointments: {"12": {bookingStart, bookingEnd, providerId}, …}}`
+— direkter, rein lesender DB-SELECT (kein Amelia-AJAX-Umweg nötig, da
+nichts geschrieben wird). Einziger Aufrufer: `apps-script/
+raum-einladung-sync`, ein Sammel-Request pro Tageslauf statt vieler
+Einzelabfragen.
 
 **Bewusst nicht gebaut:** Keine Doppelbuchungs-/Kollisionsprüfung vor dem
 Zurückschreiben — Jörg hat dieses Risiko am 27.08.2026 ausdrücklich in
