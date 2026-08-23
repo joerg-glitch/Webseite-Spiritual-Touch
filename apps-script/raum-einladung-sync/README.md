@@ -89,17 +89,23 @@ prüft, was das Team verändert hat, und es automatisch in Amelia
 einspielt — "ohne dass ich eingreifen muss, einfach nur im Hintergrund.
 Ich muss das auch nicht unbedingt wissen."
 
-**Wie es funktioniert:** `syncTerminAenderungenZurueck()` durchsucht
-einmal täglich alle bekannten Kalender (jeden Hilfskalender + alle
-Raumkalender, siehe `ROOM_CALENDAR_IDS` in `Code.gs`) nach Terminen mit
-der von Jörg ergänzten Beschreibungszeile `Termin-ID: %appointment_id%`
-(Amelia → Einstellungen → Termine → "Titel und Beschreibung der
-Veranstaltung"). Für jede gefundene Termin-ID wird in **einem** Sammel-
-Request bei WordPress der aktuell in Amelia gespeicherte Stand
-(`bookingStart`/`bookingEnd`) abgefragt (`GET`-artige Route
-`/amelia-appointment-times`, rein lesend) und mit der tatsächlichen
-Kalender-Zeit verglichen. Weichen sie ab, hat das Team den Termin
-verschoben — die neue Zeit wird per `UrlFetchApp.fetch()` an
+**Wie es funktioniert:** `syncTerminAenderungenZurueck()` geht davon aus,
+dass ein Teammitglied einen Termin so gut wie immer **nur im
+Raumkalender** ändert ("so, wie es bisher die Geschichte gewohnt ist") —
+nicht zusätzlich im eigenen Hilfskalender, den es ja eigentlich nur zur
+Ansicht braucht. Der Hilfskalender gilt deshalb weiterhin als "zuletzt
+bekannter Amelia-Stand". Das Skript sucht deshalb einmal täglich in zwei
+Schritten:
+1. In jedem Hilfskalender nach Terminen mit der von Jörg ergänzten
+   Beschreibungszeile `Termin-ID: %appointment_id%` (Amelia →
+   Einstellungen → Termine → "Titel und Beschreibung der Veranstaltung").
+2. In jedem Raumkalender (`ROOM_CALENDAR_IDS`) nach derselben Zeile.
+
+Für jede Termin-ID, die in einem Raumkalender gefunden wurde, vergleicht
+das Skript direkt die Start-/Endzeit dort mit der Start-/Endzeit im
+zugehörigen Hilfskalender-Eintrag — **kein Umweg über einen WordPress-
+Request nur zum Lesen.** Weichen sie ab, hat das Team den Termin im
+Raumkalender verschoben — die neue Zeit wird per `UrlFetchApp.fetch()` an
 `POST /booking-reschedule` geschickt (siehe `wordpress/
 buchungs-dashboard/wpcode-snippet.php`), abgesichert per gemeinsamem
 Geheimnis im Header `X-ST-Reschedule-Secret` (`WP_RESCHEDULE_SECRET`).
@@ -107,22 +113,25 @@ Die Route trägt die neue Zeit über denselben internen Amelia-Endpunkt
 ein, den auch die Zuweisung im Buchungs-Dashboard und die Team-App
 benutzen — Amelia bleibt so die einzige Stelle, die echte Termine ändert.
 
-**Zustandslos:** Anders als der ursprüngliche Ansatz merkt sich dieses
-Skript nichts selbst (kein `PropertiesService`-Fingerabdruck mehr) — der
-"zuletzt bekannte Stand" wird bei jedem Lauf frisch bei Amelia erfragt.
-Einfacher und robuster: keine veralteten Einträge, kein Aufräumen nötig,
-kein Limit von `PropertiesService` zu beachten.
+Ein Termin, der noch in keinem Raumkalender liegt (das Team hat ihn noch
+nicht dorthin verschoben), wird einfach übersprungen — es gibt nichts,
+womit sich der Hilfskalender-Eintrag vergleichen ließe, und nichts, was
+das Team hätte ändern können.
 
-**Raumwechsel selbst lösen nichts aus** — sie ändern nichts an Datum,
-Uhrzeit oder Dauer, also gibt es dafür auch nichts zurückzuspielen. Das
-Skript findet den Termin einfach im neuen Kalender wieder (über die
-Termin-ID, unabhängig davon, in welchem der gelisteten Kalender er gerade
-liegt).
+**Zustandslos:** Das Skript merkt sich nichts selbst (kein
+`PropertiesService`-Fingerabdruck) — bei jedem Lauf wird frisch
+verglichen. Einfacher und robuster: keine veralteten Einträge, kein
+Aufräumen nötig.
+
+**Raumwechsel selbst lösen nichts aus** — ein Termin, der von Raum 1 nach
+Raum 2 verschoben wird, ändert nichts an Datum, Uhrzeit oder Dauer, also
+gibt es dafür auch nichts zurückzuspielen.
 
 **Mehrdeutigkeit:** Taucht dieselbe Termin-ID gleichzeitig in mehr als
-einem der gelisteten Kalender auf (z. B. eine Karteileiche aus einem
-früheren Test), wird dieser Termin übersprungen und als Warnung an Jörg
-gemeldet, statt eine der beiden Zeiten zu raten.
+einem Raumkalender mit **unterschiedlicher** Zeit auf (z. B. versehentlich
+in zwei Räume gelegt), wird dieser Termin übersprungen und als Warnung an
+Jörg gemeldet, statt eine der beiden Zeiten zu raten. Dieselbe Zeit in
+mehreren Raumkalendern ist dagegen unproblematisch.
 
 **Bewusst nicht geprüft:** Doppelbuchungen/Kollisionen mit anderen
 Terminen — Jörg hat dieses Risiko am 27.08.2026 in Kenntnis akzeptiert, um
@@ -232,15 +241,13 @@ Lesezugriff, keinen Schreibzugriff (die Schreibberechtigung, die das Team
 für die Hilfskalender bekommt, ist für die *Personen*, nicht für dieses
 Skript).
 
-Schreibt ausschließlich nach WordPress, in zwei Schritten:
-1. Rein lesend: `/amelia-appointment-times` fragt den aktuellen Amelia-
-   Stand für gefundene Termin-IDs ab.
-2. Nur bei erkannter Abweichung: `/booking-reschedule` trägt die neue
-   Zeit ein — nie direkt an die Amelia-Datenbank, sondern über denselben
-   internen Amelia-Endpunkt, den auch das Buchungs-Dashboard und die
-   Team-App benutzen (siehe deren READMEs).
+Schreibt nach außen ausschließlich nach WordPress, und auch nur bei einer
+erkannten Abweichung: `/booking-reschedule` trägt die neue Zeit ein — nie
+direkt an die Amelia-Datenbank, sondern über denselben internen
+Amelia-Endpunkt, den auch das Buchungs-Dashboard und die Team-App
+benutzen (siehe deren READMEs).
 
-Beide Routen sind per gemeinsamem Geheimnis abgesichert
+Die Route ist per gemeinsamem Geheimnis abgesichert
 (`WP_RESCHEDULE_SECRET` / `ST_RESCHEDULE_SECRET`), das **nirgends im
 Klartext committet** werden darf — beide Konfigurationsstellen enthalten
 nur Platzhalter, echte Werte werden ausschließlich in den jeweiligen

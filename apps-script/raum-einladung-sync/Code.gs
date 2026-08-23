@@ -30,27 +30,37 @@
  * NICHT betroffen und bleibt wie am 23.08.2026 eingerichtet — siehe
  * README, Abschnitt "Mitarbeiter-Mail weiterleiten".
  *
- * ZWECK (aktueller Stand): Ein Teammitglied darf einen bestätigten
- * Amelia-Termin frei im Google Kalender verschieben (Datum, Uhrzeit,
- * Dauer) oder in einen anderen Raum legen. Amelia selbst bekommt davon
- * nichts mit — sie kennt nur den Stand, den sie beim letzten Schreiben in
- * ihre Datenbank eingetragen hat. Dieses Skript läuft einmal täglich,
- * findet jeden echten Amelia-Termin über die Termin-ID in der
- * Kalender-Beschreibung (egal in welchem der bekannten Kalender er gerade
- * liegt), vergleicht seine aktuelle Zeit mit dem, was Amelia aktuell dazu
- * gespeichert hat, und trägt eine Abweichung automatisch nach — über
- * dieselbe WordPress-Route (/booking-reschedule), die auch die Team-App
- * für die dortige "Ändern"-Funktion nutzt (siehe team-app/README.md).
- * Ganz ohne Rückfrage oder Benachrichtigung an Jörg — nur echte Fehler
- * landen per Mail bei ihm (sendAlert()).
+ * ZWECK (aktueller Stand, 27.08.2026 zum zweiten Mal angepasst): Ein
+ * Teammitglied ändert Datum/Uhrzeit/Dauer eines bestätigten Termins nach
+ * Jörgs Einschätzung in der Praxis so gut wie immer **nur im
+ * Raumkalender** (Raum 1/2/3 — "so, wie es bisher die Geschichte gewohnt
+ * ist"), nicht zusätzlich im eigenen Hilfskalender. Amelia selbst bekommt
+ * von einer Raumkalender-Änderung nichts mit — sie kennt nur den Stand,
+ * den sie beim letzten Schreiben in ihren (nie von Menschen bearbeiteten)
+ * Hilfskalender eingetragen hat. Dieses Skript läuft einmal täglich und
+ * vergleicht darum ganz bewusst NUR zwei Dinge direkt gegeneinander: die
+ * Zeit im Raumkalender gegen die Zeit im Hilfskalender, beide über
+ * dieselbe Termin-ID in der Kalender-Beschreibung gefunden. Weichen sie
+ * ab, gilt der Raumkalender als der vom Team gemeinte, neue Stand — die
+ * neue Zeit wird über die WordPress-Route /booking-reschedule (dieselbe,
+ * die auch die Team-App für ihre eigene "Ändern"-Funktion nutzt, siehe
+ * team-app/README.md) automatisch nach Amelia übertragen. Ganz ohne
+ * Rückfrage oder Benachrichtigung an Jörg — nur echte Fehler landen per
+ * Mail bei ihm (sendAlert()).
  *
- * ZUSTANDSLOS: Anders als der ursprüngliche Ansatz führt dieses Skript
- * KEIN eigenes Gedächtnis mehr (kein PropertiesService-Fingerabdruck) —
- * "zuletzt bekannter Stand" wird bei jedem Lauf frisch bei Amelia selbst
- * erfragt (neue, rein lesende WordPress-Route /amelia-appointment-times,
- * ein einziger Sammel-Request für alle gefundenen Termin-IDs). Einfacher
- * und robuster: keine veralteten/verwaisten Einträge, kein 500-Werte-Limit
- * von PropertiesService, keine Aufräum-Logik nötig.
+ * Kein Amelia-Vergleich nötig: Weil der Hilfskalender laut dieser Annahme
+ * nie von Menschen angefasst wird, ist "Zeit im Hilfskalender" praktisch
+ * dasselbe wie "Zeit, die Amelia zuletzt gespeichert hat" — ein direkter
+ * Abfragen bei Amelia selbst (frühere Version dieser Datei) ist dadurch
+ * unnötig geworden. Bewusst einfacher gehalten: kein zusätzlicher
+ * WordPress-Request nur zum Lesen, ein Termin ohne Raumkalender-Eintrag
+ * wird schlicht nicht verglichen (nichts, was das Team hätte ändern
+ * können).
+ *
+ * ZUSTANDSLOS: Führt kein eigenes Gedächtnis (kein PropertiesService-
+ * Fingerabdruck) — bei jedem Lauf wird frisch verglichen. Einfacher und
+ * robuster: keine veralteten/verwaisten Einträge, keine Aufräum-Logik
+ * nötig.
  *
  * SETUP:
  * 1. Apps-Script-Projekt als joerg@spiritual-touch.de anlegen (hat Zugriff
@@ -77,10 +87,12 @@
  * der Zielperson — Jörg hat dieses Risiko in Kenntnis akzeptiert
  * (27.08.2026), um ganz ohne manuellen Freigabe-Schritt auszukommen.
  *
- * Mehrdeutigkeit: Taucht dieselbe Termin-ID in mehr als einem der unten
- * gelisteten Kalender gleichzeitig auf (z. B. Karteileiche aus einem
- * früheren manuellen Test), wird dieser Termin übersprungen und als
- * Warnung gemeldet, statt eine der beiden Zeiten zu raten.
+ * Mehrdeutigkeit: Taucht dieselbe Termin-ID in mehr als einem Raumkalender
+ * mit UNTERSCHIEDLICHER Zeit auf (z. B. versehentlich in zwei Räume
+ * gelegt), gilt sie als mehrdeutig und wird übersprungen und als Warnung
+ * gemeldet, statt eine der beiden Zeiten zu raten. Dieselbe Zeit in
+ * mehreren Raumkalendern ist dagegen unproblematisch (keine Abweichung
+ * untereinander) und wird ganz normal verglichen.
  *
  * ⚠️ VORFALL 26.08.2026 (historisch, betraf den inzwischen entfernten
  * Kopier-Mechanismus): Eva war anfangs mit ihrem privaten Gmail-Kalender
@@ -130,10 +142,9 @@ var SYNC_DAYS_BACK = 1;   // kleiner Puffer zurück, falls gerade auf "heute/ges
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
-// WordPress-Routen (siehe wordpress/buchungs-dashboard/wpcode-snippet.php).
+// WordPress-Route (siehe wordpress/buchungs-dashboard/wpcode-snippet.php).
 // WP_RESCHEDULE_SECRET MUSS exakt ST_RESCHEDULE_SECRET dort entsprechen.
 var WP_RESCHEDULE_URL = 'https://spiritual-touch.de/wp-json/st/v1/booking-reschedule';
-var WP_TIMES_URL      = 'https://spiritual-touch.de/wp-json/st/v1/amelia-appointment-times';
 var WP_RESCHEDULE_SECRET = 'DEIN-ZUFAELLIGES-PASSWORT-HIER';
 
 // Die von Jörg am 26.08.2026 in Amelias Kalender-Vorlage ergänzte Zeile
@@ -157,75 +168,102 @@ function syncTerminAenderungenZurueck() {
     var rangeEnd = new Date(now.getTime() + SYNC_DAYS_AHEAD * 24 * 60 * 60 * 1000);
     var errors = [];
 
-    var calendars = [];
+    // Termin-ID -> Event im Hilfskalender (der "letzte bekannte
+    // Amelia-Stand", siehe Datei-Header). Bei Duplikaten (sollte laut
+    // Amelias eigener Logik nicht vorkommen) gewinnt einfach der zuletzt
+    // gefundene Eintrag — kein eigener Mehrdeutigkeits-Alarm hier, anders
+    // als bei den Raumkalendern unten, wo das Team tatsächlich Einfluss
+    // hat.
+    var hilfsFound = {};
     Object.keys(HILFSKALENDER).forEach(function (name) {
-      if (HILFSKALENDER[name]) calendars.push({ label: 'Hilfskalender ' + name, id: HILFSKALENDER[name] });
-    });
-    ROOM_CALENDAR_IDS.forEach(function (id, i) {
-      calendars.push({ label: 'Raumkalender #' + (i + 1), id: id });
-    });
-
-    // Jede Termin-ID -> das eine Kalender-Event, in dem sie gerade
-    // gefunden wurde. Taucht dieselbe ID in mehr als einem Kalender auf
-    // (unterschiedliche Events), gilt sie als mehrdeutig und wird
-    // übersprungen statt geraten (siehe Datei-Header).
-    var found = {};
-    var ambiguous = {};
-
-    calendars.forEach(function (cal) {
-      var calendar = CalendarApp.getCalendarById(cal.id);
+      var calId = HILFSKALENDER[name];
+      if (!calId) return;
+      var calendar = CalendarApp.getCalendarById(calId);
       if (!calendar) {
-        errors.push(cal.label + ': Kalender nicht gefunden/kein Zugriff (' + cal.id + ')');
+        errors.push('Hilfskalender ' + name + ': nicht gefunden/kein Zugriff (' + calId + ')');
         return;
       }
       calendar.getEvents(rangeStart, rangeEnd).forEach(function (ev) {
         var match = (ev.getDescription() || '').match(APPOINTMENT_ID_REGEX);
-        if (!match) return; // kein echter Amelia-Termin mit Termin-ID (z. B. ein Verfügbarkeits-Blocker) -> ignorieren
-        var id = match[1];
-        if (found[id]) {
-          if (found[id].event.getId() !== ev.getId()) ambiguous[id] = true;
-          return;
-        }
-        found[id] = { label: cal.label, event: ev };
+        if (!match) return; // kein echter Amelia-Termin (z. B. ein Verfügbarkeits-Blocker) -> ignorieren
+        hilfsFound[match[1]] = { label: 'Hilfskalender ' + name, event: ev };
       });
     });
 
-    if (Object.keys(ambiguous).length) {
-      errors.push('Mehrdeutig, übersprungen (Termin-ID taucht in mehr als einem Kalender auf): ' + Object.keys(ambiguous).join(', '));
-    }
+    // Termin-ID -> Liste der Events, die in EINEM der Raumkalender dazu
+    // gefunden wurden (kann mehr als einer sein, z. B. wenn dieselbe ID
+    // versehentlich in zwei Räume gelegt wurde).
+    var roomFound = {};
+    ROOM_CALENDAR_IDS.forEach(function (calId, i) {
+      var calendar = CalendarApp.getCalendarById(calId);
+      if (!calendar) {
+        errors.push('Raumkalender #' + (i + 1) + ': nicht gefunden/kein Zugriff (' + calId + ')');
+        return;
+      }
+      calendar.getEvents(rangeStart, rangeEnd).forEach(function (ev) {
+        var match = (ev.getDescription() || '').match(APPOINTMENT_ID_REGEX);
+        if (!match) return;
+        var id = match[1];
+        if (!roomFound[id]) roomFound[id] = [];
+        roomFound[id].push({ label: 'Raumkalender #' + (i + 1), event: ev });
+      });
+    });
 
-    var ids = Object.keys(found).filter(function (id) { return !ambiguous[id]; });
+    var ids = Object.keys(roomFound);
     if (!ids.length) {
-      Logger.log('Keine Termine mit Termin-ID im Zeitraum gefunden.');
+      Logger.log('Keine Termine mit Termin-ID in einem Raumkalender gefunden.');
       if (errors.length) sendAlert('Warnungen im Lauf', errors.join('\n'));
       return;
     }
 
-    var ameliaTimes = fetchAmeliaTimes_(ids);
+    var checked = 0;
     var pushed = 0;
 
     ids.forEach(function (id) {
-      var amelia = ameliaTimes[id];
-      if (!amelia) {
-        errors.push('Termin-ID ' + id + ' (' + found[id].label + '): in Amelia nicht gefunden (evtl. storniert?).');
+      var rooms = roomFound[id];
+
+      // Mehrdeutig, wenn dieselbe Termin-ID in mehreren Raumkalendern mit
+      // UNTERSCHIEDLICHER Zeit auftaucht — dieselbe Zeit überall ist
+      // unproblematisch (kein Widerspruch, wird unten normal verglichen).
+      var distinctTimes = {};
+      rooms.forEach(function (r) {
+        distinctTimes[toUtcMysql_(r.event.getStartTime()) + '|' + toUtcMysql_(r.event.getEndTime())] = true;
+      });
+      if (Object.keys(distinctTimes).length > 1) {
+        errors.push('Termin-ID ' + id + ': in mehreren Raumkalendern mit unterschiedlicher Zeit gefunden (' +
+          rooms.map(function (r) { return r.label; }).join(', ') + ') — übersprungen, bitte manuell prüfen.');
         return;
       }
-      var ev = found[id].event;
-      var calStart = ev.getStartTime();
-      var calEnd = ev.getEndTime();
-      if (toUtcMysql_(calStart) === amelia.bookingStart && toUtcMysql_(calEnd) === amelia.bookingEnd) {
+
+      var hilfs = hilfsFound[id];
+      if (!hilfs) {
+        // Kein (mehr auffindbarer) Hilfskalender-Eintrag zu dieser ID —
+        // nichts, womit sich der Raumkalender vergleichen ließe. Kein
+        // Fehler, kommt z. B. vor, wenn der Termin storniert wurde.
+        return;
+      }
+
+      checked++;
+      var roomEvent = rooms[0].event;
+      var roomStart = roomEvent.getStartTime();
+      var roomEnd = roomEvent.getEndTime();
+      var hilfsStart = hilfs.event.getStartTime();
+      var hilfsEnd = hilfs.event.getEndTime();
+
+      if (toUtcMysql_(roomStart) === toUtcMysql_(hilfsStart) && toUtcMysql_(roomEnd) === toUtcMysql_(hilfsEnd)) {
         return; // unverändert
       }
+
       try {
-        pushRescheduleToAmelia_(id, calStart, calEnd);
+        pushRescheduleToAmelia_(id, roomStart, roomEnd);
         pushed++;
-        Logger.log('Termin-ID ' + id + ' (' + found[id].label + '): ' + amelia.bookingStart + ' -> ' + toUtcMysql_(calStart));
+        Logger.log('Termin-ID ' + id + ' (' + rooms[0].label + '): ' + toUtcMysql_(hilfsStart) + ' -> ' + toUtcMysql_(roomStart));
       } catch (err) {
-        errors.push('Termin-ID ' + id + ' (' + found[id].label + '): ' + err.message);
+        errors.push('Termin-ID ' + id + ' (' + rooms[0].label + '): ' + err.message);
       }
     });
 
-    Logger.log(ids.length + ' Termine geprüft, ' + pushed + ' Verlegung(en) nach Amelia übertragen.');
+    Logger.log(checked + ' Termine verglichen, ' + pushed + ' Verlegung(en) nach Amelia übertragen.');
     if (errors.length) {
       sendAlert('Warnungen/Fehler im Lauf', errors.join('\n'));
     }
@@ -235,24 +273,6 @@ function syncTerminAenderungenZurueck() {
   } finally {
     lock.releaseLock();
   }
-}
-
-// Fragt für alle gefundenen Termin-IDs auf einmal den aktuellen
-// Amelia-Stand ab (ein Sammel-Request statt vieler Einzelabfragen).
-function fetchAmeliaTimes_(ids) {
-  var response = UrlFetchApp.fetch(WP_TIMES_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'X-ST-Reschedule-Secret': WP_RESCHEDULE_SECRET },
-    payload: JSON.stringify({ appointmentIds: ids.map(Number) }),
-    muteHttpExceptions: true,
-  });
-  var code = response.getResponseCode();
-  if (code < 200 || code >= 300) {
-    throw new Error('WordPress (amelia-appointment-times) antwortete mit HTTP ' + code + ': ' + response.getContentText());
-  }
-  var data = JSON.parse(response.getContentText());
-  return data.appointments || {};
 }
 
 // Schickt die neue Zeit an die WordPress-Route /booking-reschedule (siehe
