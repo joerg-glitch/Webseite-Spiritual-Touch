@@ -129,12 +129,11 @@ var HILFSKALENDER = {
 };
 
 // Raumkalender, in die das Team bestätigte Termine selbst verschiebt.
-// ⚠️ Aktuell nur Raum 1 bekannt — bei weiteren Räumen (Raum 2, 3, …) die
-// Kalender-ID hier ergänzen, sonst werden Verlegungen dorthin von diesem
-// Skript nicht erkannt (der Termin würde dann so aussehen, als wäre er
-// "verschwunden", bis er wieder in einem gelisteten Kalender auftaucht).
+// IDs aus den Google-Calendar-Freigabelinks von Jörg (08.09.2026).
 var ROOM_CALENDAR_IDS = [
   'c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18261794671a5@group.calendar.google.com', // Raum 1
+  'c_9b8f2fdac6c5649a399ef26ac1dc80569fe4d8a78111b4db0d59391336f32761@group.calendar.google.com', // Raum 2
+  'c_2eecd9c94fe4ebbabbc0997ef1aa97620bea9d17515070014d206c6409f2c897@group.calendar.google.com', // Raum 3
 ];
 
 var SYNC_DAYS_AHEAD = 90; // gleicher Vorlauf wie das Buchungs-Dashboard

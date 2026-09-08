@@ -151,8 +151,8 @@ eine Termin-ID ist mehrdeutig) landen per Mail bei ihm (`sendAlert()`).
    anlegen, eingeloggt als `joerg@spiritual-touch.de` (hat Zugriff auf
    alle Hilfskalender und Raumkalender).
 2. Inhalt von `Code.gs` einfügen.
-3. `ROOM_CALENDAR_IDS` prüfen/ergänzen — aktuell ist nur Raum 1 bekannt.
-   Gibt es weitere Raumkalender, deren IDs dort ergänzen.
+3. `ROOM_CALENDAR_IDS` enthält bereits Raum 1, 2 und 3 (Stand
+   08.09.2026). Kommt ein weiterer Raum dazu, dessen ID dort ergänzen.
 4. `WP_RESCHEDULE_SECRET` auf ein selbst gewähltes, langes Passwort
    setzen — und **denselben** Wert in `wordpress/buchungs-dashboard/
    wpcode-snippet.php` bei `ST_RESCHEDULE_SECRET` eintragen. Dort
@@ -193,9 +193,9 @@ Raum 1 herumliegen, hilft `cleanupCalendarEventsForGuest_()` in `Code.gs`
 
 ## Offene Punkte
 
-⚠️ **Weitere Raumkalender (Raum 2, 3, …)?** `ROOM_CALENDAR_IDS` in
-`Code.gs` kennt aktuell nur Raum 1. Gibt es weitere Räume, deren
-Kalender-IDs bitte ergänzen — sonst erkennt das Skript eine Verlegung
+✅ **Weitere Raumkalender:** `ROOM_CALENDAR_IDS` in `Code.gs` kennt Raum 1,
+2 und 3 (IDs von Jörg, 08.09.2026). Kommt ein weiterer Raum dazu, dessen
+Kalender-ID dort ergänzen — sonst erkennt das Skript eine Verlegung
 dorthin nicht (der Termin taucht dann in keinem der gelisteten Kalender
 mehr auf, bis er wieder in einen bekannten Kalender verschoben wird).
 
