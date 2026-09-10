@@ -1,0 +1,132 @@
+// ═══════════════════════════════════════════════════════
+// ST Verfügbarkeits-API  —  einmal einrichten, fertig.
+// ═══════════════════════════════════════════════════════
+
+const SHEET_ID = '11NHzH0TRGUvoIsl26C8uoxwo4W9JEIJuylzxkvc87_A';
+const CAL_ID   = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85c915@group.calendar.google.com';
+const TIMEZONE = 'Europe/Berlin';
+const SECRET   = 'ST2026geheim'; // Stimmt mit WordPress-Snippet überein
+
+// ── Eintrittspunkt ──────────────────────────────────────
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.secret !== SECRET) return json({error: 'unauthorized'});
+
+    const member = getByPin(data.pin);
+    if (!member) return json({error: 'wrong_pin'});
+
+    switch (data.action) {
+      case 'list':   return json({ok: true, name: member.name, entries: listEntries(member.name)});
+      case 'create': return json({ok: true, id: createEntry(member.name, data.date, data.from, data.to, data.allDay)});
+      case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to, data.allDay)});
+      case 'delete': return json({ok: deleteEntry(member.name, data.id)});
+      default:       return json({error: 'unknown_action'});
+    }
+  } catch (error) {
+    // Wenn ein Fehler passiert, MUSS Google das im JSON-Format erfahren:
+    return json({
+      error: "internal_catch_error",
+      details: error.toString()
+    });
+  }
+}
+
+// Health-Check — zum Testen im Browser aufrufbar
+function doGet() {
+  return ContentService.createTextOutput('ST API aktiv ✓');
+}
+
+// ── Kalender ────────────────────────────────────────────
+// Zuordnung/Zeiten liegen als Apps-Script-Tags am Event (setTag/getTag) —
+// unsichtbar für den Nutzer, robuster als Text in der Beschreibung zu
+// parsen, und derselbe Mechanismus, den der Verfügbarkeit-Sync nutzt.
+function listEntries(name) {
+  const cal   = CalendarApp.getCalendarById(CAL_ID);
+  const start = new Date();
+  const end   = new Date();
+  end.setDate(end.getDate() + 60); // reicht zum Bearbeiten/Planen, hält die Abfrage bei jedem Login/Speichern klein
+
+  return cal.getEvents(start, end)
+    .filter(ev => getMember(ev) === name)
+    .map(ev => {
+      const from = ev.getTag('from');
+      const to   = ev.getTag('to');
+      return {
+        id:     ev.getId(),
+        date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+        from:   from || '',
+        to:     to   || '',
+        allDay: !(from && to)
+      };
+    });
+}
+
+// Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
+// Bei Teilverfügbarkeit steht die Uhrzeit zusätzlich im Titel.
+function createEntry(name, date, from, to, allDay) {
+  const cal = CalendarApp.getCalendarById(CAL_ID);
+  let event;
+  if (allDay) {
+    event = cal.createAllDayEvent(name, new Date(date + 'T12:00:00'));
+  } else {
+    const title = name + ' ' + from + '–' + to + ' Uhr';
+    event = cal.createAllDayEvent(title, new Date(date + 'T12:00:00'));
+    event.setTag('from', from);
+    event.setTag('to', to);
+  }
+  event.setTag('member', name);
+  event.setTransparency(CalendarApp.EventTransparency.TRANSPARENT);
+  return event.getId();
+}
+
+// Ganztägig-Status kann sich beim Ändern ändern (z.B. Uhrzeit -> Ganztägig) —
+// dafür alten Eintrag löschen und mit den neuen Werten neu anlegen statt
+// setTime() zu verwenden (funktioniert bei Ganztages-Events nicht sauber).
+function updateEntry(name, id, date, from, to, allDay) {
+  const ev = safeGet(name, id);
+  if (!ev) return false;
+  ev.deleteEvent();
+  createEntry(name, date, from, to, allDay);
+  return true;
+}
+
+function deleteEntry(name, id) {
+  const ev = safeGet(name, id);
+  if (!ev) return false;
+  ev.deleteEvent();
+  return true;
+}
+
+// Sicherheit: Gehört das Event wirklich dieser Person?
+function safeGet(name, id) {
+  const ev = CalendarApp.getCalendarById(CAL_ID).getEventById(id);
+  return (ev && getMember(ev) === name) ? ev : null;
+}
+
+// Fallback auf den Titel für alte, manuell angelegte Ganztages-Einträge
+// ohne "member"-Tag (Titel besteht dann nur aus dem Namen).
+function getMember(ev) {
+  return ev.getTag('member') || ev.getTitle();
+}
+
+// ── Hilfsfunktionen ─────────────────────────────────────
+function getByPin(pin) {
+  const rows = SpreadsheetApp.openById(SHEET_ID)
+    .getSheetByName('Tabellenblatt1').getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][2]).trim() === String(pin).trim())
+      return { name: rows[i][0], email: rows[i][1] };
+  }
+  return null;
+}
+
+function fmt(date, pattern) {
+  return Utilities.formatDate(date, TIMEZONE, pattern);
+}
+
+function json(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
