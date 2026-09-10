@@ -165,6 +165,66 @@ nachgeholt → Fehler bestätigt behoben.
 4. Ursprünglich geplanter PHP/SQLite-Neubau: **verworfen** — nicht mehr
    nötig, die Team-App existiert bereits und funktioniert im Kern.
 
+## Stand 16.08.2026: Amelia-Termine in der Team-App (Ändern/Absagen)
+
+**Ausgangsproblem (vom Nutzer beschrieben):** Amelia Pro schreibt echte
+Kundenbuchungen direkt in den Hilfskalender eines Mitarbeiters (nicht in den
+"Verfügbarkeit"-Kalender der Team-App). Die Übertragung Hilfskalender→
+Raumkalender (Raum 1-3) läuft dabei bereits automatisch über Amelias eigene
+Ressourcen-Zuordnung pro Service — kein eigener Sync nötig, bestätigt vom
+Nutzer. Team-Mitglieder haben aber keinen Zugriff auf ihren Hilfskalender
+und wüssten (a) nicht, was ansteht, und (b) dürften einen sichtbaren
+Google-Kalender-Eintrag ohnehin nicht direkt bearbeiten — Änderungen dort
+werden nicht zu Amelia zurückgeschrieben (gleiches Problem wie beim
+Verfügbarkeit-Kalender, nur mit höherem Risiko: Doppelbuchungen, falsche
+Kundeninfo).
+
+**Geprüfte und verworfene Alternative:** Amelias interne Ajax-API
+("wpamelia_api", von Amelias eigenem Mitarbeiter-Panel intern genutzt)
+direkt vom WPCode-Proxy aus nachbauen. Verworfen, weil die genauen
+internen Aufruf-Namen/Payloads ohne Zugriff auf die echte Amelia-Instanz
+nicht zuverlässig zu bestimmen sind und Eigenbau-Logik alle Nebeneffekte
+(Hilfskalender-Sync, Status-Konsistenz, E-Mails) selbst korrekt
+nachbilden müsste. Die kostenpflichtige Amelia-"Elite"-REST-API steht
+aus Kostengründen ebenfalls nicht zur Verfügung.
+
+**Gewählter Ansatz — PIN-gebundener Auto-Login in Amelias eigenes
+Mitarbeiter-Panel:**
+- Lesen (Übersicht "Deine Termine"): neue Aktion `appointments` im
+  bestehenden `team-app/App Script` — liest echte Buchungen direkt aus dem
+  Hilfskalender des Mitglieds (Zugriff besteht bereits, gleiches
+  Google-Konto wie beim Verfügbarkeit-Sync), filtert die eigenen
+  `autoBlock`-Platzhalter raus. Kein Amelia-/WordPress-Zugriff nötig.
+- Ändern/Absagen: neues WPCode-PHP-Snippet
+  `team-app/wp-amelia-login-bridge.php` — löst den PIN über eine neue,
+  leichte Apps-Script-Aktion `identify` (Name+E-Mail, ohne Kalenderdaten)
+  auf, findet den passenden WordPress-Benutzer über die E-Mail und loggt
+  genau diesen einen Request/Browser per `wp_set_auth_cookie()` ein
+  (Session-Cookie, kein "Angemeldet bleiben"). Danach lädt die Team-App
+  Amelias eigenen Mitarbeiter-Bereich in einem iframe — Änderungen laufen
+  dort über Amelias eigene, getestete Logik, kein Nachbau nötig.
+- Team-App-Widget (`team-kalender-widget.html`): vorhandener "Termin"-
+  Menüpunkt (war "Coming Soon"-Platzhalter) jetzt verdrahtet → neue
+  Screens `st-termine` (Liste, nur Anzeige) und `st-amelia-frame`
+  (eingebettetes Amelia-Panel).
+
+**Noch offen / wartet auf dich:**
+1. Für jedes der 10 Teammitglieder einen WordPress-Benutzer anlegen
+   (E-Mail muss exakt der Roster-Sheet-E-Mail entsprechen), Rolle so eng
+   wie möglich fassen (niemals Administrator) — laut Notiz vom
+   16.08.2026 übernimmst du das selbst.
+2. In `wp-amelia-login-bridge.php`: `ST_APPS_SCRIPT_URL` (echte /exec-URL),
+   `ST_AMELIA_PANEL_URL` (echte URL von Amelias Mitarbeiter-Bereich — kann
+   ich ohne Live-Zugriff nicht sehen) und optional `ST_EXPECTED_ROLE`
+   eintragen.
+3. In `App Script`: neue Aktion `appointments`/`identify` sind bereits
+   Teil derselben Datei wie die bestehende Verfügbarkeit-API — beim
+   nächsten Bereitstellen "Neue Version" nicht vergessen (bekannter
+   Fallstrick, siehe oben).
+4. Live testen: PIN-Login → "Termine" → Liste stimmt mit Hilfskalender
+   überein → "Termin ändern oder absagen" → Amelia-Panel lädt eingeloggt,
+   ohne WordPress-Menüs, zeigt nur eigene Termine.
+
 ## Personalisierung
 
 Design-System der Team-App ist bereits im Notion-Dokument definiert

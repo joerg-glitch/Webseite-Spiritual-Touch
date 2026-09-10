@@ -304,8 +304,8 @@
       <button class="st-menu-item soon" onclick="stComingSoon('Gutscheine')">
         <span class="st-menu-ico">🎁</span><span>Gutscheine</span>
       </button>
-      <button class="st-menu-item soon" onclick="stComingSoon('Eigener Termin')">
-        <span class="st-menu-ico">🗓️</span><span>Termin</span>
+      <button class="st-menu-item" onclick="stOpenTermine()">
+        <span class="st-menu-ico">🗓️</span><span>Termine</span>
       </button>
     </nav>
 
@@ -313,6 +313,32 @@
     <div class="st-entries-wrap">
       <div id="st-entries" class="st-entries-scroll"></div>
       <div class="st-entries-fade" id="st-entries-fade"></div>
+    </div>
+  </div>
+
+  <!-- SCREEN: TERMINE (echte Amelia-Buchungen) -->
+  <div class="st-screen" id="st-termine">
+    <button class="st-back" onclick="stGo('list')">← Zurück</button>
+    <span class="st-h1" style="font-size:22px !important;margin-bottom:6px !important;">Deine Termine</span>
+    <span class="st-lead" style="margin-bottom:20px !important;">Nur zur Ansicht. Zum Ändern oder Absagen unten öffnen — bitte niemals im Google-Kalender bearbeiten.</span>
+
+    <div class="st-entries-wrap">
+      <div id="st-appt-entries" class="st-entries-scroll"></div>
+    </div>
+
+    <div class="st-err" id="st-appt-err" style="margin-top:18px !important;">
+      <span class="st-err-ico">🚫</span>
+      <div class="st-err-txt" id="st-appt-err-txt"></div>
+    </div>
+
+    <button class="st-save" id="st-appt-open-btn" onclick="stOpenAmeliaPanel()" style="margin-top:22px !important;">Termin ändern oder absagen</button>
+  </div>
+
+  <!-- SCREEN: AMELIA-PANEL (eingebettet per iframe, nach Auto-Login) -->
+  <div class="st-screen" id="st-amelia-frame">
+    <button class="st-back" onclick="stGo('termine')">← Zurück</button>
+    <div style="position:relative !important;width:100% !important;height:70vh !important;border-radius:16px !important;overflow:hidden !important;border:1px solid var(--line) !important;">
+      <iframe id="st-amelia-iframe" src="" style="width:100% !important;height:100% !important;border:0 !important;display:block !important;"></iframe>
     </div>
   </div>
 
@@ -376,8 +402,10 @@
 
 <script>
 const ST_API_URL='/wp-json/st/v1/cal';
+const ST_AMELIA_LOGIN_URL='/wp-json/st/v1/amelia-login';
 let stUser=null,stEditId=null,stDelId=null,stPin='',stTimeErr=false,stLoading=false;
 let stEntries=[];
+let stAppointments=[];
 
 // Overlay an <body> hängen: Elementor-Wrapper haben oft ein eigenes
 // "transform", wodurch position:fixed sich nur auf den Wrapper statt den
@@ -388,9 +416,9 @@ document.body.appendChild(document.getElementById('st-overlay'));
 // fängt vereinzelte, kurze Aussetzer der Google-Infrastruktur ab
 // (Apps Script antwortet dann z.B. mit einer generischen Fehlerseite statt
 // JSON, was hier als networkError ankommt).
-async function stApi(payload,isRetry){
+async function stApi(payload,isRetry,url){
   try{
-    const res=await fetch(ST_API_URL,{
+    const res=await fetch(url||ST_API_URL,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)
@@ -400,7 +428,7 @@ async function stApi(payload,isRetry){
   }catch(err){
     if(!isRetry){
       await new Promise(r=>setTimeout(r,900));
-      return stApi(payload,true);
+      return stApi(payload,true,url);
     }
     return {networkError:true,data:null};
   }
@@ -512,6 +540,68 @@ function stFmt(iso){
   const d=new Date(iso+'T12:00:00');
   return d.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'long'});
 }
+// ── TERMINE (echte Amelia-Buchungen aus dem Hilfskalender, nur Anzeige) ──
+async function stOpenTermine(){
+  stGo('termine');
+  document.getElementById('st-appt-entries').innerHTML='<div class="st-empty">Lädt …</div>';
+  document.getElementById('st-appt-err').classList.remove('on');
+  const {networkError,data}=await stApi({pin:stPin,action:'appointments'});
+  if(networkError||!data||!data.ok){
+    document.getElementById('st-appt-entries').innerHTML='';
+    document.getElementById('st-appt-err-txt').innerHTML='<b>Verbindungsfehler</b> — bitte nochmal versuchen.';
+    document.getElementById('st-appt-err').classList.add('on');
+    return;
+  }
+  stAppointments=Array.isArray(data.appointments)?data.appointments:[];
+  stRenderAppointments();
+}
+function stRenderAppointments(){
+  const el=document.getElementById('st-appt-entries');
+  el.innerHTML='';
+  if(!stAppointments.length){
+    el.innerHTML='<div class="st-empty">Keine anstehenden Termine</div>';
+    return;
+  }
+  stAppointments.forEach(a=>{
+    const card=document.createElement('div');
+    card.className='st-card';
+    card.innerHTML=`
+      <span class="st-card-date">${stFmt(a.date)}</span>
+      <span class="st-card-time">${a.allDay?'Ganztägig':a.from+' – '+a.to+' Uhr'}</span>
+      <span class="st-card-bar"></span>
+      <span style="font-size:14px !important;color:var(--soft) !important;display:block !important;">${stEsc(a.title||'')}</span>`;
+    el.appendChild(card);
+  });
+}
+function stEsc(s){
+  const d=document.createElement('div');
+  d.textContent=s;
+  return d.innerHTML;
+}
+// Loggt per PIN in Amelias eigenen Mitarbeiter-Bereich ein (WordPress-
+// Session-Cookie, serverseitig über die Login-Bridge gesetzt) und zeigt ihn
+// im iframe — Ändern/Absagen läuft dort über Amelia selbst, nicht über
+// diese API, damit es korrekt zu Amelia zurückgeschrieben wird.
+async function stOpenAmeliaPanel(){
+  if(stLoading)return;
+  stLoading=true;
+  const btn=document.getElementById('st-appt-open-btn');
+  btn.disabled=true;btn.textContent='Öffne …';
+  document.getElementById('st-appt-err').classList.remove('on');
+
+  const {networkError,data}=await stApi({pin:stPin},false,ST_AMELIA_LOGIN_URL);
+  stLoading=false;
+  btn.disabled=false;btn.textContent='Termin ändern oder absagen';
+
+  if(networkError||!data||!data.ok||!data.panelUrl){
+    document.getElementById('st-appt-err-txt').innerHTML='<b>Konnte Amelia nicht öffnen</b> — bitte nochmal versuchen oder Jörg Bescheid geben.';
+    document.getElementById('st-appt-err').classList.add('on');
+    return;
+  }
+  document.getElementById('st-amelia-iframe').src=data.panelUrl;
+  stGo('amelia-frame');
+}
+
 function stOpenForm(entry){
   stEditId=entry?entry.id:null;
   document.getElementById('st-warn').classList.remove('on');

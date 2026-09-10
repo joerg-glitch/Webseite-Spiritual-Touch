@@ -62,3 +62,27 @@ Teilverfügbarkeit korrekt vor/nach der Zeit blockiert, keine Duplikate.
   Apps Script (stündlich, wie ursprünglich geplant) verlagert werden?
 
 **Test:** Kurzer Soll/Ist-Vergleich nach 2–4 Wochen.
+
+## Phase 6 — Amelia-Termine in der Team-App (erledigt: Code bereitgestellt, 16.08.2026)
+- `App Script` um `appointments` (Liste echter Buchungen aus dem
+  Hilfskalender) und `identify` (PIN → Name/E-Mail, für die Login-Bridge)
+  erweitert
+- Neues WPCode-Snippet `team-app/wp-amelia-login-bridge.php`: loggt einen
+  Request per PIN in den passenden WordPress-Benutzer ein und öffnet
+  Amelias eigenes Mitarbeiter-Panel eingebettet (iframe), damit
+  Ändern/Absagen korrekt zu Amelia zurückgeschrieben wird
+- `team-kalender-widget.html`: "Termin"-Menüpunkt (vorher Platzhalter)
+  jetzt aktiv, neue Screens "Deine Termine" (Anzeige) + eingebettetes
+  Amelia-Panel
+
+**Noch offen (bei dir):**
+- 10 WordPress-Benutzer anlegen (Rolle eng gefasst, E-Mail = Roster-Sheet)
+- `ST_APPS_SCRIPT_URL` + `ST_AMELIA_PANEL_URL` im neuen PHP-Snippet
+  eintragen (Panel-URL kann ich ohne Live-Zugriff nicht ermitteln)
+- Apps Script neu bereitstellen ("Neue Version"), PHP-Snippet aktivieren,
+  Widget-Code live einspielen
+
+**Test:** PIN-Login → Termine stimmen mit Hilfskalender überein → "Termin
+ändern oder absagen" öffnet Amelia eingeloggt, zeigt nur eigene Termine,
+keine WordPress-Menüs sichtbar. Änderung im Amelia-Panel testen und
+prüfen, dass sie sich korrekt im Hilfskalender widerspiegelt.
