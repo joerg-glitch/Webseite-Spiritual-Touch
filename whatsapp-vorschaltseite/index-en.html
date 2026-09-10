@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Spiritual Touch – WhatsApp</title>
+<script>
+  // ============================================================
+  // CONFIG – only edit these values. Mirrors index.html 1:1.
+  // ============================================================
+  window.ST_CONFIG = {
+    // Your real WhatsApp number, format 49xxxxxxxxxxx (no +, no spaces)
+    whatsappNumber: "4915781504469",
+
+    // Prefilled text that's already in the field when WhatsApp opens
+    whatsappPrefill: "Hi Spiritual Touch, I have a quick question: ",
+
+    // Link to the prices page
+    preiseUrl: "https://spiritual-touch.de/praxis/honorare/",
+
+    // Link to the FAQ page
+    faqUrl: "https://spiritual-touch.de/praxis/faq/"
+
+    // "Book an appointment" and "Free intro call" deliberately have no link
+    // of their own: both buttons only carry the Amelia trigger classes
+    // st-termin-buchen-trigger / st-vorgespraech-trigger, picked up on the
+    // page itself. No fallback link, to avoid opening things twice.
+  };
+</script>
+<style>
+  :root{
+    --wa-panel: #f0f2f5;
+    --wa-panel-border: #d1d7db;
+    --wa-bg: #efeae2;
+    --wa-bubble: #ffffff;
+    --wa-text: #111b21;
+    --wa-text-muted: #667781;
+    --wa-accent: #008069;
+    --wa-link: #027eb5;
+    --wa-input-bg: #ffffff;
+    --wa-icon: #54656f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --wa-panel: #202c33;
+      --wa-panel-border: #2f3b44;
+      --wa-bg: #0b141a;
+      --wa-bubble: #202c33;
+      --wa-text: #e9edef;
+      --wa-text-muted: #8696a0;
+      --wa-input-bg: #2a3942;
+      --wa-icon: #aebac1;
+    }
+  }
+  :root[data-theme="dark"]{
+    --wa-panel: #202c33;
+    --wa-panel-border: #2f3b44;
+    --wa-bg: #0b141a;
+    --wa-bubble: #202c33;
+    --wa-text: #e9edef;
+    --wa-text-muted: #8696a0;
+    --wa-input-bg: #2a3942;
+    --wa-icon: #aebac1;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    background:#000;
+  }
+  .page{
+    min-height:100vh; min-height:100dvh;
+    background:#000;
+    display:flex; justify-content:center; align-items:stretch;
+  }
+  .app{
+    width:100%; max-width:1000px;
+    display:flex; flex-direction:column;
+    background:var(--wa-bg);
+    position:relative;
+  }
+  .chat-wallpaper{
+    position:absolute; inset:0;
+    background-color:var(--wa-bg);
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(0,0,0,.035) 0, transparent 40%),
+      radial-gradient(circle at 85% 10%, rgba(0,0,0,.03) 0, transparent 35%),
+      radial-gradient(circle at 50% 60%, rgba(0,0,0,.03) 0, transparent 40%),
+      radial-gradient(circle at 20% 85%, rgba(0,0,0,.03) 0, transparent 35%),
+      radial-gradient(circle at 90% 80%, rgba(0,0,0,.035) 0, transparent 40%);
+    opacity:.7;
+    pointer-events:none;
+  }
+
+  /* Header – WhatsApp Web look: light, no green app bar */
+  .wa-header{
+    display:flex; align-items:center; gap:14px;
+    padding:10px 16px;
+    background:var(--wa-panel);
+    border-bottom:1px solid var(--wa-panel-border);
+    position:relative; z-index:5;
+  }
+  .wa-avatar{
+    width:40px; height:40px; border-radius:50%; flex:0 0 auto;
+    background:#7f6a9c;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:600; font-size:14px; letter-spacing:.5px;
+  }
+  .wa-header-text{ flex:1 1 auto; min-width:0; }
+  .wa-header-name{ font-size:16px; font-weight:600; line-height:1.2; color:var(--wa-text); }
+  .wa-header-status{ font-size:13px; color:var(--wa-text-muted); line-height:1.2; margin-top:1px; }
+  .wa-header-icons{ display:flex; align-items:center; gap:22px; flex:0 0 auto; }
+  .wa-header-icons svg{ width:21px; height:21px; color:var(--wa-icon); }
+  .wa-lang-switch{
+    font-size:13px; font-weight:600; color:var(--wa-icon);
+    text-decoration:none; border:1px solid var(--wa-panel-border);
+    border-radius:6px; padding:4px 9px; line-height:1.2;
+  }
+  .wa-lang-switch:hover{ background:var(--wa-panel-border); }
+
+  /* Chat body */
+  .wa-body{
+    flex:1 1 auto;
+    position:relative;
+    padding:16px clamp(10px, 8vw, 90px) 18px;
+    overflow-y:auto;
+  }
+  .wa-msg-row{ position:relative; z-index:1; display:flex; margin-bottom:8px; }
+  .wa-msg-row.center{ justify-content:center; margin:14px 0; }
+  .wa-daychip{
+    background:var(--wa-panel); color:var(--wa-text-muted);
+    font-size:12.5px; padding:5px 12px; border-radius:8px;
+  }
+
+  .wa-bubble{
+    max-width:65%;
+    background:var(--wa-bubble);
+    color:var(--wa-text);
+    padding:8px 9px 6px 9px;
+    border-radius:8px;
+    border-top-left-radius:0;
+    box-shadow:0 1px .5px rgba(0,0,0,.13);
+    font-size:14.5px; line-height:1.4;
+    animation:pop .35s ease both;
+  }
+  .wa-time{
+    display:block; text-align:right; font-size:11px; color:var(--wa-text-muted);
+    margin-top:2px;
+  }
+
+  /* Option "buttons" styled as WhatsApp reply cards */
+  .wa-option{
+    display:flex; align-items:center; gap:12px;
+    width:100%;
+    max-width:65%;
+    background:var(--wa-bubble);
+    color:var(--wa-text);
+    border:none;
+    text-align:left;
+    padding:12px 12px;
+    border-radius:8px;
+    border-top-left-radius:0;
+    box-shadow:0 1px .5px rgba(0,0,0,.13);
+    font-family:inherit; font-size:14.5px;
+    cursor:pointer;
+    text-decoration:none;
+    animation:pop .35s ease both;
+  }
+  .wa-option:active{ filter:brightness(.96); }
+  .wa-option-emoji{ font-size:22px; flex:0 0 auto; }
+  .wa-option-title{ font-weight:600; }
+  .wa-option-sub{ font-size:12.5px; color:var(--wa-text-muted); margin-top:1px; }
+  .wa-option-chevron{ margin-left:auto; flex:0 0 auto; color:var(--wa-text-muted); }
+
+  .wa-hint{
+    max-width:65%;
+    background:transparent;
+    color:var(--wa-text-muted);
+    font-size:17.5px; line-height:1.5;
+    padding:0 9px;
+  }
+  .wa-hint a{ color:var(--wa-link); text-decoration:none; }
+  .wa-hint a:hover{ text-decoration:underline; }
+
+  @media (max-width:680px){
+    .wa-bubble, .wa-option, .wa-hint{ max-width:84%; }
+  }
+
+  @keyframes pop{
+    from{ opacity:0; transform:translateY(6px) scale(.98); }
+    to{ opacity:1; transform:none; }
+  }
+
+  .wa-typing{
+    display:inline-flex; align-items:center; gap:4px;
+    background:var(--wa-bubble); border-radius:8px; border-top-left-radius:0;
+    padding:10px 12px; box-shadow:0 1px .5px rgba(0,0,0,.13);
+  }
+  .wa-typing span{
+    width:6px; height:6px; border-radius:50%; background:var(--wa-text-muted);
+    animation:blink 1.1s infinite ease-in-out;
+  }
+  .wa-typing span:nth-child(2){ animation-delay:.15s; }
+  .wa-typing span:nth-child(3){ animation-delay:.3s; }
+  @keyframes blink{ 0%,80%,100%{ opacity:.25; } 40%{ opacity:1; } }
+
+  /* Fake compose bar (decorative, opens the real WhatsApp chat) */
+  .wa-inputbar{
+    display:flex; align-items:center; gap:16px;
+    padding:10px 16px; padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    background:var(--wa-panel);
+    border-top:1px solid var(--wa-panel-border);
+    position:relative; z-index:2;
+  }
+  .wa-icon-btn{
+    background:none; border:none; padding:0; flex:0 0 auto;
+    color:var(--wa-icon); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .wa-icon-btn svg{ width:22px; height:22px; }
+  .wa-input{
+    flex:1 1 auto;
+    display:flex; align-items:center;
+    background:var(--wa-input-bg);
+    border-radius:8px;
+    padding:9px 12px;
+    color:var(--wa-text-muted);
+    font-size:14.5px;
+    cursor:pointer;
+    border:none;
+    text-align:left;
+    font-family:inherit;
+  }
+
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* TranslatePress' floating language switcher is injected sitewide by the
+     plugin itself, independent of the Elementor template (still shows even
+     with "Blank/Canvas"). Nothing from the theme should show through here,
+     so hide it hard. If it still appears: right-click → Inspect to find
+     its actual class/ID and add it here. */
+  .trp-language-switcher,
+  .trp-floating-switcher{
+    display:none !important;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="app">
+    <div class="chat-wallpaper" aria-hidden="true"></div>
+
+    <!-- Header -->
+    <header class="wa-header">
+      <div class="wa-avatar">ST</div>
+      <div class="wa-header-text">
+        <div class="wa-header-name">Spiritual Touch</div>
+        <div class="wa-header-status" id="wa-status">usually online right away</div>
+      </div>
+      <div class="wa-header-icons">
+        <a class="wa-lang-switch" href="https://spiritual-touch.de/whatsapp/" aria-label="Auf Deutsch umstellen">🇩🇪 DE</a>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+      </div>
+    </header>
+
+    <!-- Chat -->
+    <main class="wa-body" id="wa-body">
+      <div class="wa-msg-row center"><span class="wa-daychip">Today</span></div>
+
+      <div class="wa-msg-row" id="row-typing">
+        <div class="wa-typing" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+
+      <div class="wa-msg-row" id="row-greeting" style="display:none">
+        <div class="wa-bubble">
+          Hey 👋 glad you're here.<br>
+          Pick what this is about – then we'll get you there fastest:
+          <span class="wa-time" id="time-greeting"></span>
+        </div>
+      </div>
+
+      <div class="wa-msg-row" id="row-opt1" style="display:none">
+        <button class="wa-option st-termin-buchen-trigger" id="btn-booking" type="button">
+          <span class="wa-option-emoji">📅</span>
+          <span>
+            <span class="wa-option-title" style="display:block">Book an appointment</span>
+            <span class="wa-option-sub">Pick a free slot directly</span>
+          </span>
+          <svg class="wa-option-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="wa-msg-row" id="row-opt2" style="display:none">
+        <button class="wa-option st-vorgespraech-trigger" id="btn-vorgespraech" type="button">
+          <span class="wa-option-emoji">🤍</span>
+          <span>
+            <span class="wa-option-title" style="display:block">Not sure? Book a free intro call</span>
+            <span class="wa-option-sub">Free &amp; no obligation, 15 minutes</span>
+          </span>
+          <svg class="wa-option-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="wa-msg-row" id="row-opt3" style="display:none">
+        <button class="wa-option" id="btn-message" type="button">
+          <span class="wa-option-emoji">✍️</span>
+          <span>
+            <span class="wa-option-title" style="display:block">Quick message / personal question</span>
+            <span class="wa-option-sub">e.g. "running a bit late" or a special request</span>
+          </span>
+          <svg class="wa-option-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="wa-msg-row" id="row-hint" style="display:none">
+        <div class="wa-hint">
+          Prices &amp; common questions are usually already answered here:
+          <a id="link-preise" href="#" target="_blank" rel="noopener">Prices</a> ·
+          <a id="link-faq" href="#" target="_blank" rel="noopener">FAQ</a>
+        </div>
+      </div>
+    </main>
+
+    <!-- Fake compose bar – tapping it opens the real WhatsApp chat -->
+    <footer class="wa-inputbar">
+      <button class="wa-icon-btn" id="btn-emoji" type="button" aria-label="Emoji">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 10.5c0-.4.2-.7.5-.7s.5.3.5.7-.2.7-.5.7-.5-.3-.5-.7zM14.5 10.5c0-.4.2-.7.5-.7s.5.3.5.7-.2.7-.5.7-.5-.3-.5-.7zM8.5 14c1 1 5.5 1 7 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="wa-icon-btn" id="btn-attach" type="button" aria-label="Attach">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M17 8.5l-7.1 7.1a2.7 2.7 0 01-3.9-3.9L13.6 4a1.9 1.9 0 012.7 2.7l-7.2 7.2a1 1 0 01-1.5-1.5L14 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="wa-input" id="btn-input" type="button">
+        <span>Message</span>
+      </button>
+      <button class="wa-icon-btn" id="btn-mic" type="button" aria-label="Send message">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" stroke="currentColor" stroke-width="1.6"/><path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </footer>
+  </div>
+</div>
+
+<script>
+(function(){
+  var c = window.ST_CONFIG;
+
+  function waLink(prefillText){
+    var text = encodeURIComponent(prefillText || "");
+    return "https://wa.me/" + c.whatsappNumber + (text ? ("?text=" + text) : "");
+  }
+
+  document.getElementById('link-preise').href = c.preiseUrl;
+  document.getElementById('link-faq').href = c.faqUrl;
+
+  // "Book an appointment" and "Free intro call" have no click handler of
+  // their own: the classes st-termin-buchen-trigger / st-vorgespraech-trigger
+  // on the buttons are picked up by Amelia itself.
+
+  function openWhatsApp(){
+    window.location.href = waLink(c.whatsappPrefill);
+  }
+  document.getElementById('btn-message').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-input').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-mic').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-emoji').addEventListener('click', openWhatsApp);
+  document.getElementById('btn-attach').addEventListener('click', openWhatsApp);
+
+  // Timestamp, like real WhatsApp
+  var now = new Date();
+  var hh = String(now.getHours()).padStart(2,'0');
+  var mm = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('time-greeting').textContent = hh + ':' + mm;
+
+  // Brief "typing…" animation, then reveal the message + options
+  var body = document.getElementById('wa-body');
+  setTimeout(function(){
+    document.getElementById('row-typing').style.display = 'none';
+    ['row-greeting','row-opt1','row-opt2','row-opt3','row-hint'].forEach(function(id, i){
+      var el = document.getElementById(id);
+      setTimeout(function(){
+        el.style.display = '';
+        body.scrollTop = body.scrollHeight;
+      }, i * 160);
+    });
+  }, 700);
+})();
+</script>
+</body>
+</html>
