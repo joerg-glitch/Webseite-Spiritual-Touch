@@ -1,0 +1,268 @@
+<!--
+  Coverflow Card Slider (Nachbau)
+  ================================
+  Nachbau des 3D-Coverflow-Karussells von https://tantra-atilan.com/elementor-319/
+  (dort per Plugin "Multiple Card Transitions", hier ohne Plugin-Abhängigkeit
+  mit der freien Bibliothek Swiper.js nachgebaut).
+
+  VERWENDUNG IN ELEMENTOR:
+  1. In Elementor ein "HTML"-Widget auf die Seite ziehen.
+  2. Den kompletten Inhalt dieser Datei in das HTML-Widget einfügen.
+  3. Unten im Abschnitt "SLIDES ANPASSEN" Bilder, Titel, Untertitel und
+     Bewertung nach Bedarf ändern bzw. weitere <div class="stw-slide">-Blöcke
+     kopieren, um mehr Slides hinzuzufügen.
+  4. Falls auf der Seite bereits eine eigene Swiper.js-Version läuft, können
+     die beiden <link>/<script>-Zeilen im Abschnitt "SWIPER LADEN" entfernt
+     werden.
+-->
+
+<!-- SWIPER LADEN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+
+<div class="stw-coverflow-wrapper">
+  <div class="swiper stw-coverflow">
+    <div class="swiper-wrapper">
+
+      <!-- SLIDES ANPASSEN: jeder Block ist eine Karte -->
+      <div class="swiper-slide stw-slide">
+        <div class="stw-card" style="background-image:url('https://images.unsplash.com/photo-1517021897933-0e0319cfbc28?w=600&q=80');">
+          <div class="stw-card-overlay"></div>
+          <div class="stw-card-content">
+            <h3 class="stw-card-title">Tantra Massage</h3>
+            <div class="stw-card-subtitle">Körperarbeit</div>
+            <div class="stw-card-rating">★★★★★ <span>5.0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="swiper-slide stw-slide">
+        <div class="stw-card" style="background-image:url('https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600&q=80');">
+          <div class="stw-card-overlay"></div>
+          <div class="stw-card-content">
+            <h3 class="stw-card-title">Atemarbeit</h3>
+            <div class="stw-card-subtitle">Coaching</div>
+            <div class="stw-card-rating">★★★★★ <span>4.9</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="swiper-slide stw-slide">
+        <div class="stw-card" style="background-image:url('https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=600&q=80');">
+          <div class="stw-card-overlay"></div>
+          <div class="stw-card-content">
+            <h3 class="stw-card-title">Meditation</h3>
+            <div class="stw-card-subtitle">Achtsamkeit</div>
+            <div class="stw-card-rating">★★★★☆ <span>4.5</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="swiper-slide stw-slide">
+        <div class="stw-card" style="background-image:url('https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=600&q=80');">
+          <div class="stw-card-overlay"></div>
+          <div class="stw-card-content">
+            <h3 class="stw-card-title">Paarcoaching</h3>
+            <div class="stw-card-subtitle">Begleitung</div>
+            <div class="stw-card-rating">★★★★★ <span>5.0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="swiper-slide stw-slide">
+        <div class="stw-card" style="background-image:url('https://images.unsplash.com/photo-1516302752625-fcc3c50ae61f?w=600&q=80');">
+          <div class="stw-card-overlay"></div>
+          <div class="stw-card-content">
+            <h3 class="stw-card-title">Yoga Session</h3>
+            <div class="stw-card-subtitle">Bewegung</div>
+            <div class="stw-card-rating">★★★★★ <span>4.8</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Navigation & Pagination -->
+    <div class="swiper-pagination stw-pagination"></div>
+    <div class="swiper-button-prev stw-nav stw-nav-prev"></div>
+    <div class="swiper-button-next stw-nav stw-nav-next"></div>
+  </div>
+</div>
+
+<style>
+  .stw-coverflow-wrapper {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 0 70px;
+  }
+
+  .stw-coverflow {
+    padding: 40px 10px 10px;
+    overflow: visible;
+  }
+
+  .stw-coverflow .swiper-slide {
+    width: 260px;
+    height: 360px;
+  }
+
+  /* Karte */
+  .stw-card {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 20px;
+    overflow: hidden;
+    background-size: cover;
+    background-position: center;
+    box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.55);
+    transition: filter 0.5s ease, opacity 0.5s ease, box-shadow 0.5s ease;
+  }
+
+  /* Unschärfe + Abdunklung für alle nicht-aktiven Slides -> der "Blur"-Effekt */
+  .stw-coverflow .swiper-slide:not(.swiper-slide-active) .stw-card {
+    filter: blur(3px) brightness(0.65) saturate(0.9);
+    opacity: 0.85;
+    box-shadow: 0 15px 30px -10px rgba(0, 0, 0, 0.4);
+  }
+
+  .stw-coverflow .swiper-slide-active .stw-card {
+    filter: none;
+    opacity: 1;
+    box-shadow: 0 30px 60px -10px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Verlauf für lesbaren Text unten in der Karte */
+  .stw-card-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.15) 55%, transparent 80%);
+  }
+
+  .stw-card-content {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 22px 20px;
+    color: #fff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+
+  .stw-card-title {
+    margin: 0 0 4px;
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  .stw-card-subtitle {
+    font-size: 0.85rem;
+    opacity: 0.85;
+    margin-bottom: 8px;
+  }
+
+  .stw-card-rating {
+    font-size: 0.8rem;
+    color: #ffcf5c;
+    letter-spacing: 1px;
+  }
+
+  .stw-card-rating span {
+    color: #fff;
+    opacity: 0.8;
+    letter-spacing: normal;
+    margin-left: 4px;
+  }
+
+  /* Pagination */
+  .stw-pagination {
+    position: relative;
+    margin-top: 20px;
+  }
+
+  .stw-pagination .swiper-pagination-bullet {
+    width: 9px;
+    height: 9px;
+    background: #b9a6ff;
+    opacity: 0.4;
+  }
+
+  .stw-pagination .swiper-pagination-bullet-active {
+    opacity: 1;
+    background: #7c5cff;
+  }
+
+  /* Pfeile: verglastes Blur-Design */
+  .stw-nav {
+    width: 46px;
+    height: 46px;
+    margin-top: -23px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+    transition: background 0.3s ease;
+  }
+
+  .stw-nav:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .stw-nav::after {
+    font-size: 16px;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  @media (max-width: 640px) {
+    .stw-coverflow .swiper-slide {
+      width: 200px;
+      height: 290px;
+    }
+    .stw-nav {
+      display: none;
+    }
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<script>
+  (function () {
+    function initStwCoverflow() {
+      new Swiper('.stw-coverflow', {
+        effect: 'coverflow',
+        grabCursor: true,
+        centeredSlides: true,
+        loop: true,
+        slidesPerView: 'auto',
+        coverflowEffect: {
+          rotate: 0,
+          stretch: 0,
+          depth: 140,
+          modifier: 1.4,
+          slideShadows: false
+        },
+        autoplay: {
+          delay: 3000,
+          disableOnInteraction: false
+        },
+        keyboard: { enabled: true },
+        pagination: {
+          el: '.stw-pagination',
+          clickable: true
+        },
+        navigation: {
+          nextEl: '.stw-nav-next',
+          prevEl: '.stw-nav-prev'
+        }
+      });
+    }
+
+    if (typeof Swiper !== 'undefined') {
+      initStwCoverflow();
+    } else {
+      window.addEventListener('load', initStwCoverflow);
+    }
+  })();
+</script>
