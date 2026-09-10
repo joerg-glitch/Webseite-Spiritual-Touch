@@ -1,11 +1,62 @@
 // ═══════════════════════════════════════════════════════
 // ST Verfügbarkeits-API  —  einmal einrichten, fertig.
 // ═══════════════════════════════════════════════════════
+//
+// 27.08.2026: Aktion "reschedule" ergänzt — Team-Mitglieder können ihre
+// eigenen Amelia-Termine (Datum/Uhrzeit/Dauer) jetzt direkt in der
+// Team-App ändern. Das läuft NICHT mehr über ein eingebettetes
+// Amelia-Mitarbeiter-Panel (früherer Ansatz, siehe Git-Verlauf/
+// team-app/README.md, "Verworfen") — stattdessen direkt über Amelias
+// internen Update-Endpunkt, den WordPress unter /wp-json/st/v1/
+// booking-reschedule bereitstellt (siehe wordpress/buchungs-dashboard/
+// wpcode-snippet.php). WP_RESCHEDULE_SECRET unten muss exakt zu
+// ST_RESCHEDULE_SECRET dort passen.
+//
+// 27.08.2026, zweiter Fund (live getestet): listAppointments() zeigte
+// fälschlich auch die eigenen "Blockiert (Verfügbarkeit-Sync)"-Platzhalter
+// von "App Script - Sync" an, weil nur der Tag geprüft wurde — ältere
+// Blocker ohne Tag rutschten durch. isAvailabilityBlock_() ergänzt jetzt
+// dieselbe Titel-/Text-Erkennung wie im Sync-Skript. Außerdem: Termine
+// ohne Amelia-Termin-ID (alte Buchungen) zeigten "bitte Jörg Bescheid
+// geben" statt änderbar zu sein — auf Jörgs Wunsch ("die eigene
+// Änderungsmöglichkeit [muss] gegeben sein") jetzt per Fallback lösbar,
+// siehe rescheduleAppointment() unten.
 
 const SHEET_ID = '11NHzH0TRGUvoIsl26C8uoxwo4W9JEIJuylzxkvc87_A';
 const CAL_ID   = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85c915@group.calendar.google.com';
 const TIMEZONE = 'Europe/Berlin';
 const SECRET   = 'ST2026geheim'; // Stimmt mit WordPress-Snippet überein
+
+// Für die Rückrichtung Team-App -> Amelia (Aktion "reschedule" unten).
+// WP_RESCHEDULE_SECRET MUSS exakt ST_RESCHEDULE_SECRET in
+// wordpress/buchungs-dashboard/wpcode-snippet.php entsprechen — anders als
+// SECRET oben (das ist nur eine Formalität, echte Legitimation ist der
+// PIN) ist dieser Wert ein echtes Server-zu-Server-Geheimnis und darf
+// nirgends im Browser sichtbar werden. Dieselbe Route nutzt auch das
+// tägliche Rückrichtungs-Skript in apps-script/raum-einladung-sync.
+const WP_RESCHEDULE_URL    = 'https://spiritual-touch.de/wp-json/st/v1/booking-reschedule';
+const WP_RESCHEDULE_SECRET = 'DEIN-ZUFAELLIGES-PASSWORT-HIER';
+
+// Echte Amelia-Mitarbeiter-ID je Name (aus wordpress/buchungs-dashboard/
+// README.md, Tabelle "Echte Mitarbeiter für die Anfrage-Zuweisung") — nur
+// für den Termin-ID-losen Fallback in rescheduleAppointment() unten nötig
+// (Auflösung über providerId + bisherige Zeit statt Termin-ID).
+// ⚠️ Konstantin fehlt bewusst: taucht laut derselben README (Stand
+// 21.08.2026) nicht in Amelias Mitarbeiterliste auf, ungeklärt. Bei ihm
+// funktioniert der Fallback erst, wenn das geklärt und hier ergänzt ist —
+// betrifft nur seine ALT-Termine ohne Termin-ID-Zeile, neue Termine mit
+// Termin-ID sind davon nicht betroffen.
+const PROVIDER_IDS = {
+  'Tara':      4,
+  'Asmita':    5,
+  'Alea':      6,
+  'Stephanie': 7,
+  'Karen':     8,
+  'Sarah':     9,
+  'Maxine':    17,
+  'Amila':     28,
+  'Dominik':   29,
+};
 
 // Hilfskalender je Mitglied — MUSS mit der MEMBERS-Liste in
 // "App Script - Sync" übereinstimmen (dort die führende Quelle für
@@ -38,14 +89,12 @@ function doPost(e) {
       case 'create': return json({ok: true, id: createEntry(member.name, data.date, data.from, data.to, data.allDay)});
       case 'update': return json({ok: updateEntry(member.name, data.id, data.date, data.from, data.to, data.allDay)});
       case 'delete': return json({ok: deleteEntry(member.name, data.id)});
-      // Identifiziert das Mitglied per PIN, ohne Kalenderdaten zu laden —
-      // genutzt vom WordPress-Login-Bridge-Snippet, um den PIN auf einen
-      // WP-Benutzer (per E-Mail) abzubilden, bevor die Amelia-Session
-      // eingerichtet wird.
-      case 'identify':    return json({ok: true, name: member.name, email: member.email});
       // Echte Amelia-Buchungen aus dem Hilfskalender (nicht die
       // "Verfügbarkeit"-Einträge — anderer Kalender, andere Funktion).
       case 'appointments': return json({ok: true, name: member.name, appointments: listAppointments(member.name)});
+      // Ändert Datum/Uhrzeit eines eigenen Amelia-Termins — echtes
+      // Zurückschreiben nach Amelia, siehe rescheduleAppointment() unten.
+      case 'reschedule': return rescheduleAppointment(member.name, data.appointmentId, data.oldDate, data.oldFrom, data.oldTo, data.date, data.from, data.to);
       default:       return json({error: 'unknown_action'});
     }
   } catch (error) {
@@ -88,11 +137,11 @@ function listEntries(name) {
 }
 
 // Echte Amelia-Termine aus dem persönlichen Hilfskalender des Mitglieds —
-// nur zur Anzeige. Ändern/Absagen läuft NICHT über diese Funktion bzw.
-// diesen Kalender (würde nicht zu Amelia zurückgeschrieben), sondern über
-// die eingebettete Amelia-Mitarbeiteransicht (WordPress-Login-Bridge).
-// Blendet die eigenen "autoBlock"-Platzhalter des Verfügbarkeit-Syncs aus
-// (Tag autoBlock=true) — das sind keine echten Termine.
+// Grundlage sowohl für die reine Anzeige als auch fürs Ändern (der
+// "appointmentId"-Wert hier ist die echte Amelia-Termin-ID aus der von
+// Amelia geschriebenen Beschreibung, nötig für rescheduleAppointment()
+// unten). Blendet die eigenen Platzhalter-Blocker des Verfügbarkeit-Syncs
+// aus — das sind keine echten Termine.
 function listAppointments(name) {
   const calId = HELPER_CAL_IDS[name];
   if (!calId) return []; // Person hat (noch) keinen Hilfskalender hinterlegt
@@ -103,16 +152,120 @@ function listAppointments(name) {
   end.setDate(end.getDate() + 90);
 
   return cal.getEvents(start, end)
-    .filter(ev => ev.getTag('autoBlock') !== 'true')
-    .map(ev => ({
-      id:     ev.getId(),
-      date:   fmt(ev.getStartTime(), 'yyyy-MM-dd'),
-      from:   fmt(ev.getStartTime(), 'HH:mm'),
-      to:     fmt(ev.getEndTime(), 'HH:mm'),
-      title:  ev.getTitle(),
-      allDay: ev.isAllDayEvent()
-    }))
+    .filter(ev => !isAvailabilityBlock_(ev))
+    .map(ev => {
+      const desc = ev.getDescription() || '';
+      const idMatch   = desc.match(/Termin-ID:\s*(\d+)/i);
+      const nameMatch = desc.match(/Vorname:\s*(.+)/i);
+      return {
+        id:            ev.getId(),
+        appointmentId: idMatch ? idMatch[1] : null, // fehlt bei sehr alten Terminen ohne die Vorlagenzeile -> dann kein Ändern möglich
+        date:          fmt(ev.getStartTime(), 'yyyy-MM-dd'),
+        from:          fmt(ev.getStartTime(), 'HH:mm'),
+        to:            fmt(ev.getEndTime(), 'HH:mm'),
+        title:         ev.getTitle(),
+        customerName:  nameMatch ? nameMatch[1].trim() : '',
+        allDay:        ev.isAllDayEvent()
+      };
+    })
     .sort((a, b) => (a.date + a.from).localeCompare(b.date + b.from));
+}
+
+// Erkennt die eigenen Platzhalter-Blocker von "App Script - Sync" (dessen
+// isTeamAppBlock()-Logik hier gespiegelt, damit beide Skripte dieselben
+// Blocker erkennen): Tag ODER Titel ODER alte Text-Markierung — der reine
+// Tag-Check allein reichte nicht, ältere Blocker vor der Tag-Umstellung
+// tragen den Tag nicht und erschienen dadurch fälschlich als echte Termine
+// in der Team-App (gefunden 27.08.2026).
+function isAvailabilityBlock_(ev) {
+  if (ev.getTag('autoBlock') === 'true') return true;
+  if (ev.getTitle() === 'Blockiert (Verfügbarkeit-Sync)') return true;
+  const desc = ev.getDescription() || '';
+  return desc.indexOf('autoBlock:true') > -1;
+}
+
+// Ändert Datum/Uhrzeit eines eigenen Termins direkt in Amelia — über
+// denselben internen Amelia-Endpunkt, den auch Jörgs Buchungs-Dashboard
+// benutzt (WordPress-Route /booking-reschedule), NICHT durch Bearbeiten
+// des Kalender-Termins selbst (der wird von Amelia sowieso neu
+// geschrieben, sobald die Änderung durch ist).
+//
+// Sicherheit: appointmentId/oldDate/oldFrom/oldTo kommen vom Client —
+// bevor irgendetwas nach Amelia geschickt wird, wird deshalb geprüft, dass
+// genau dieser Termin (Termin-ID ODER exakt diese bisherige Zeit) gerade
+// wirklich im EIGENEN Hilfskalender dieses Mitglieds auftaucht. Ohne diese
+// Prüfung könnte ein manipulierter Request fremde Termine verändern.
+//
+// Zwei Wege, je nachdem, ob der Termin eine Amelia-Termin-ID hat (siehe
+// listAppointments()):
+// - Mit Termin-ID: WordPress bekommt appointmentId direkt.
+// - Ohne Termin-ID (alte Buchungen von vor der Amelia-Vorlagen-Änderung):
+//   WordPress bekommt stattdessen providerId + bisherige Start-/Endzeit
+//   und löst die Termin-ID selbst über einen DB-Abgleich auf (siehe
+//   st_booking_reschedule_handler() dort) — eindeutig, weil ein:e
+//   Mitarbeiter:in nicht zwei Termine mit exakt gleicher Zeit haben kann.
+function rescheduleAppointment(name, appointmentId, oldDate, oldFrom, oldTo, date, from, to) {
+  if (!oldDate || !oldFrom || !oldTo || !date || !from || !to) {
+    return json({ok: false, error: 'missing_params'});
+  }
+  if (to <= from) {
+    return json({ok: false, error: 'end_before_start'});
+  }
+
+  const ownEvent = listAppointments(name).find(a =>
+    appointmentId ? a.appointmentId === String(appointmentId)
+                   : (!a.appointmentId && a.date === oldDate && a.from === oldFrom && a.to === oldTo)
+  );
+  if (!ownEvent) {
+    return json({ok: false, error: 'not_your_appointment'});
+  }
+
+  const newStartUtc = localToUtcMysql_(date, from);
+  const newEndUtc   = localToUtcMysql_(date, to);
+  const payload = {
+    newBookingStart: newStartUtc,
+    newBookingEnd: newEndUtc,
+  };
+  if (appointmentId) {
+    payload.appointmentId = Number(appointmentId);
+  } else {
+    const providerId = PROVIDER_IDS[name];
+    if (!providerId) {
+      return json({ok: false, error: 'provider_id_unknown'});
+    }
+    payload.providerId = providerId;
+    payload.oldBookingStart = localToUtcMysql_(oldDate, oldFrom);
+    payload.oldBookingEnd   = localToUtcMysql_(oldDate, oldTo);
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(WP_RESCHEDULE_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {'X-ST-Reschedule-Secret': WP_RESCHEDULE_SECRET},
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    });
+    const code = response.getResponseCode();
+    if (code < 200 || code >= 300) {
+      return json({ok: false, error: 'wordpress_error', detail: response.getContentText()});
+    }
+    return json({ok: true});
+  } catch (err) {
+    return json({ok: false, error: 'request_failed', detail: err.toString()});
+  }
+}
+
+// Wandelt ein Datum+Uhrzeit-Paar in Berliner Ortszeit (aus dem Formular
+// des Teammitglieds) in einen UTC-MySQL-String um, wie ihn
+// /booking-reschedule erwartet. Bewusst über Utilities.parseDate() statt
+// "new Date(string)" — Letzteres interpretiert einen zeitzonenlosen
+// ISO-String je nach Laufzeitumgebung uneinheitlich (derselbe Fehlertyp,
+// der ursprünglich die 2-Stunden-Zeitzonen-Abweichung im Buchungs-
+// Dashboard verursacht hat, siehe dessen README).
+function localToUtcMysql_(dateStr, timeStr) {
+  const d = Utilities.parseDate(dateStr + ' ' + timeStr, TIMEZONE, 'yyyy-MM-dd HH:mm');
+  return Utilities.formatDate(d, 'Etc/UTC', 'yyyy-MM-dd HH:mm:ss');
 }
 
 // Alle Einträge sind Ganztages-Events (bessere Sichtbarkeit im Kalender).
