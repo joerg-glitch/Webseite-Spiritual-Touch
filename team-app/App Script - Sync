@@ -37,6 +37,30 @@
  * "autoBlock:true" in der Beschreibung — werden beim ersten Lauf sauber
  * übernommen/ersetzt). Echte Amelia-Buchungen werden nie gelesen,
  * verändert oder gelöscht.
+ *
+ * FIX 11.09.2026 (live im echten Kalender bestätigt, ausgelöst durch von
+ * Hand statt über die Team-App nachgetragene Verfügbarkeits-Einträge):
+ * 1. Titel wie "Amila 10:00–18:00 Uhr" (exakt das Format, das die Team-App
+ *    selbst erzeugt, aber hier ohne die zugehörigen from/to-Tags von Hand
+ *    nachgetragen) wurden nicht erkannt, weil parseLegacyTimes() nur die
+ *    Wörter "ab"/"bis" kannte — ohne die galt der Tag fälschlich als
+ *    GANZTÄGIG VERFÜGBAR statt nur 10-18 Uhr (gefährlichste Richtung:
+ *    macht jemanden ungewollt rund um die Uhr buchbar). parseLegacyTimes()
+ *    erkennt jetzt zusätzlich direkte Zeitbereiche ("HH:MM–HH:MM"), UND
+ *    der Fallback für wirklich nicht auswertbaren Text ist jetzt
+ *    "sicherheitshalber blockiert" statt "ganztägig verfügbar" (siehe
+ *    eventFreeWindow()).
+ * 2. Mehrtägige ZEITGEBUNDENE Verfügbarkeits-Termine (z.B. "Asmita" von
+ *    22.09. 11:00 bis 24.09. 12:00 durchgehend, statt eines Ganztages-
+ *    Termins) wurden von eachDateInRange() nur für ihren ERSTEN Tag
+ *    gezählt — an den Folgetagen galt "kein Eintrag", der ganze Tag
+ *    wurde unnötig komplett blockiert. eachDateInRange() deckt jetzt auch
+ *    bei zeitgebundenen Terminen jeden überspannten Kalendertag ab.
+ * 3. resolveMember() erkannte den Namen bisher nur am ANFANG des Titels
+ *    ("Asmita ...") oder als exakten Titel ("Asmita") — ein Titel wie
+ *    "Verfügbar Asmita" wurde dadurch komplett ignoriert (wieder: Tag
+ *    fälschlich voll blockiert). resolveMember() erkennt den Namen jetzt
+ *    zusätzlich als eigenständiges Wort irgendwo im Titel.
  */
 
 // ---------- KONFIGURATION ----------
@@ -178,8 +202,17 @@ function eachDateInRange(e, rangeStart, rangeEnd) {
       d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
     }
   } else {
-    var s = e.getStartTime();
-    if (s >= rangeStart && s < rangeEnd) dates.push(Utilities.formatDate(s, TZ, 'yyyy-MM-dd'));
+    // Zeitgebundene Termine können ebenfalls mehrtägig sein (z.B. "von
+    // Hand" statt über die Team-App eingetragene Verfügbarkeit über
+    // mehrere Tage durchgehend) — jeden überspannten Kalendertag zählen,
+    // nicht nur den Starttag (Fix 11.09.2026).
+    var dayCursor = new Date(e.getStartTime());
+    dayCursor.setHours(0, 0, 0, 0);
+    var eventEnd = e.getEndTime();
+    while (dayCursor < eventEnd) {
+      if (dayCursor >= rangeStart && dayCursor < rangeEnd) dates.push(Utilities.formatDate(dayCursor, TZ, 'yyyy-MM-dd'));
+      dayCursor = new Date(dayCursor.getTime() + 24 * 60 * 60 * 1000);
+    }
   }
   return dates;
 }
@@ -232,6 +265,13 @@ function eventFreeWindow(e, businessStart, businessEnd) {
         var t = legacy.to || formatHM(businessEnd);
         return clipToBusinessHours(timeOnDate(businessStart, f), timeOnDate(businessStart, t), businessStart, businessEnd);
       }
+      // Titel ist weder der reine Name noch als Zeitangabe auswertbar ->
+      // NICHT als "ganztägig verfügbar" werten (das war der Fehler vom
+      // 11.09.2026: eine unklare Angabe hätte die Person ungewollt den
+      // ganzen Tag buchbar gemacht) — wie ein nicht auswertbares Event
+      // behandeln, siehe computeFreeWindowsFromEvents(): "nichts
+      // auswertbar -> sicherheitshalber blockiert".
+      return null;
     }
     return { start: businessStart, end: businessEnd }; // ganztägig verfügbar
   }
@@ -252,6 +292,17 @@ function formatHM(d) { return Utilities.formatDate(d, TZ, 'HH:mm'); }
 // Uhr") statt nur eine Uhrzeit direkt nach dem Schlüsselwort zu akzeptieren.
 function parseLegacyTimes(text) {
   var out = {};
+  // Direkter Zeitbereich "HH:MM–HH:MM" (oder mit einfachem Bindestrich)
+  // — exakt das Format, das die Team-App selbst für Verfügbarkeit-Titel
+  // erzeugt ("Amila 10:00–18:00 Uhr"). Deckt den Fall ab, dass ein
+  // solcher Termin ohne die eigentlichen from/to-Tags entstanden ist,
+  // z.B. von Hand nachgetragen statt über die App (Fix 11.09.2026).
+  var range = text.match(/(\d{1,2})[:.](\d{2})\s*[-–]\s*(\d{1,2})[:.](\d{2})/);
+  if (range) {
+    out.from = pad(range[1]) + ':' + range[2];
+    out.to = pad(range[3]) + ':' + range[4];
+    return out;
+  }
   var from = extractTimeAfter(text, /ab\b/i);
   if (from) out.from = from;
   var to = extractTimeAfter(text, /bis\b/i);
@@ -306,6 +357,13 @@ function resolveMember(e) {
   for (var i = 0; i < MEMBERS.length; i++) {
     var name = MEMBERS[i].name;
     if (title === name || title.indexOf(name + ' ') === 0 || title.indexOf(name + '(') === 0) return name;
+  }
+  // Name steht nicht am Anfang, taucht aber als eigenständiges Wort
+  // irgendwo im Titel auf (z.B. "Verfügbar Asmita" — gefunden 11.09.2026,
+  // dadurch komplett ignoriert statt der Person zugeordnet zu werden).
+  var words = title.split(/\s+/);
+  for (var j = 0; j < MEMBERS.length; j++) {
+    if (words.indexOf(MEMBERS[j].name) !== -1) return MEMBERS[j].name;
   }
   return null;
 }

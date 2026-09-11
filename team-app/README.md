@@ -9,7 +9,16 @@ Elementor-HTML-Widget), Backend zwei getrennte Google-Apps-Script-Projekte:
 - **`App Script - Sync`** — läuft unabhängig per stündlichem Trigger,
   übersetzt die "Verfügbarkeit"-Einträge in Blocker in den persönlichen
   Hilfskalendern, auf die Amelia für die Buchbarkeit zugreift. Wird von
-  dieser README nicht behandelt, siehe Kommentare in der Datei selbst.
+  dieser README nicht im Detail behandelt, siehe Kommentare in der Datei
+  selbst — dort steht auch ein wichtiger Fix vom 11.09.2026: Von Hand
+  (statt über die Team-App) nachgetragene Verfügbarkeits-Einträge im
+  Format "Amila 10:00–18:00 Uhr" wurden bisher fälschlich als "ganztägig
+  verfügbar" gewertet, weil das Skript Zeitangaben nur über die Wörter
+  "ab"/"bis" erkannte — die gefährlichste Fehlrichtung (macht jemanden
+  ungewollt rund um die Uhr buchbar). Live im Kalender bestätigt und
+  behoben; betraf vermutlich mehrere Teammitglieder, nicht nur eine
+  Person — nach dem Einspielen unbedingt mehrere Hilfskalender
+  stichprobenartig prüfen.
 
 `anleitung.html` ist die Endnutzer-Anleitung fürs Team (Installation als
 Home-Bildschirm-App auf Android/iPhone) — unverändert in diesem Update,
