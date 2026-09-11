@@ -24,6 +24,41 @@ Elementor-HTML-Widget), Backend zwei getrennte Google-Apps-Script-Projekte:
 Home-Bildschirm-App auf Android/iPhone) — unverändert in diesem Update,
 nicht Teil der folgenden technischen Doku.
 
+## Betriebsentscheidung 11.09.2026: Online-Buchungssystem erstmal pausiert
+
+Nach dem Fund oben (mehrere Teammitglieder tragen Verfügbarkeit von Hand
+in Google Calendar ein statt über die Team-App, dadurch die drei Bugs im
+Sync) hat Jörg entschieden: **Solange das Team die Team-App nicht
+zuverlässig nutzt, geht der Ausbau des Online-Buchungssystems nicht
+weiter.** Grund: Jeder Alleingang am Kalender kann jederzeit ein neues,
+noch nicht gesehenes Titelformat erzeugen, das der Sync falsch
+interpretiert — Code-Fixes allein lösen nicht das eigentliche Problem
+(Verhalten, nicht Technik).
+
+**Klargestellt (war zwischenzeitlich missverständlich dokumentiert):**
+Die Hilfskalender gehören Jörgs eigenem Google-Account. Eine Freigabe an
+die Teammitglieder selbst ist bisher **nicht** passiert — nur eine
+Option, die er sich für später offenhält. Bis dahin haben Teammitglieder
+keinen direkten Zugriff auf ihren Hilfskalender.
+
+**Neue Rolle für den bestehenden Cowork-Agenten:** Ein separat von Jörg
+betriebener Cowork-Agent (reagiert auf Googles eigene Kalender-
+Änderungsmails für den "Verfügbarkeit"-Kalender) hat bisher solche
+Alleingänge automatisch in die Team-App übersetzt — gedacht als
+Übergangslösung, bis das Team eingearbeitet ist. Das ist jetzt der Fall,
+die Übersetzungs-Funktion damit unnötig. Neue Aufgabe: **nur noch
+warnen, nicht mehr übersetzen.** Meldet Jörg per Mail, wenn ein
+Verfügbarkeit-Eintrag an der App vorbei gemacht wurde — insbesondere:
+- ein zeitgebundener (nicht ganztägiger) Termin, der mehr als einen
+  Kalendertag überspannt (**mehrtägige Verfügbarkeit ist ab jetzt nicht
+  mehr vorgesehen** — jede Person trägt jeden Tag einzeln über die App
+  ein; Beispiel/Anlass: Asmitas Einträge 22.–24.09. und 16.–18.10.),
+- ein Titel, der keinem der bekannten Muster entspricht (weder reiner
+  Name, noch "NAME HH:MM–HH:MM Uhr", noch "ab"/"bis" mit Uhrzeit) und
+  sich nicht eindeutig zuordnen lässt.
+
+Diese Logik lebt im Cowork-Agenten selbst, nicht im Code dieses Repos.
+
 ## Neu (27.08.2026): Eigene Termine direkt ändern
 
 **Hintergrund:** Amelia schreibt bestätigte Buchungen in den persönlichen
