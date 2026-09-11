@@ -1,0 +1,483 @@
+<!-- ============================================================
+     OFF-CANVAS-MENÜ – spiritual-touch.de
+     Ersatz für das "Glass-Pill"-Hauptmenü + das floatende
+     Kontakt-Widget im Footer. Ein fixer Tab öffnet eine
+     Menü-Schublade (Drawer) mit Akkordeon-Navigation und einem
+     fest angepinnten Kontakt-/Feedback-Bereich unten.
+
+     Erkennt automatisch anhand der URL, ob gerade der Bereich
+     /praxis/... oder /institut/... aktiv ist, und zeigt das
+     passende Menü. Alles Wichtige zum Anpassen steht im
+     Abschnitt "MENÜ-DATEN" weiter unten – dort NICHT die
+     Struktur des Codes verändern, nur die Texte/Links in den
+     {...}-Objekten.
+
+     Einbau: siehe README.md im selben Ordner.
+     ============================================================ -->
+
+<style>
+  #stw-menu-root, #stw-menu-root * {
+    box-sizing: border-box;
+  }
+
+  #stw-menu-root {
+    /* ---- Design-Tokens: hier Farben/Fonts anpassen ---- */
+    --stw-bg: #FBF7F1;              /* Drawer-Hintergrund */
+    --stw-tab-bg: #4B2E35;          /* Tab-Hintergrund (dunkler Erdton) */
+    --stw-tab-bg-hover: #3A232A;
+    --stw-tab-text: #F5EFE6;
+    --stw-text: #33291F;
+    --stw-text-soft: #8A7B6C;
+    --stw-border: rgba(51, 41, 31, 0.14);
+    --stw-accent: #8C5A3C;          /* Akzent: Feedback-CTA */
+    --stw-accent-hover: #6F4630;
+    --stw-overlay: rgba(24, 18, 14, 0.45);
+    --stw-font-body: 'Jost', 'Helvetica Neue', Arial, sans-serif;
+    --stw-font-display: 'Cormorant Garamond', Georgia, serif;
+    --stw-z: 999990;
+    font-family: var(--stw-font-body);
+  }
+
+  /* ---------- Fixer Auslöser-Tab ---------- */
+  #stw-tab {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: calc(var(--stw-z) + 2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--stw-tab-bg);
+    color: var(--stw-tab-text);
+    border: none;
+    cursor: pointer;
+    padding: 14px 18px;
+    box-shadow: -4px 4px 20px rgba(0,0,0,0.18);
+    transition: background 0.25s ease;
+  }
+  #stw-tab:hover { background: var(--stw-tab-bg-hover); }
+
+  /* Tab verschwindet, sobald der Drawer offen ist (Schließen dann über
+     das X im Drawer-Header, Klick auf den Hintergrund oder Escape) –
+     verhindert, dass der Tab über dem Drawer-Inhalt schwebt. */
+  #stw-menu-root.stw-open #stw-tab {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  #stw-tab .stw-burger {
+    position: relative;
+    width: 20px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+  #stw-tab .stw-burger span {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: currentColor;
+    transition: transform 0.3s ease, opacity 0.3s ease, top 0.3s ease;
+  }
+  #stw-tab .stw-burger span:nth-child(1) { top: 0; }
+  #stw-tab .stw-burger span:nth-child(2) { top: 6px; }
+  #stw-tab .stw-burger span:nth-child(3) { top: 12px; }
+  #stw-menu-root.stw-open #stw-tab .stw-burger span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+  #stw-menu-root.stw-open #stw-tab .stw-burger span:nth-child(2) { opacity: 0; }
+  #stw-menu-root.stw-open #stw-tab .stw-burger span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+  #stw-tab .stw-tab-label {
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* ---------- Backdrop ---------- */
+  #stw-backdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--stw-overlay);
+    z-index: var(--stw-z);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.35s ease;
+  }
+  #stw-menu-root.stw-open #stw-backdrop {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* ---------- Drawer ---------- */
+  #stw-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    max-width: 100vw;
+    background: var(--stw-bg);
+    z-index: calc(var(--stw-z) + 1);
+    box-shadow: -8px 0 40px rgba(0,0,0,0.18);
+    transform: translateX(100%);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+  }
+  #stw-menu-root.stw-open #stw-drawer {
+    transform: translateX(0);
+  }
+
+  #stw-drawer-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 24px 16px;
+    border-bottom: 1px solid var(--stw-border);
+  }
+  #stw-drawer-header .stw-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--stw-text-soft);
+  }
+  #stw-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--stw-text-soft);
+    padding: 4px 6px;
+  }
+  #stw-close:hover { color: var(--stw-text); }
+
+  /* ---------- Navigation (scrollbar) ---------- */
+  #stw-nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 8px 16px;
+  }
+
+  .stw-item { border-bottom: 1px solid var(--stw-border); }
+  .stw-item:last-child { border-bottom: none; }
+
+  .stw-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .stw-label {
+    display: block;
+    flex: 1 1 auto;
+    padding: 16px 12px;
+    font-family: var(--stw-font-display);
+    font-size: 19px;
+    font-weight: 500;
+    color: var(--stw-text);
+    text-decoration: none;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+  }
+  .stw-label:hover { color: var(--stw-accent); }
+
+  .stw-chevron {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    margin-right: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--stw-text-soft);
+  }
+  .stw-chevron svg {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.3s ease;
+  }
+  .stw-chevron[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+  .stw-submenu {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.35s ease;
+  }
+  .stw-submenu.stw-sub-open { grid-template-rows: 1fr; }
+  .stw-submenu-inner { overflow: hidden; min-height: 0; }
+
+  .stw-sublink {
+    display: block;
+    padding: 11px 12px 11px 26px;
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--stw-text-soft);
+    text-decoration: none;
+    border-left: 2px solid var(--stw-border);
+    margin-left: 12px;
+  }
+  .stw-sublink:hover { color: var(--stw-accent); border-left-color: var(--stw-accent); }
+  .stw-sublink:last-child { padding-bottom: 16px; }
+
+  /* ---------- Fest angepinnter Kontakt-/Feedback-Bereich ---------- */
+  #stw-footer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--stw-border);
+    padding: 18px 20px 22px;
+    background: var(--stw-bg);
+  }
+
+  .stw-footer-phone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 4px;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--stw-text);
+    text-decoration: none;
+  }
+  .stw-footer-phone:hover { color: var(--stw-accent); }
+
+  .stw-footer-feedback {
+    display: block;
+    text-align: center;
+    margin-top: 10px;
+    padding: 13px 0;
+    background: var(--stw-accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border: 1px solid var(--stw-accent);
+  }
+  .stw-footer-feedback:hover {
+    background: var(--stw-accent-hover);
+    border-color: var(--stw-accent-hover);
+  }
+
+  .stw-footer-address {
+    margin: 12px 4px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--stw-text-soft);
+  }
+
+  /* ---------- Mobil: Vollbild-Overlay ---------- */
+  @media (max-width: 720px) {
+    #stw-drawer { width: 100vw; }
+    #stw-tab .stw-tab-label { display: none; }
+    #stw-tab { padding: 14px 12px; }
+  }
+
+  html.stw-lock, html.stw-lock body { overflow: hidden !important; }
+</style>
+
+<div id="stw-menu-root">
+
+  <button id="stw-tab" aria-haspopup="dialog" aria-expanded="false" aria-controls="stw-drawer">
+    <span class="stw-burger"><span></span><span></span><span></span></span>
+    <span class="stw-tab-label">Menü</span>
+  </button>
+
+  <div id="stw-backdrop"></div>
+
+  <div id="stw-drawer" role="dialog" aria-modal="true" aria-label="Hauptmenü">
+    <div id="stw-drawer-header">
+      <span class="stw-eyebrow">Spiritual Touch</span>
+      <button id="stw-close" aria-label="Menü schließen">&times;</button>
+    </div>
+
+    <nav id="stw-nav"></nav>
+
+    <div id="stw-footer">
+      <a class="stw-footer-phone" href="tel:+4915781504469">
+        <span aria-hidden="true">&#9742;</span> Anrufen: 0157 81504469
+      </a>
+      <a class="stw-footer-feedback" href="https://spiritual-touch.de/feedback">
+        Dein Feedback
+      </a>
+      <p class="stw-footer-address">Olschewskibogen 12, 80935 München</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+
+  /* =========================================================
+     MENÜ-DATEN – hier Menüpunkte anpassen/ergänzen.
+     Jeder Eintrag: { label, url, children (optional) }
+     - Eintrag ohne "children": normaler Link.
+     - Eintrag mit "children" und "url": Text ist klickbarer
+       Link zur Übersichtsseite, der Pfeil daneben klappt die
+       Unterpunkte auf.
+     - Eintrag mit "children" aber "url: null": Text dient nur
+       zum Auf-/Zuklappen (keine eigene Übersichtsseite).
+     ========================================================= */
+  var STW_MENUS = {
+    institut: [
+      { label: 'Home', url: 'https://spiritual-touch.de/institut/' },
+      {
+        label: 'Seminare & Ausbildung',
+        url: 'https://spiritual-touch.de/institut/seminare/',
+        children: [
+          { label: 'Ausbildung "Intuitive Tantramassage"', url: 'https://spiritual-touch.de/institut/tantramassage-ausbildung-muenchen/' },
+          { label: 'Grund-Seminar', url: 'https://spiritual-touch.de/institut/grundseminar/' },
+          { label: 'Vertiefungs-Seminar', url: 'https://spiritual-touch.de/institut/vertiefung/' },
+          { label: 'Aufbau-Seminare', url: 'https://spiritual-touch.de/institut/aufbaumodule/' },
+          { label: 'Vertiefungstage', url: 'https://spiritual-touch.de/institut/vertiefungstage/' }
+        ]
+      },
+      { label: 'Termine', url: 'https://spiritual-touch.de/institut/events' },
+      { label: 'Praxis & Team', url: 'https://spiritual-touch.de/praxis/' }
+    ],
+    praxis: [
+      { label: 'Home', url: 'https://spiritual-touch.de/praxis/' },
+      {
+        label: 'Praxis & Team',
+        url: null,
+        children: [
+          { label: 'Das Team', url: 'https://spiritual-touch.de/praxis/team/' },
+          { label: 'Blog', url: 'https://spiritual-touch.de/blog/' },
+          { label: 'Gutscheine', url: 'https://spiritual-touch.de/gutscheine/' },
+          { label: 'Medien, Presse & Podcasts', url: 'https://spiritual-touch.de/praxis/medien-presse-podcasts-spiritual-touch-muenchen/' },
+          { label: 'FAQ', url: 'https://spiritual-touch.de/praxis/faq/' }
+        ]
+      },
+      {
+        label: 'Erlebnisse & Preise',
+        url: null,
+        children: [
+          { label: 'Nur für Dich', url: 'https://spiritual-touch.de/praxis/einzelarbeit/' },
+          { label: 'Zu Zweit', url: 'https://spiritual-touch.de/praxis/paare/' },
+          { label: 'Workshops', url: 'https://spiritual-touch.de/praxis/beruhrungsworkshop/' },
+          { label: 'Honorare', url: 'https://spiritual-touch.de/praxis/honorare/' }
+        ]
+      },
+      {
+        label: 'Seminare & Workshops',
+        url: null,
+        children: [
+          { label: 'Termine', url: 'https://spiritual-touch.de/institut/events' },
+          { label: 'Ausbildung & Seminare', url: 'https://spiritual-touch.de/institut/seminare/' }
+        ]
+      }
+    ]
+  };
+  /* Bereich, der genutzt wird, wenn die URL weder /praxis noch
+     /institut enthält (z.B. Startseite): */
+  var STW_DEFAULT_MENU = 'praxis';
+
+
+  /* =========================================================
+     Ab hier keine Anpassungen nötig.
+     ========================================================= */
+  var root = document.getElementById('stw-menu-root');
+  var tab = document.getElementById('stw-tab');
+  var closeBtn = document.getElementById('stw-close');
+  var backdrop = document.getElementById('stw-backdrop');
+  var nav = document.getElementById('stw-nav');
+
+  function detectMenuKey() {
+    var path = window.location.pathname;
+    if (path.indexOf('/institut') === 0) return 'institut';
+    if (path.indexOf('/praxis') === 0) return 'praxis';
+    return STW_DEFAULT_MENU;
+  }
+
+  var chevronSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+
+  function renderMenu(items) {
+    var html = '';
+    items.forEach(function (item, i) {
+      var hasChildren = Array.isArray(item.children) && item.children.length > 0;
+      var subId = 'stw-sub-' + i;
+
+      html += '<div class="stw-item">';
+      html += '<div class="stw-row">';
+
+      if (item.url) {
+        html += '<a class="stw-label" href="' + item.url + '"' +
+          (hasChildren ? '' : '') + '>' + item.label + '</a>';
+      } else {
+        html += '<button type="button" class="stw-label" data-toggle="' + subId + '">' + item.label + '</button>';
+      }
+
+      if (hasChildren) {
+        html += '<button type="button" class="stw-chevron" aria-expanded="false" aria-controls="' + subId + '" data-toggle="' + subId + '">' + chevronSvg + '</button>';
+      }
+
+      html += '</div>';
+
+      if (hasChildren) {
+        html += '<div class="stw-submenu" id="' + subId + '"><div class="stw-submenu-inner">';
+        item.children.forEach(function (child) {
+          html += '<a class="stw-sublink" href="' + child.url + '">' + child.label + '</a>';
+        });
+        html += '</div></div>';
+      }
+
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function toggleSection(subId) {
+    var target = document.getElementById(subId);
+    if (!target) return;
+    var willOpen = !target.classList.contains('stw-sub-open');
+
+    nav.querySelectorAll('.stw-submenu').forEach(function (el) {
+      var isTarget = el.id === subId;
+      el.classList.toggle('stw-sub-open', isTarget && willOpen);
+      var chevron = nav.querySelector('.stw-chevron[aria-controls="' + el.id + '"]');
+      if (chevron) chevron.setAttribute('aria-expanded', isTarget && willOpen ? 'true' : 'false');
+    });
+  }
+
+  nav.innerHTML = renderMenu(STW_MENUS[detectMenuKey()] || STW_MENUS[STW_DEFAULT_MENU]);
+
+  nav.addEventListener('click', function (e) {
+    var trigger = e.target.closest('[data-toggle]');
+    if (trigger) {
+      e.preventDefault();
+      toggleSection(trigger.getAttribute('data-toggle'));
+    }
+  });
+
+  function openDrawer() {
+    root.classList.add('stw-open');
+    tab.setAttribute('aria-expanded', 'true');
+    document.documentElement.classList.add('stw-lock');
+  }
+  function closeDrawer() {
+    root.classList.remove('stw-open');
+    tab.setAttribute('aria-expanded', 'false');
+    document.documentElement.classList.remove('stw-lock');
+  }
+
+  tab.addEventListener('click', function () {
+    if (root.classList.contains('stw-open')) closeDrawer(); else openDrawer();
+  });
+  closeBtn.addEventListener('click', closeDrawer);
+  backdrop.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeDrawer();
+  });
+
+})();
+</script>
