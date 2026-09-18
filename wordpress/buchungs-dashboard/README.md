@@ -360,6 +360,12 @@ als Parameter, `st_booking_dispatch_handler()` macht keinen zweiten Aufruf
 mehr. Bei sofortiger Freigabe geht jetzt nur noch die eine
 Bestätigungsmail raus.
 
+**Live bestätigt (Termin #119, selber Tag):** direkt mit `status:
+"approved"` angelegt, ein einziger Create-Call, Preis korrekt (290 €),
+`customerId` 33 automatisch wiederverwendet (gleiche E-Mail
+`kontakt@joerg-saur.de` wie beim vorherigen Test) — Kunden-Dedup über
+mehrere Dispatches hinweg funktioniert zuverlässig.
+
 ### Health-Check & Benachrichtigung bei Ausfall
 
 `GET /wp-json/st/v1/booking-dispatch-healthcheck` prüft rein lesend, ob das
