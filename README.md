@@ -17,6 +17,7 @@ Dieses Repository bündelt alle Code-Projekte rund um [spiritual-touch.de](https
 | `whatsapp-vorschaltseite/` | WhatsApp-Look Vorschaltseite zur Lead-Filterung (DE/EN) | — |
 | `PLAN.md`, `TASKS.md`, `TEAM-APP-ROADMAP.md` | Planungs-/Aufgaben-Dokus zur Team-App | — |
 | `.agents/skills/`, `.claude/skills/`, `skills-lock.json` | Design-Taste-Skills für Claude-Code-Sessions (kein Website-Code) | — |
+| `CLAUDE.md` | Anleitung für Claude Code selbst — wird automatisch bei jeder Sitzung gelesen. Wichtigster Inhalt: der Coworking-Agent/Dispatch-Ablauf für Amelia-Buchungen per Chat | [CLAUDE.md](CLAUDE.md) |
 
 ## Hinweis zu Branches
 
