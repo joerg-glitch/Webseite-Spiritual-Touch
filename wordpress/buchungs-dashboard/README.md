@@ -127,12 +127,35 @@ Dienstleistung, Mitarbeiter:in, Datum/Uhrzeit und den Kundendaten — der
 Agent trägt es über `/booking-dispatch` direkt in Amelia ein und gibt es im
 selben Zug frei.
 
-**Route:** `POST /wp-json/st/v1/booking-dispatch`, abgesichert per
-gemeinsamem Geheimnis im Header `X-ST-Dispatch-Secret` (`ST_DISPATCH_SECRET`,
-eigener Wert, nicht identisch mit `ST_RESCHEDULE_SECRET`) — kein WP-Login
-vorhanden, da ein Chat-Agent aufruft, kein Browser. Nutzt für die
-Amelia-Session intern dieselbe `ST_RESCHEDULE_ADMIN_USER_ID` wie
-`/booking-reschedule`.
+### Zwei Stufen (Testphase, seit 18.09.2026)
+
+Jörg will den Agenten erst ein paar Wochen beobachten, bevor er ihm
+erlaubt, direkt freizugeben. Deshalb läuft der Ablauf standardmäßig in
+zwei getrennten Nachrichten:
+
+1. **"Da ist eine Anfrage reingekommen…"** → `/booking-dispatch` legt sie
+   als **"Anfrage" (pending)** an. Sie erscheint im Buchungs-Dashboard
+   (Filter "Anfragen") und kann in Ruhe geprüft werden — noch keine
+   Kundenmail, noch kein Hilfskalender-Eintrag.
+2. **"Passt, gib frei[, und kopiere in Raum 2]"** → `/booking-dispatch-confirm`
+   gibt frei (löst jetzt Amelias Bestätigungsmail aus, Amelia schreibt
+   automatisch in den Hilfskalender der zuständigen Person) und kopiert
+   optional in einen Raumkalender.
+
+Sobald sich das bewährt hat, kann Jörg dem Agenten auch sagen **"gib
+direkt frei"** — dann übergibt `/booking-dispatch` gleich `status:
+"approved"` und Schritt 2 entfällt (Raum-Kopie ginge in dem Fall trotzdem
+nur über einen separaten `/booking-dispatch-confirm`-Aufruf ohne erneutes
+Freigeben, da die Route "erneut freigeben" für einen schon freigegebenen
+Termin unschädlich, aber unnötig ist — in der Praxis also weiterhin am
+einfachsten: Raum-Wunsch immer als eigene, zweite Nachricht).
+
+### Stufe 1 — `POST /wp-json/st/v1/booking-dispatch`
+
+Abgesichert per gemeinsamem Geheimnis im Header `X-ST-Dispatch-Secret`
+(`ST_DISPATCH_SECRET`) — kein WP-Login vorhanden, da ein Chat-Agent
+aufruft, kein Browser. Nutzt für die Amelia-Session intern dieselbe
+`ST_RESCHEDULE_ADMIN_USER_ID` wie `/booking-reschedule`.
 
 Body:
 ```json
@@ -141,7 +164,7 @@ Body:
   "providerId": 7,
   "date": "2026-09-25",
   "time": "14:00",
-  "status": "approved",
+  "status": "pending",
   "customer": {
     "firstName": "Anna",
     "lastName": "Beispiel",
@@ -156,29 +179,78 @@ Body:
 Klartext-Angaben ("Kategorie X", "Mitarbeiter Y") vorher über die
 schon vorhandene, rein lesende Route `/amelia-reference` (Kategorien,
 Dienstleistungen mit Kategorie-ID, Mitarbeiter mit Name) in IDs auf.
-`status` ist `"approved"` (legt an **und** gibt sofort frei, löst Amelias
-Bestätigungsmail aus) oder `"pending"` (nur anlegen). Ein Kunde mit
-gleicher E-Mail wird wiederverwendet statt dupliziert.
+`status` weglassen oder `"pending"` = nur anlegen (Standardfall in der
+Testphase); `"approved"` nur, wenn Jörg in derselben Nachricht ausdrücklich
+sofortige Freigabe sagt. Ein Kunde mit gleicher E-Mail wird wiederverwendet
+statt dupliziert. Antwort enthält die neue `appointmentId` — die braucht
+Schritt 2.
+
+### Stufe 2 — `POST /wp-json/st/v1/booking-dispatch-confirm`
+
+Gleiches Geheimnis (`X-ST-Dispatch-Secret`). Body:
+```json
+{ "appointmentId": 123, "room": 2 }
+```
+`room` ist optional (`1`/`2`/`3`) — weglassen, wenn nur freigegeben werden
+soll, ohne in einen Raumkalender zu kopieren. Gibt intern denselben
+bereits bewährten `/appointments/status`-Weg wie der "Freigeben"-Button im
+Dashboard, danach (falls `room` gesetzt) den Raum-Kopie-Schritt unten.
+
+### Raum-Kopie: reine Google-Calendar-Sache, hat mit Amelia nichts zu tun
+
+Jörg hat den früheren automatischen Kopier-Mechanismus
+Hilfskalender→Raum-1 abgeschaltet ("zu viel Chaos im Kalender"). Es gibt
+in Amelia selbst **kein** Feld für den Raum — laut Jörg (18.09.2026)
+"lässt sich das dort nicht lösen, das geht nur im Google Kalender". Sobald
+ein Termin freigegeben ist, schreibt Amelia ihn automatisch in den
+persönlichen Hilfskalender der zuständigen Person (wie schon immer, siehe
+"Smart Freigeben" unten) — von dort kopiert `/booking-dispatch-confirm`
+ihn bei Bedarf per Zuruf in einen der drei Raumkalender.
+
+Technisch: `st_copy_to_room_calendar_()` in `wpcode-snippet.php` delegiert
+an eine neue Aktion **`copyToRoom`** im bereits laufenden
+`team-app/App Script` (dasselbe Apps-Script-Projekt, das auch PIN-Login,
+Verfügbarkeit und "Termine ändern" bedient — keine neue Bereitstellung
+nötig, nur die neue Aktion). Die Funktion sucht den Termin per
+`Termin-ID:`-Zeile über alle bekannten Hilfskalender und legt eine Kopie
+im Zielraum an; dieselben drei Raumkalender-IDs wie in
+`apps-script/raum-einladung-sync/Code.gs` (`ROOM_CALENDAR_IDS`, dort
+Ausgangsquelle, hier dupliziert). Idempotent: ruft Jörg "kopiere in Raum
+2" versehentlich zweimal für denselben Termin auf, entsteht keine zweite
+Kopie.
+
+Eigenes Geheimnis `DISPATCH_ROOM_SECRET` im Apps Script (Aufrufer ist
+WordPress, nicht der PIN-geschützte Team-App-Weg) — `ST_APPS_SCRIPT_URL`
+und `ST_APPS_SCRIPT_DISPATCH_SECRET` in `wpcode-snippet.php` müssen auf
+dieselbe /exec-URL bzw. denselben Geheimwert gesetzt sein.
 
 ### Für den Claude-Chat, der die Dispatch-Nachricht bekommt
 
-1. Aus Jörgs Nachricht Kategorie/Dienstleistung + Mitarbeiter:in in IDs
-   auflösen: `GET /wp-json/st/v1/amelia-reference` (Admin-Session oder
-   `X-ST-Dispatch-Secret`-Header) liefert Kategorien, Dienstleistungen
-   (mit `categoryId`) und Mitarbeiter mit Klarnamen.
-2. Dann:
+1. **Neue Anfrage:** Kategorie/Dienstleistung + Mitarbeiter:in aus Jörgs
+   Nachricht per `GET /wp-json/st/v1/amelia-reference` (Admin-Session oder
+   `X-ST-Dispatch-Secret`-Header) in IDs auflösen, dann:
    ```bash
    curl -sS -X POST 'https://spiritual-touch.de/wp-json/st/v1/booking-dispatch' \
      -H 'Content-Type: application/json' \
      -H 'X-ST-Dispatch-Secret: <von Jörg mitgeteilter Wert>' \
-     -d '{"serviceId":33,"providerId":7,"date":"2026-09-25","time":"14:00","status":"approved","customer":{"firstName":"Anna","lastName":"Beispiel","email":"anna@beispiel.de","phone":"+49 151 23456789"}}'
+     -d '{"serviceId":33,"providerId":7,"date":"2026-09-25","time":"14:00","customer":{"firstName":"Anna","lastName":"Beispiel","email":"anna@beispiel.de","phone":"+49 151 23456789"}}'
    ```
-3. Antwort mit `"ok": true` und einer `appointmentId` an Jörg bestätigen
-   (kurz, z. B. "Termin #123 angelegt und freigegeben"). Bei einem Fehler
-   die `error`/`detail`-Felder wörtlich zurückmelden statt zu raten — der
-   Handler gibt bei jedem Fehlschritt gezielt Diagnosedaten mit.
-   `ST_DISPATCH_SECRET` steht nicht im Repo (Secret) — Jörg teilt den
-   aktuellen Wert dem jeweiligen Chat direkt mit.
+   Antwort kurz bestätigen (z. B. "Anfrage #123 angelegt, wartet auf deine
+   Freigabe") — die `appointmentId` merken, Schritt 2 braucht sie.
+2. **Freigabe-Zuruf** ("passt, gib frei" / "gib frei und kopiere in Raum
+   2"):
+   ```bash
+   curl -sS -X POST 'https://spiritual-touch.de/wp-json/st/v1/booking-dispatch-confirm' \
+     -H 'Content-Type: application/json' \
+     -H 'X-ST-Dispatch-Secret: <von Jörg mitgeteilter Wert>' \
+     -d '{"appointmentId":123,"room":2}'
+   ```
+3. Bei einem Fehler immer die `error`/`detail`-Felder wörtlich an Jörg
+   zurückmelden statt zu raten — beide Handler geben bei jedem Fehlschritt
+   gezielt Diagnosedaten mit.
+   `ST_DISPATCH_SECRET` steht nicht im Repo (Secret, siehe Abschnitt
+   "Geheimnisse" ganz unten) — Jörg teilt den aktuellen Wert dem
+   jeweiligen Chat direkt mit.
 
 ### ⚠️ Noch nicht live verifiziert: Anlegen-Payload
 
@@ -218,7 +290,33 @@ gesetzt) raus, solange das Problem besteht. Deckt **nicht** ab, ob der
 Anlegen-Payload selbst noch zu Amelias Schema passt (das würde einen
 Schreibtest brauchen, bewusst nicht automatisch, um nicht ungewollt
 Testtermine zu erzeugen) — nur, ob die Grundvoraussetzung (Admin-Session,
-Nonce) noch steht.
+Nonce) noch steht. Dieselbe Voraussetzung nutzt auch die Freigabe in
+`/booking-dispatch-confirm` (Stufe 2) — ein grüner Health-Check deckt also
+beide Dispatch-Routen ab. Die Raum-Kopie (Apps Script, `copyToRoom`) läuft
+technisch unabhängig davon und wird von diesem Health-Check nicht geprüft.
+
+## Geheimnisse & Konfigurationswerte — Referenz
+
+Namen, Zweck und Fundort aller Werte, die für Dispatch gebraucht werden —
+**ohne echte Werte**, die dokumentiert Jörg bewusst an anderer Stelle
+(siehe seine Entscheidung vom 18.09.2026: Repo-Historie ist praktisch
+unlöschbar, siehe der Datenbank-Sicherheitshinweis ganz oben im
+Haupt-README). Wer einen Wert braucht, fragt Jörg im jeweiligen Chat
+danach.
+
+| Name | Zweck | Datei/Konstante |
+|---|---|---|
+| Dispatch-Geheimnis (Claude → WordPress) | Header `X-ST-Dispatch-Secret` bei `/booking-dispatch` und `/booking-dispatch-confirm` | `ST_DISPATCH_SECRET` in `wordpress/buchungs-dashboard/wpcode-snippet.php` |
+| Reschedule-Geheimnis (Apps Script → WordPress) | Header `X-ST-Reschedule-Secret` bei `/booking-reschedule` | `ST_RESCHEDULE_SECRET` in `wpcode-snippet.php`, muss exakt `WP_RESCHEDULE_SECRET` in `apps-script/raum-einladung-sync/Code.gs` **und** `team-app/App Script` entsprechen |
+| Admin-Nutzer-ID für Server-zu-Server-Aufrufe | `wp_set_current_user()` für Nonce-Scraping ohne echten Browser-Login (Reschedule + Dispatch) | `ST_RESCHEDULE_ADMIN_USER_ID` in `wpcode-snippet.php` |
+| Raum-Kopie-Geheimnis (WordPress → Apps Script) | Feld `secret` bei Aktion `copyToRoom` | `ST_APPS_SCRIPT_DISPATCH_SECRET` in `wpcode-snippet.php`, muss exakt `DISPATCH_ROOM_SECRET` in `team-app/App Script` entsprechen |
+| Apps-Script-Web-App-URL (Team-App-Backend) | Ziel für den `copyToRoom`-Aufruf | `ST_APPS_SCRIPT_URL` in `wpcode-snippet.php` — dieselbe `/exec`-URL, die die Team-App schon nutzt |
+| Alarm-Empfänger | Ziel der Health-Check-Warnmail | `ST_DISPATCH_ALERT_EMAIL` in `wpcode-snippet.php` (aktuell Jörgs Adresse, kein Secret) |
+
+Jede Konstante trägt im Code selbst einen Platzhalter
+(`DEIN-ZUFAELLIGES-PASSWORT-HIER…` bzw. `BITTE-EXEC-URL-EINTRAGEN`) —
+solange der noch drinsteht, ist die jeweilige Route nicht einsatzbereit
+(die Handler erkennen das teils selbst, z. B. `apps_script_not_configured`).
 
 ## Nicht Teil dieses Bausteins (mögliche nächste Schritte)
 

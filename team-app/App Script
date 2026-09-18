@@ -21,6 +21,20 @@
 // geben" statt änderbar zu sein — auf Jörgs Wunsch ("die eigene
 // Änderungsmöglichkeit [muss] gegeben sein") jetzt per Fallback lösbar,
 // siehe rescheduleAppointment() unten.
+//
+// 18.09.2026: Aktion "copyToRoom" ergänzt — Jörg hat den automatischen
+// Kopier-Mechanismus Hilfskalender → Raum-1-Kalender abgeschaltet ("zu
+// viel Chaos"). Neuer Ablauf: Anfragen laufen im Anfragenkalender ein,
+// der Coworking-Agent (siehe wordpress/buchungs-dashboard/README.md,
+// Abschnitt "Dispatch") gibt auf Zuruf frei — Amelia schreibt dann selbst
+// in den Hilfskalender der zuständigen Person, wie schon immer. Das
+// Kopieren in einen der drei Raumkalender bleibt aber ein bewusster,
+// manueller Schritt ("auf meinen Ruf"), den Jörg separat auslöst. Reiner
+// Google-Calendar-Vorgang, hat mit Amelia selbst nichts zu tun — deshalb
+// hier statt in wpcode-snippet.php. Eigenes Geheimnis (DISPATCH_ROOM_SECRET
+// unten), nicht der PIN-Weg der übrigen Aktionen: Aufrufer ist WordPress
+// (server-zu-server, siehe st_copy_to_room_calendar_() dort), kein
+// Teammitglied im Browser.
 
 const SHEET_ID = '11NHzH0TRGUvoIsl26C8uoxwo4W9JEIJuylzxkvc87_A';
 const CAL_ID   = 'c_ee44c7789562024b0ecb48ebe4d7b68bf09bceb26b28821a49ea7b05cd85c915@group.calendar.google.com';
@@ -75,10 +89,35 @@ const HELPER_CAL_IDS = {
   'Maxine':     'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com'
 };
 
+// Raumkalender 1/2/3 — identisch zu ROOM_CALENDAR_IDS in
+// apps-script/raum-einladung-sync/Code.gs (dort führende Quelle, hier nur
+// dupliziert, weil beide Apps-Script-Projekte getrennt bleiben, gleiches
+// Prinzip wie bei HELPER_CAL_IDS oben).
+const ROOM_CALENDAR_IDS = [
+  'c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18261794671a5@group.calendar.google.com', // Raum 1
+  'c_9b8f2fdac6c5649a399ef26ac1dc80569fe4d8a78111b4db0d59391336f32761@group.calendar.google.com', // Raum 2
+  'c_2eecd9c94fe4ebbabbc0997ef1aa97620bea9d17515070014d206c6409f2c897@group.calendar.google.com', // Raum 3
+];
+
+// Echtes Server-zu-Server-Geheimnis für die Aktion "copyToRoom" (Aufrufer:
+// WordPress, nicht der Browser) — analog WP_RESCHEDULE_SECRET oben, aber
+// eigener Wert und eigene Richtung. NICHT der SECRET-Konstante oben
+// gleichsetzen (die ist keine echte Legitimation, siehe deren Kommentar).
+const DISPATCH_ROOM_SECRET = 'DEIN-ZUFAELLIGES-PASSWORT-HIER-3';
+
 // ── Eintrittspunkt ──────────────────────────────────────
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+
+    // Eigener, PIN-loser Weg für den Coworking-Agenten (siehe
+    // DISPATCH_ROOM_SECRET oben) — Aufrufer ist WordPress, kein
+    // Teammitglied im Browser, deshalb vor dem normalen SECRET/PIN-Zweig.
+    if (data.action === 'copyToRoom') {
+      if (data.secret !== DISPATCH_ROOM_SECRET) return json({ok: false, error: 'unauthorized'});
+      return json(copyAppointmentToRoom_(data.appointmentId, data.room));
+    }
+
     if (data.secret !== SECRET) return json({error: 'unauthorized'});
 
     const member = getByPin(data.pin);
@@ -254,6 +293,67 @@ function rescheduleAppointment(name, appointmentId, oldDate, oldFrom, oldTo, dat
   } catch (err) {
     return json({ok: false, error: 'request_failed', detail: err.toString()});
   }
+}
+
+// Sucht einen Amelia-Termin (per Termin-ID, "Termin-ID:"-Zeile in der
+// Beschreibung — gleiche Konvention wie überall sonst) über ALLE bekannten
+// Hilfskalender hinweg und legt eine Kopie im gewünschten Raumkalender
+// (1/2/3) an. Ersatz für den am 18.09.2026 deaktivierten automatischen
+// Kopier-Mechanismus — Jörg löst das jetzt bewusst manuell per Zuruf an den
+// Coworking-Agenten aus, NACHDEM freigegeben wurde (erst dann steht der
+// Termin garantiert im Hilfskalender). Idempotent: legt keine zweite Kopie
+// an, wenn die Termin-ID im Zielraum schon existiert (z. B. bei
+// versehentlich doppeltem Zuruf).
+function copyAppointmentToRoom_(appointmentId, room) {
+  const roomIndex = Number(room) - 1;
+  if (!appointmentId || !(roomIndex >= 0 && roomIndex < ROOM_CALENDAR_IDS.length)) {
+    return {ok: false, error: 'missing_or_invalid_params', allowedRooms: [1, 2, 3]};
+  }
+
+  const roomCal = CalendarApp.getCalendarById(ROOM_CALENDAR_IDS[roomIndex]);
+  if (!roomCal) {
+    return {ok: false, error: 'room_calendar_not_found', room: Number(room)};
+  }
+
+  const now = new Date();
+  const scanStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const scanEnd = new Date(now.getTime() + 200 * 24 * 60 * 60 * 1000);
+  const idRegex = /Termin-ID:\s*(\d+)/i;
+
+  const alreadyThere = roomCal.getEvents(scanStart, scanEnd).some(ev => {
+    const m = (ev.getDescription() || '').match(idRegex);
+    return m && m[1] === String(appointmentId);
+  });
+  if (alreadyThere) {
+    return {ok: true, alreadyCopied: true, appointmentId: appointmentId, room: Number(room)};
+  }
+
+  let source = null;
+  for (const name in HELPER_CAL_IDS) {
+    const cal = CalendarApp.getCalendarById(HELPER_CAL_IDS[name]);
+    if (!cal) continue;
+    const found = cal.getEvents(scanStart, scanEnd).find(ev => {
+      const m = (ev.getDescription() || '').match(idRegex);
+      return m && m[1] === String(appointmentId);
+    });
+    if (found) {
+      source = found;
+      break;
+    }
+  }
+  if (!source) {
+    return {
+      ok: false,
+      error: 'appointment_not_found_in_any_hilfskalender',
+      appointmentId: appointmentId,
+      hint: 'Termin muss vorher freigegeben sein (steht erst dann im Hilfskalender).',
+    };
+  }
+
+  const copy = roomCal.createEvent(source.getTitle(), source.getStartTime(), source.getEndTime(), {
+    description: source.getDescription(),
+  });
+  return {ok: true, appointmentId: appointmentId, room: Number(room), roomEventId: copy.getId()};
 }
 
 // Wandelt ein Datum+Uhrzeit-Paar in Berliner Ortszeit (aus dem Formular

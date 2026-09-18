@@ -118,8 +118,19 @@
  *                 ST_DISPATCH_ALERT_EMAIL schickt — genau die von Jörg
  *                 gewünschte "Check-Routine, die mich benachrichtigt, wenn
  *                 irgendwas nicht funktioniert".
+ *   2026-09-18.2  Dispatch in zwei Stufen aufgeteilt (Jörgs Wunsch, um den
+ *                 Coworking-Agenten erst ein paar Wochen zu testen, bevor
+ *                 er direkt freigibt): /booking-dispatch legt jetzt per
+ *                 Default als "pending" an (nur noch bei explizitem
+ *                 status:"approved" sofort freigegeben). Neue Route
+ *                 /booking-dispatch-confirm gibt danach separat frei und
+ *                 kopiert optional in einen Raumkalender (Raum 1/2/3) —
+ *                 reiner Google-Calendar-Vorgang ohne Amelia-Bezug (Jörg
+ *                 hat den automatischen Kopier-Mechanismus abgeschaltet,
+ *                 "zu viel Chaos"), delegiert an die neue Aktion
+ *                 "copyToRoom" im schon laufenden team-app/App Script.
  */
-define('ST_BD_VERSION', '2026-09-18.1');
+define('ST_BD_VERSION', '2026-09-18.2');
 
 /**
  * ST Buchungs-Dashboard
@@ -569,6 +580,19 @@ define('ST_DISPATCH_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER-2');
 define('ST_DISPATCH_ALERT_EMAIL', 'joerg@spiritual-touch.de');
 
 /**
+ * Für /booking-dispatch-confirm, Schritt "Raum kopieren" (siehe README,
+ * Abschnitt "Dispatch"): reiner Google-Calendar-Vorgang, den WordPress an
+ * das bereits laufende Apps-Script-Projekt "team-app/App Script" delegiert
+ * (Aktion "copyToRoom" dort). ST_APPS_SCRIPT_URL ist dieselbe /exec-URL,
+ * die dieses Projekt schon für die Team-App-Backend-Anbindung nutzt — keine
+ * neue Apps-Script-Bereitstellung nötig, nur die neue Aktion darin.
+ * ST_APPS_SCRIPT_DISPATCH_SECRET MUSS exakt DISPATCH_ROOM_SECRET dort
+ * entsprechen.
+ */
+define('ST_APPS_SCRIPT_URL', 'https://script.google.com/macros/s/BITTE-EXEC-URL-EINTRAGEN/exec');
+define('ST_APPS_SCRIPT_DISPATCH_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER-3');
+
+/**
  * Baut das komplette Termin-Objekt für eine NEUE Amelia-Anfrage (Gegenstück
  * zu st_build_reassign_payload_(), die einen BESTEHENDEN Termin umschreibt).
  * Anders als bei den Ändern-Routen gibt es hier keine echte Amelia-Anfrage,
@@ -823,6 +847,15 @@ add_action('rest_api_init', function () {
         'permission_callback' => $dispatch_secret_ok,
     ]);
 
+    // Zweite Stufe des Dispatch-Ablaufs (siehe README): gibt eine per
+    // /booking-dispatch als "pending" angelegte Anfrage frei und kopiert sie
+    // optional in einen Raumkalender ("Gib frei und kopiere in Raum 2").
+    register_rest_route('st/v1', '/booking-dispatch-confirm', [
+        'methods' => 'POST',
+        'callback' => 'st_booking_dispatch_confirm_handler',
+        'permission_callback' => $dispatch_secret_ok,
+    ]);
+
     // Rein lesender Health-Check derselben Brücke, siehe
     // st_dispatch_healthcheck_() — läuft automatisch per Cron, ist aber auch
     // manuell abrufbar (Browser als Admin, oder mit demselben Geheimnis).
@@ -938,7 +971,12 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     $date = (string) $request->get_param('date');
     $time = (string) $request->get_param('time');
     $customer_in = (array) ($request->get_param('customer') ?: []);
-    $status = (string) ($request->get_param('status') ?: 'approved');
+    // Standard bewusst "pending", nicht "approved": Jörgs Testphasen-Ablauf
+    // (siehe README, Abschnitt "Dispatch") ist erst "Anfrage anlegen, im
+    // Dashboard prüfen", dann per separatem /booking-dispatch-confirm
+    // freigeben — der Agent muss "approved" nur dann übergeben, wenn Jörg
+    // es in derselben Nachricht ausdrücklich sagt (z. B. "gib direkt frei").
+    $status = (string) ($request->get_param('status') ?: 'pending');
     $internal_notes = (string) ($request->get_param('internalNotes') ?: '');
 
     if (!$service_id || !$provider_id || !$date || !$time) {
@@ -1037,6 +1075,78 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         'amelia_create_response' => $result['data'],
         'amelia_approve_response' => $approve_response,
     ], 200);
+}
+
+/**
+ * Zweite Stufe des Dispatch-Ablaufs: gibt eine bestehende Anfrage frei
+ * (derselbe bereits bewährte /appointments/status-Aufruf wie
+ * st_booking_approve_handler) und kopiert sie optional in einen
+ * Raumkalender. Die Raum-Kopie ist reiner Google-Calendar-Vorgang und läuft
+ * über st_copy_to_room_calendar_() -> Apps-Script-Aktion "copyToRoom" — hat
+ * mit Amelia nichts zu tun, siehe README, Abschnitt "Dispatch".
+ */
+function st_booking_dispatch_confirm_handler(WP_REST_Request $request) {
+    $id = (int) $request->get_param('appointmentId');
+    $room_param = $request->get_param('room');
+
+    if (!$id) {
+        return new WP_REST_Response(['error' => 'missing_appointment_id'], 400);
+    }
+    $room = null;
+    if ($room_param !== null && $room_param !== '') {
+        $room = (int) $room_param;
+        if (!in_array($room, [1, 2, 3], true)) {
+            return new WP_REST_Response(['error' => 'invalid_room', 'allowed' => [1, 2, 3]], 400);
+        }
+    }
+
+    $approve_result = st_amelia_ajax_call_('POST', '/appointments/status/' . $id, [], ['status' => 'approved']);
+    if (is_wp_error($approve_result)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $approve_result->get_error_message(), 'debug' => $approve_result->get_error_data()], 502);
+    }
+
+    $room_result = null;
+    if ($room !== null) {
+        $room_result = st_copy_to_room_calendar_($id, $room);
+    }
+
+    return new WP_REST_Response([
+        'ok' => true,
+        'appointmentId' => $id,
+        'amelia_response' => $approve_result['data'],
+        'room_copy' => $room_result,
+    ], $approve_result['code'] ?: 200);
+}
+
+/**
+ * Delegiert den Raum-Kopier-Schritt an die Apps-Script-Aktion "copyToRoom"
+ * (team-app/App Script) — reiner Google-Calendar-Vorgang, kein
+ * Amelia-Request. Gibt bei fehlender Konfiguration oder Fehler ein
+ * strukturiertes ok:false zurück statt eine Exception zu werfen, damit
+ * st_booking_dispatch_confirm_handler die Freigabe (bereits gelaufen) auch
+ * dann korrekt melden kann, wenn nur die Raum-Kopie scheitert.
+ */
+function st_copy_to_room_calendar_($appointment_id, $room) {
+    if (strpos(ST_APPS_SCRIPT_URL, 'BITTE-') !== false) {
+        return ['ok' => false, 'error' => 'apps_script_not_configured', 'detail' => 'ST_APPS_SCRIPT_URL ist noch nicht gesetzt.'];
+    }
+
+    $response = wp_remote_post(ST_APPS_SCRIPT_URL, [
+        'timeout' => 20,
+        'headers' => ['Content-Type' => 'application/json'],
+        'body' => wp_json_encode([
+            'action' => 'copyToRoom',
+            'secret' => ST_APPS_SCRIPT_DISPATCH_SECRET,
+            'appointmentId' => $appointment_id,
+            'room' => $room,
+        ]),
+    ]);
+    if (is_wp_error($response)) {
+        return ['ok' => false, 'error' => 'apps_script_unreachable', 'detail' => $response->get_error_message()];
+    }
+
+    $data = json_decode(wp_remote_retrieve_body($response), true);
+    return is_array($data) ? $data : ['ok' => false, 'error' => 'unexpected_apps_script_response', 'raw' => wp_remote_retrieve_body($response)];
 }
 
 function st_booking_availability_handler(WP_REST_Request $request) {
