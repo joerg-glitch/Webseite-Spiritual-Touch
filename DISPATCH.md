@@ -50,17 +50,17 @@ Schritt 3 unten.
 
 Fehlt etwas davon, fragt Claude kurz nach, statt zu raten.
 
-## ⚠️ Aktuelle Einschränkung: nur für bereits existierende Kunden
+## ⚠️ Neue Kunden: meist ok, aber noch nicht zuverlässig bestätigt
 
-Der Kunde muss in Amelia schon existieren (wird über die E-Mail
-gefunden). Ein wirklich neuer Kunde kann über Dispatch noch **nicht**
-automatisch angelegt werden — Amelia wirft dabei einen eigenen,
-noch ungelösten Fehler (Stand 18.09.2026). Bei einem neuen Kunden:
-entweder kurz selbst in Amelia anlegen (Kunden → Neuer Kunde, gleiche
-E-Mail) und Dispatch danach wiederholen, oder Claude Bescheid sagen —
-dann wird nichts angelegt, sondern nur gemeldet, dass der Kunde fehlt.
-(Eine automatische Lösung dafür ist offen, siehe
-`wordpress/buchungs-dashboard/README.md`, Abschnitt "Dispatch".)
+Ein neuer Kunde (noch nicht in Amelia) wird beim Anlegen automatisch mit
+angelegt — das hat in einem Test bereits funktioniert. In zwei anderen
+Tests ist es aber mit einem Amelia-eigenen Fehler fehlgeschlagen (Stand
+18.09.2026, Ursache noch nicht sicher geklärt — siehe
+`wordpress/buchungs-dashboard/README.md`, Abschnitt "Dispatch"). Schlägt
+ein Versuch fehl: nicht einfach nochmal versuchen. Entweder den Kunden
+einmal kurz selbst in Amelia anlegen (Kunden → Neuer Kunde, gleiche
+E-Mail) und Dispatch danach wiederholen, oder Claude einfach den Fehler
+melden lassen.
 
 ## Ablauf, den Claude automatisch ausführt
 

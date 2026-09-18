@@ -184,8 +184,16 @@
  *                 "Freigeben" für Termin #116 schlug mit nonce_not_found
  *                 fehl — gleiches Fehlerbild wie der historische
  *                 21.08.2026-Bug, nur an neuer Stelle). Jetzt behoben.
+ *   2026-09-18.8  Fix (Live-Feedback): "gib direkt frei" legte bisher immer
+ *                 erst mit Status "pending" an und zog "approved" in einem
+ *                 zweiten, separaten Aufruf nach — das löste zwei
+ *                 Mitarbeiter-Mails aus (erst "neue Anfrage", dann
+ *                 "freigegeben") statt nur der einen Bestätigungsmail.
+ *                 st_build_create_payload_() bekommt den gewünschten Status
+ *                 jetzt direkt mit, kein Nachziehen mehr nötig — eine
+ *                 einzige Mail bei sofortiger Freigabe.
  */
-define('ST_BD_VERSION', '2026-09-18.7');
+define('ST_BD_VERSION', '2026-09-18.8');
 
 /**
  * ST Buchungs-Dashboard
@@ -692,8 +700,19 @@ function st_service_duration_options_($service) {
  * Payload (README, "Payload-Form") enthält im Booking-Objekt selbst kein
  * price-Feld — Amelia berechnet den Preis serverseitig aus serviceId +
  * duration (inkl. customPricing-Zuordnung) neu, das reicht.
+ *
+ * $booking_status: "pending" oder "approved" — geht direkt so ins Booking-
+ * Objekt. Fix 18.09.2026 (Live-Feedback): ursprünglich wurde hier immer
+ * "pending" gesetzt und ein gewünschtes "approved" erst in einem zweiten,
+ * separaten /appointments/status-Aufruf nachgezogen — das löste bei
+ * sofortiger Freigabe ZWEI Mitarbeiter-Mails aus (erst "neue Anfrage", dann
+ * "freigegeben") statt nur der einen Bestätigungsmail. Amelia unterstützt
+ * "approved" direkt beim Anlegen nachweislich (manche Services haben
+ * bereits defaultAppointmentStatus:"approved", z. B. das kostenlose
+ * Kennenlern-Gespräch) — deshalb jetzt direkt den gewünschten Status
+ * mitgeben, kein Nachziehen mehr nötig.
  */
-function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes, $duration_seconds) {
+function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes, $duration_seconds, $booking_status) {
     $booking = [
         'coupon' => ['id' => null],
         'customFields' => new stdClass(),
@@ -701,12 +720,7 @@ function st_build_create_payload_($service, $provider_id, $date, $time, $existin
         'extras' => [],
         'packageCustomerService' => null,
         'persons' => 1,
-        // Bewusst immer erst "pending" anlegen, unabhängig vom gewünschten
-        // Endstatus — die eigentliche Freigabe läuft danach über den
-        // separaten, bereits live bewährten /appointments/status-Aufruf
-        // (st_booking_approve_handler), statt zu hoffen, dass "status:
-        // approved" direkt beim Anlegen dieselben Nebeneffekte auslöst.
-        'status' => 'pending',
+        'status' => $booking_status,
     ];
     if ($existing_customer_id) {
         $booking['customerId'] = $existing_customer_id;
@@ -1190,7 +1204,8 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         $existing_customer_id ? (int) $existing_customer_id : null,
         ['firstName' => $first_name, 'lastName' => $last_name, 'email' => $email, 'phone' => $phone],
         $internal_notes,
-        $duration_seconds
+        $duration_seconds,
+        $status
     );
 
     $result = st_amelia_ajax_call_('POST', '/appointments', [], $payload);
@@ -1211,27 +1226,16 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         ], 502);
     }
 
-    $approve_response = null;
-    if ($status === 'approved') {
-        $approve_result = st_amelia_ajax_call_('POST', '/appointments/status/' . $new_id, [], ['status' => 'approved']);
-        if (is_wp_error($approve_result)) {
-            return new WP_REST_Response([
-                'ok' => true,
-                'appointmentId' => $new_id,
-                'status' => 'pending',
-                'warning' => 'created_but_approve_failed',
-                'detail' => $approve_result->get_error_message(),
-            ], 200);
-        }
-        $approve_response = $approve_result['data'];
-    }
-
+    // Kein separater Freigeben-Aufruf mehr nötig — $status steckt bereits
+    // im Anlegen-Payload (siehe st_build_create_payload_()). Vorher gab es
+    // hier einen zweiten /appointments/status-Aufruf, der bei sofortiger
+    // Freigabe eine zusätzliche, unerwünschte "neue Anfrage"-Mail an die
+    // Mitarbeiter:innen auslöste (Live-Feedback 18.09.2026).
     return new WP_REST_Response([
         'ok' => true,
         'appointmentId' => $new_id,
         'status' => $status,
         'amelia_create_response' => $result['data'],
-        'amelia_approve_response' => $approve_response,
     ], 200);
 }
 

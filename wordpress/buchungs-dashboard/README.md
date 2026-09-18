@@ -278,25 +278,41 @@ Erster echter Test (Termin #116, Tim Metzger, Stephanie, 22.09. 18:00,
   innerhalb `data` noch nicht dokumentiert, siehe TODO unten). Kategorie,
   Service inkl. Dauer/Preis-Variante (`durationSeconds`, siehe oben),
   Mitarbeiter:in und Zeit kamen alle korrekt an.
-- ❌ **Neuer Kunde (eingebettetes `"customer"`-Objekt statt `customerId`):
-  funktioniert NICHT.** Amelia antwortet mit einem eigenen SQL-Fehler
-  (`AmeliaBooking\Infrastructure\Repository\AbstractRepository`, "You have
-  an error in your SQL syntax ... near ')' at line 2") — die Vermutung, dass
-  der Aktualisieren-Endpunkt auch einen neuen Kunden inline anlegt, war so
-  **falsch**. `/booking-dispatch` braucht deshalb bis auf Weiteres einen in
-  Amelia **bereits existierenden** Kunden (per E-Mail gefunden) — bei einem
-  wirklich neuen Kunden schlägt die Anfrage fehl.
+- ⚠️ **Neuer Kunde (eingebettetes `"customer"`-Objekt statt `customerId`):
+  uneindeutig, zwei widersprüchliche Ergebnisse.**
+  - Erster Test (Tim Metzger, `me-tim@gmx.net`): Amelia antwortete mit
+    einem eigenen SQL-Fehler (`AmeliaBooking\Infrastructure\Repository\
+    AbstractRepository`, "You have an error in your SQL syntax ... near
+    ')' at line 2").
+  - Zweiter Test, selbe E-Mail-Adresse `joerg@spiritual-touch.de` wie ein
+    **bestehender Mitarbeiter-Account** (Jörg selbst, `amelia_users.id=1,
+    type=provider`): derselbe SQL-Fehler.
+  - Dritter Test, komplett neue E-Mail `kontakt@joerg-saur.de` (keine
+    Kollision mit einem bestehenden Account): **erfolgreich**, Kunde
+    wurde angelegt.
 
-**Workaround, bis das behoben ist:** Neuen Kunden einmal manuell in Amelia
-anlegen (Kunden → Neuer Kunde, gleiche E-Mail wie in der Dispatch-Nachricht),
-danach funktioniert `/booking-dispatch` für ihn wie gewohnt über die
-`customerId`-Zuordnung.
+  **Arbeitshypothese (nicht bestätigt):** Der Fehler tritt evtl. nur auf,
+  wenn die E-Mail bereits irgendwo in `amelia_users` existiert (auch unter
+  `type=provider`), nicht bei einer wirklich neuen Adresse — würde
+  erklären, warum Test 2 (Kollision mit dem eigenen Mitarbeiter-Account)
+  fehlschlug, Test 3 (garantiert neu) aber klappte. **Erklärt aber
+  nicht**, warum auch Test 1 (Tim Metzger, `me-tim@gmx.net`, keine
+  bekannte Kollision) fehlschlug. Rohdaten von Test 3 (erfolgreiche
+  `amelia_response`) liegen noch nicht vor — würden helfen, das zu klären.
 
-**TODO für eine echte Neu-Kunden-Unterstützung:** DevTools-Mitschnitt, wie
+  **Vorsichtiger Umgang bis geklärt:** Bei einem neuen Kunden zunächst
+  davon ausgehen, dass es klappen KANN, aber bei einem `amelia_rejected_
+  create`-Fehler nicht wiederholt blind erneut versuchen — Jörg Bescheid
+  geben. Workaround, falls es fehlschlägt: Kunden einmal manuell in Amelia
+  anlegen (Kunden → Neuer Kunde, gleiche E-Mail), danach funktioniert
+  `/booking-dispatch` für ihn über die `customerId`-Zuordnung.
+
+**TODO für eine geklärte Neu-Kunden-Unterstützung:** entweder Rohdaten
+eines weiteren erfolgreichen/fehlgeschlagenen Versuchs sammeln, um die
+Hypothese oben zu bestätigen/widerlegen, oder ein DevTools-Mitschnitt, wie
 Amelias eigene Oberfläche einen neuen Kunden beim Anlegen eines Termins
-anlegt (Option, die beim ersten Test bewusst zurückgestellt wurde) — exakt
-dieselbe Methode, mit der auch alle anderen Schreib-Aktionen hier gebaut
-wurden, siehe "Payload-Form" unten.
+anlegt — exakt dieselbe Methode, mit der auch alle anderen Schreib-
+Aktionen hier gebaut wurden, siehe "Payload-Form" unten.
 
 ### Stufe 2 (Freigeben) — live bestätigt (18.09.2026)
 
@@ -325,6 +341,24 @@ prüft diesen Pfad bereits als ersten Kandidaten, passt also.
 **Noch nicht getestet:** die Raum-Kopie (`room`-Parameter, Apps-Script-
 Aktion `copyToRoom`) — braucht ein separat deploytes `team-app/App Script`
 mit den echten Secrets.
+
+### Fix: sofortige Freigabe löste zwei Mitarbeiter-Mails aus (18.09.2026)
+
+Live-Feedback: Bei `status: "approved"` legte `/booking-dispatch`
+ursprünglich immer erst mit Status "pending" an (löst Amelias "neue
+Anfrage"-Mail an die Mitarbeiter:innen aus) und zog die Freigabe danach in
+einem zweiten, separaten `/appointments/status`-Aufruf nach (löst eine
+zweite, eigene "freigegeben"-Mail aus) — zwei Mails statt einer. Die
+ursprüngliche Vorsicht dahinter ("nicht sicher, ob 'approved' direkt beim
+Anlegen dieselben Nebeneffekte auslöst wie der separate, bewährte
+Freigeben-Aufruf") ist durch Amelias eigenes Verhalten entkräftet: manche
+Services (z. B. das kostenlose Kennenlern-Gespräch) haben in ihren
+`settings` bereits `defaultAppointmentStatus: "approved"` — Amelia legt
+also nachweislich auch direkt mit "approved" an. Fix:
+`st_build_create_payload_()` bekommt den gewünschten Status jetzt direkt
+als Parameter, `st_booking_dispatch_handler()` macht keinen zweiten Aufruf
+mehr. Bei sofortiger Freigabe geht jetzt nur noch die eine
+Bestätigungsmail raus.
 
 ### Health-Check & Benachrichtigung bei Ausfall
 
