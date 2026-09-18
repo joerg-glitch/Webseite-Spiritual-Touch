@@ -172,8 +172,20 @@
  *                 Parameter unverändertes Verhalten (Basis-Dauer). Kein
  *                 eigener price-Wert im Anlegen-Payload nötig — Amelia
  *                 berechnet ihn serverseitig aus serviceId+duration neu.
+ *   2026-09-18.7  Fix: st_booking_dispatch_confirm_handler() (Stufe 2) rief
+ *                 st_amelia_ajax_call_() auf, OHNE vorher
+ *                 wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID) zu
+ *                 setzen — anders als /booking-dispatch (Stufe 1) und
+ *                 /booking-reschedule, die das schon korrekt taten. Ohne
+ *                 gesetzten current_user liefert st_forward_cookies_() den
+ *                 fehlenden /wp-admin-Cookie für niemanden, WordPress gab
+ *                 beim Nonce-Scraping die Login-Seite statt der echten
+ *                 Amelia-Bookings-Seite zurück (Live-Test 18.09.2026,
+ *                 "Freigeben" für Termin #116 schlug mit nonce_not_found
+ *                 fehl — gleiches Fehlerbild wie der historische
+ *                 21.08.2026-Bug, nur an neuer Stelle). Jetzt behoben.
  */
-define('ST_BD_VERSION', '2026-09-18.6');
+define('ST_BD_VERSION', '2026-09-18.7');
 
 /**
  * ST Buchungs-Dashboard
@@ -1245,6 +1257,18 @@ function st_booking_dispatch_confirm_handler(WP_REST_Request $request) {
             return new WP_REST_Response(['error' => 'invalid_room', 'allowed' => [1, 2, 3]], 400);
         }
     }
+
+    // Fix 18.09.2026 (erster Live-Test): fehlte hier, war aber in
+    // /booking-dispatch (Stufe 1) und /booking-reschedule bereits korrekt
+    // gesetzt. Ohne wp_set_current_user() liefert get_current_user_id() in
+    // st_forward_cookies_() 0 — der fehlende /wp-admin-Cookie wird dann für
+    // NIEMANDEN erzeugt, WordPress lieferte die Login-Seite statt der
+    // echten Amelia-Bookings-Seite zurück (Nonce-Scraping schlug fehl,
+    // gleiches Fehlerbild wie der historische 21.08.2026-Bug).
+    if (!ST_RESCHEDULE_ADMIN_USER_ID) {
+        return new WP_REST_Response(['error' => 'not_configured', 'detail' => 'ST_RESCHEDULE_ADMIN_USER_ID ist noch nicht gesetzt (siehe Kommentar im Code) — wird auch von /booking-dispatch-confirm für die Admin-Session gebraucht.'], 500);
+    }
+    wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID);
 
     $approve_result = st_amelia_ajax_call_('POST', '/appointments/status/' . $id, [], ['status' => 'approved']);
     if (is_wp_error($approve_result)) {
