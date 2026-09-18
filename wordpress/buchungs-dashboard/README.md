@@ -118,6 +118,108 @@ und `amelia_services`. Damit lässt sich die SQL-Abfrage in `wpcode-snippet.php`
 in ein bis zwei Zeilen korrigieren — dasselbe Vorgehen, mit dem seinerzeit der
 Team-App-Login-Bug (`getActiveSheet()` statt festem Tab-Namen) gefunden wurde.
 
+## Dispatch: Coworking-Agent legt eine neue Anfrage direkt an
+
+**Anwendungsfall:** Eine Anfrage kommt außerhalb von Amelia rein (Telefon,
+WhatsApp, Mail). Statt das manuell in Amelia einzutragen, schickt Jörg einem
+Claude-Chat (Claude Code, mit Netzwerkzugriff) eine Nachricht mit Kategorie/
+Dienstleistung, Mitarbeiter:in, Datum/Uhrzeit und den Kundendaten — der
+Agent trägt es über `/booking-dispatch` direkt in Amelia ein und gibt es im
+selben Zug frei.
+
+**Route:** `POST /wp-json/st/v1/booking-dispatch`, abgesichert per
+gemeinsamem Geheimnis im Header `X-ST-Dispatch-Secret` (`ST_DISPATCH_SECRET`,
+eigener Wert, nicht identisch mit `ST_RESCHEDULE_SECRET`) — kein WP-Login
+vorhanden, da ein Chat-Agent aufruft, kein Browser. Nutzt für die
+Amelia-Session intern dieselbe `ST_RESCHEDULE_ADMIN_USER_ID` wie
+`/booking-reschedule`.
+
+Body:
+```json
+{
+  "serviceId": 33,
+  "providerId": 7,
+  "date": "2026-09-25",
+  "time": "14:00",
+  "status": "approved",
+  "customer": {
+    "firstName": "Anna",
+    "lastName": "Beispiel",
+    "email": "anna@beispiel.de",
+    "phone": "+49 151 23456789"
+  },
+  "internalNotes": "z. B. Herkunft der Anfrage (WhatsApp/Telefon)"
+}
+```
+
+`serviceId`/`providerId` sind Amelia-IDs — der Agent löst Jörgs
+Klartext-Angaben ("Kategorie X", "Mitarbeiter Y") vorher über die
+schon vorhandene, rein lesende Route `/amelia-reference` (Kategorien,
+Dienstleistungen mit Kategorie-ID, Mitarbeiter mit Name) in IDs auf.
+`status` ist `"approved"` (legt an **und** gibt sofort frei, löst Amelias
+Bestätigungsmail aus) oder `"pending"` (nur anlegen). Ein Kunde mit
+gleicher E-Mail wird wiederverwendet statt dupliziert.
+
+### Für den Claude-Chat, der die Dispatch-Nachricht bekommt
+
+1. Aus Jörgs Nachricht Kategorie/Dienstleistung + Mitarbeiter:in in IDs
+   auflösen: `GET /wp-json/st/v1/amelia-reference` (Admin-Session oder
+   `X-ST-Dispatch-Secret`-Header) liefert Kategorien, Dienstleistungen
+   (mit `categoryId`) und Mitarbeiter mit Klarnamen.
+2. Dann:
+   ```bash
+   curl -sS -X POST 'https://spiritual-touch.de/wp-json/st/v1/booking-dispatch' \
+     -H 'Content-Type: application/json' \
+     -H 'X-ST-Dispatch-Secret: <von Jörg mitgeteilter Wert>' \
+     -d '{"serviceId":33,"providerId":7,"date":"2026-09-25","time":"14:00","status":"approved","customer":{"firstName":"Anna","lastName":"Beispiel","email":"anna@beispiel.de","phone":"+49 151 23456789"}}'
+   ```
+3. Antwort mit `"ok": true` und einer `appointmentId` an Jörg bestätigen
+   (kurz, z. B. "Termin #123 angelegt und freigegeben"). Bei einem Fehler
+   die `error`/`detail`-Felder wörtlich zurückmelden statt zu raten — der
+   Handler gibt bei jedem Fehlschritt gezielt Diagnosedaten mit.
+   `ST_DISPATCH_SECRET` steht nicht im Repo (Secret) — Jörg teilt den
+   aktuellen Wert dem jeweiligen Chat direkt mit.
+
+### ⚠️ Noch nicht live verifiziert: Anlegen-Payload
+
+Alle anderen Schreib-Aktionen in dieser Datei (Freigeben, Zuweisen,
+Verschieben) wurden erst per DevTools-Mitschnitt einer echten Amelia-
+Aktion gebaut, dann live getestet (siehe Abschnitt "Smart Freigeben" unten
+für die Methode). Für **komplett neue** Anfragen gibt es diesen Mitschnitt
+noch nicht — `st_build_create_payload_()` in `wpcode-snippet.php` ist eine
+begründete Ableitung aus dem bekannten "Aktualisieren"-Payload (siehe
+"Payload-Form" unten), nicht bestätigt:
+
+- Unklar, ob `POST admin-ajax.php?action=wpamelia_api&call=/appointments`
+  (ohne ID) tatsächlich der richtige Endpunkt fürs Neu-Anlegen ist.
+- Unklar, ob ein neuer Kunde wirklich per eingebettetem `"customer"`-Objekt
+  im Booking (statt `customerId`) angelegt wird, und ob die erwarteten
+  Feldnamen stimmen.
+- Unklar, in welcher Form die neue Termin-ID in der Antwort steckt —
+  `st_extract_new_appointment_id_()` probiert mehrere plausible Pfade.
+
+**Vor dem ersten echten Einsatz:** Einmal eine Test-Anfrage über
+`/booking-dispatch` mit `status: "pending"` schicken (keine Bestätigungsmail),
+das Ergebnis prüfen (`ok`/`error`, in Amelia nachsehen, ob wirklich ein
+Termin + Kunde angelegt wurden) und bei einem Fehler mit den mitgelieferten
+Diagnosedaten (`amelia_response`, `payload_sent`) nachbessern lassen — exakt
+derselbe Iterationsweg, mit dem auch die anderen Routen hier fertig gebaut
+wurden.
+
+### Health-Check & Benachrichtigung bei Ausfall
+
+`GET /wp-json/st/v1/booking-dispatch-healthcheck` prüft rein lesend, ob das
+Nonce-Scraping (`st_scrape_amelia_nonce_()`) noch funktioniert — genau die
+Stelle, die am 21.08.2026 schon einmal durch eine Amelia-/WordPress-
+Änderung kaputt ging. Ein WP-Cron-Job ruft das automatisch alle 6 Stunden
+auf; schlägt es fehl, geht höchstens einmal täglich eine Warn-Mail an
+`ST_DISPATCH_ALERT_EMAIL` (Jörgs Adresse, oben in `wpcode-snippet.php`
+gesetzt) raus, solange das Problem besteht. Deckt **nicht** ab, ob der
+Anlegen-Payload selbst noch zu Amelias Schema passt (das würde einen
+Schreibtest brauchen, bewusst nicht automatisch, um nicht ungewollt
+Testtermine zu erzeugen) — nur, ob die Grundvoraussetzung (Admin-Session,
+Nonce) noch steht.
+
 ## Nicht Teil dieses Bausteins (mögliche nächste Schritte)
 
 - Push-Benachrichtigung bei neuer Buchung (derzeit: Dashboard muss aktiv

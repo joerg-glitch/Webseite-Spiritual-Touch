@@ -98,8 +98,28 @@
  *                 Hilfskalender gilt als "zuletzt bekannter Amelia-
  *                 Stand". Einfacher (kein extra WordPress-Request nur
  *                 zum Lesen), deshalb die Route wieder raus.
+ *   2026-09-18.1  Neue Route /booking-dispatch: legt eine komplett neue
+ *                 Amelia-Anfrage an (Service/Mitarbeiter/Zeit/Kundendaten
+ *                 aus einer Coworking-Chat-Nachricht) und gibt sie im
+ *                 selben Zug frei — für Jörgs Anwendungsfall "Anfrage kam
+ *                 rein (Telefon/WhatsApp/Mail), ich sage es einem
+ *                 Claude-Chat, der trägt es in Amelia ein". Läuft über
+ *                 denselben bewährten wpamelia_api-Weg wie alle anderen
+ *                 Schreib-Aktionen hier; die eigentliche Freigabe nutzt
+ *                 exakt den schon live getesteten /appointments/status-
+ *                 Aufruf aus st_booking_approve_handler. ⚠️ Der Payload
+ *                 fürs NEU-ANLEGEN (anders als Ändern/Freigeben) ist noch
+ *                 NICHT an einem echten Amelia-Request verifiziert — siehe
+ *                 README, Abschnitt "Dispatch", für den nötigen ersten
+ *                 Live-Test. Dazu neue Route /booking-dispatch-
+ *                 healthcheck (rein lesend, prüft nur das Nonce-Scraping)
+ *                 plus automatischer WP-Cron-Check alle 6 Stunden, der bei
+ *                 Fehlschlag einmal täglich eine Warn-Mail an
+ *                 ST_DISPATCH_ALERT_EMAIL schickt — genau die von Jörg
+ *                 gewünschte "Check-Routine, die mich benachrichtigt, wenn
+ *                 irgendwas nicht funktioniert".
  */
-define('ST_BD_VERSION', '2026-08-27.4');
+define('ST_BD_VERSION', '2026-09-18.1');
 
 /**
  * ST Buchungs-Dashboard
@@ -526,6 +546,171 @@ define('ST_RESCHEDULE_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER');
  */
 define('ST_RESCHEDULE_ADMIN_USER_ID', 0);
 
+/**
+ * Gemeinsames Passwort für /booking-dispatch (Coworking-Agent legt neue
+ * Anfrage per Chat-Nachricht an). Gleiches Prinzip wie ST_RESCHEDULE_SECRET
+ * oben: kein WordPress-Login vorhanden (ein Claude-Chat ruft server-zu-
+ * server auf), Absicherung per gemeinsamem Geheimnis im Header
+ * "X-ST-Dispatch-Secret". Nutzt für die eigentliche Amelia-Session dieselbe
+ * ST_RESCHEDULE_ADMIN_USER_ID oben (kein zweiter Admin-Account nötig — beide
+ * Routen brauchen nur "irgendeine echte, eingeloggte Admin-Identität" für
+ * st_forward_cookies_()/st_scrape_amelia_nonce_(), nichts Route-Spezifisches).
+ *
+ * ⚠️ WERT UNBEDINGT ÄNDERN, BEVOR DIESE ROUTE LIVE GEHT. Eigener,
+ * zufälliger String — NICHT identisch mit ST_RESCHEDULE_SECRET, damit ein
+ * Leak der einen Route nicht automatisch auch die andere kompromittiert.
+ */
+define('ST_DISPATCH_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER-2');
+
+/**
+ * Wohin die Warn-Mail geht, wenn der automatische Health-Check (siehe unten,
+ * st_run_dispatch_healthcheck_cron_) die Amelia-Brücke als kaputt erkennt.
+ */
+define('ST_DISPATCH_ALERT_EMAIL', 'joerg@spiritual-touch.de');
+
+/**
+ * Baut das komplette Termin-Objekt für eine NEUE Amelia-Anfrage (Gegenstück
+ * zu st_build_reassign_payload_(), die einen BESTEHENDEN Termin umschreibt).
+ * Anders als bei den Ändern-Routen gibt es hier keine echte Amelia-Anfrage,
+ * aus der sich das Payload-Format ableiten ließe — der Aufbau folgt so eng
+ * wie möglich dem bekannten "Aktualisieren"-Payload (siehe README), einfach
+ * ohne "id" (Neu-Anlage statt Update). Insbesondere der Zweig für einen NEUEN
+ * Kunden (kein customerId, stattdessen ein "customer"-Objekt direkt im
+ * Booking) ist eine begründete Vermutung, keine bestätigte Tatsache — siehe
+ * README, Abschnitt "Dispatch", für den nötigen ersten Live-Test.
+ */
+function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes) {
+    $booking = [
+        'coupon' => ['id' => null],
+        'customFields' => new stdClass(),
+        'duration' => (int) $service->duration,
+        'extras' => [],
+        'packageCustomerService' => null,
+        'persons' => 1,
+        // Bewusst immer erst "pending" anlegen, unabhängig vom gewünschten
+        // Endstatus — die eigentliche Freigabe läuft danach über den
+        // separaten, bereits live bewährten /appointments/status-Aufruf
+        // (st_booking_approve_handler), statt zu hoffen, dass "status:
+        // approved" direkt beim Anlegen dieselben Nebeneffekte auslöst.
+        'status' => 'pending',
+    ];
+    if ($existing_customer_id) {
+        $booking['customerId'] = $existing_customer_id;
+    } else {
+        // UNVERIFIZIERT (siehe Funktionskommentar oben): Vermutung, dass
+        // Amelias "Aktualisieren"-Endpunkt auch fürs Neu-Anlegen ein
+        // eingebettetes Kundenobjekt statt einer customerId akzeptiert.
+        $booking['customer'] = $customer;
+    }
+
+    return [
+        'bookings' => [$booking],
+        'bookingStart' => $date . ' ' . $time . ':00',
+        'categoryId' => (int) $service->categoryId,
+        'date' => $date,
+        'internalNotes' => $internal_notes,
+        'lessonSpace' => false,
+        'locationId' => null,
+        'notifyParticipants' => 1,
+        'providerId' => (int) $provider_id,
+        'recurring' => [],
+        'removedBookings' => [],
+        'serviceId' => (int) $service->id,
+        'time' => $time,
+        'createPaymentLinks' => true,
+    ];
+}
+
+/**
+ * Sucht die neue Termin-ID in Amelias Antwort auf den Anlegen-Request — an
+ * mehreren plausiblen Stellen, weil das genaue Antwortformat (wie der
+ * Anlegen-Payload selbst) noch nicht an einem echten Request verifiziert ist.
+ * Liefert null statt zu raten, wenn nichts Numerisches gefunden wird — der
+ * Handler gibt dann die komplette Rohantwort zurück, damit sich die Stelle
+ * beim ersten Live-Test in einer Zeile nachtragen lässt.
+ */
+function st_extract_new_appointment_id_($data) {
+    if (!is_array($data)) {
+        return null;
+    }
+    $candidates = [
+        $data['appointment']['id'] ?? null,
+        $data['data']['appointment']['id'] ?? null,
+        $data['data']['id'] ?? null,
+        $data['id'] ?? null,
+    ];
+    foreach ($candidates as $c) {
+        if (is_numeric($c)) {
+            return (int) $c;
+        }
+    }
+    return null;
+}
+
+/**
+ * Rein lesender Health-Check für die Amelia-Brücke: prüft nur, ob das
+ * Nonce-Scraping (st_scrape_amelia_nonce_()) noch funktioniert — genau die
+ * Stelle, die am 21.08.2026 schon einmal real kaputt ging (WordPress lieferte
+ * die Login-Seite statt der echten Amelia-Bookings-Seite). Verändert
+ * nirgends etwas, deshalb sicher für einen automatischen Cron-Lauf.
+ */
+function st_dispatch_healthcheck_() {
+    if (!ST_RESCHEDULE_ADMIN_USER_ID) {
+        return ['ok' => false, 'error' => 'not_configured', 'detail' => 'ST_RESCHEDULE_ADMIN_USER_ID ist nicht gesetzt.'];
+    }
+    wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID);
+
+    $ctx = st_scrape_amelia_nonce_();
+    if (is_wp_error($ctx)) {
+        return [
+            'ok' => false,
+            'error' => 'nonce_scrape_failed',
+            'detail' => $ctx->get_error_message(),
+            'debug' => $ctx->get_error_data(),
+        ];
+    }
+
+    return ['ok' => true, 'checkedAt' => current_time('mysql')];
+}
+
+// Automatischer Health-Check alle 6 Stunden — Jörgs ausdrücklicher Wunsch
+// ("Check-Routine einbauen, die mich benachrichtigt, wenn irgendwas nicht
+// funktioniert"), damit ein kaputtes Amelia-Update nicht erst auffällt, wenn
+// mitten in einer Dispatch-Nachricht ein Fehler kommt. Höchstens einmal pro
+// Tag eine Mail, solange der Fehler anhält (kein Nerv-Spam bei einem länger
+// offenen Problem), über die Option st_dispatch_last_alert_sent gemerkt.
+add_filter('cron_schedules', function ($schedules) {
+    $schedules['st_six_hours'] = ['interval' => 6 * HOUR_IN_SECONDS, 'display' => 'Alle 6 Stunden (ST)'];
+    return $schedules;
+});
+if (!wp_next_scheduled('st_dispatch_healthcheck_cron')) {
+    wp_schedule_event(time(), 'st_six_hours', 'st_dispatch_healthcheck_cron');
+}
+add_action('st_dispatch_healthcheck_cron', 'st_run_dispatch_healthcheck_cron_');
+function st_run_dispatch_healthcheck_cron_() {
+    $result = st_dispatch_healthcheck_();
+    if (!empty($result['ok'])) {
+        delete_option('st_dispatch_last_alert_sent');
+        return;
+    }
+
+    $last_sent = (int) get_option('st_dispatch_last_alert_sent');
+    if ($last_sent && (time() - $last_sent) < DAY_IN_SECONDS) {
+        return;
+    }
+
+    $subject = '⚠️ Amelia-Dispatch-Brücke funktioniert nicht mehr';
+    $body = "Der automatische Health-Check für die Amelia-Coworking-Anbindung (/booking-dispatch) ist fehlgeschlagen.\n\n"
+        . "Fehler: " . ($result['error'] ?? 'unbekannt') . "\n"
+        . "Detail: " . ($result['detail'] ?? '-') . "\n\n"
+        . "Wahrscheinliche Ursache: ein Amelia-Update oder eine Änderung an der Bookings-Seite hat das Nonce-Scraping kaputt gemacht (gleiches Fehlerbild wie am 21.08.2026).\n\n"
+        . "Bis zur Behebung funktionieren neue Dispatch-Anfragen NICHT. Diagnose: wordpress/buchungs-dashboard/wpcode-snippet.php, Route /amelia-bootstrap-debug bzw. ?debug=1 an /booking-overview.\n\n"
+        . "Diese Mail kommt höchstens 1x täglich, solange das Problem besteht.";
+
+    wp_mail(ST_DISPATCH_ALERT_EMAIL, $subject, $body);
+    update_option('st_dispatch_last_alert_sent', time());
+}
+
 add_action('rest_api_init', function () {
     $admin_only = function () {
         return current_user_can('manage_options');
@@ -537,6 +722,20 @@ add_action('rest_api_init', function () {
     $reschedule_secret_ok = function (WP_REST_Request $request) {
         $given = $request->get_header('x-st-reschedule-secret');
         return is_string($given) && hash_equals(ST_RESCHEDULE_SECRET, $given);
+    };
+
+    // Für /booking-dispatch: ruft ein Claude-Chat server-zu-server auf,
+    // ebenfalls kein WP-Login vorhanden — eigenes Geheimnis (nicht dasselbe
+    // wie beim Reschedule-Weg), damit die beiden Routen unabhängig
+    // voneinander rotiert werden können. Zusätzlich auch für einen
+    // eingeloggten Admin erlaubt (current_user_can), damit sich
+    // /booking-dispatch-healthcheck bequem direkt im Browser aufrufen lässt.
+    $dispatch_secret_ok = function (WP_REST_Request $request) {
+        if (current_user_can('manage_options')) {
+            return true;
+        }
+        $given = $request->get_header('x-st-dispatch-secret');
+        return is_string($given) && hash_equals(ST_DISPATCH_SECRET, $given);
     };
 
     register_rest_route('st/v1', '/booking-overview', [
@@ -612,6 +811,28 @@ add_action('rest_api_init', function () {
         'methods' => 'POST',
         'callback' => 'st_booking_reschedule_handler',
         'permission_callback' => $reschedule_secret_ok,
+    ]);
+
+    // Coworking-Agent legt eine komplett neue Anfrage an (siehe README,
+    // Abschnitt "Dispatch") und gibt sie im selben Zug frei. Aufrufer: ein
+    // Claude-Chat, kein Browser — daher Geheimnis statt Nonce/Session,
+    // genau wie bei /booking-reschedule.
+    register_rest_route('st/v1', '/booking-dispatch', [
+        'methods' => 'POST',
+        'callback' => 'st_booking_dispatch_handler',
+        'permission_callback' => $dispatch_secret_ok,
+    ]);
+
+    // Rein lesender Health-Check derselben Brücke, siehe
+    // st_dispatch_healthcheck_() — läuft automatisch per Cron, ist aber auch
+    // manuell abrufbar (Browser als Admin, oder mit demselben Geheimnis).
+    register_rest_route('st/v1', '/booking-dispatch-healthcheck', [
+        'methods' => 'GET',
+        'callback' => function (WP_REST_Request $request) {
+            $result = st_dispatch_healthcheck_();
+            return new WP_REST_Response($result, !empty($result['ok']) ? 200 : 502);
+        },
+        'permission_callback' => $dispatch_secret_ok,
     ]);
 });
 
@@ -699,6 +920,123 @@ function st_booking_approve_handler(WP_REST_Request $request) {
     }
 
     return new WP_REST_Response(['ok' => true, 'amelia_response' => $result['data']], $result['code'] ?: 200);
+}
+
+/**
+ * Legt eine komplett neue Amelia-Anfrage an (Service, Mitarbeiter, Zeit,
+ * Kundendaten aus einer Dispatch-Nachricht) und gibt sie danach — sofern
+ * gewünscht — im selben Zug frei. Siehe README, Abschnitt "Dispatch", für
+ * den erwarteten Body und die noch offene Live-Verifizierung des
+ * Anlegen-Payloads (st_build_create_payload_).
+ */
+function st_booking_dispatch_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $service_id = (int) $request->get_param('serviceId');
+    $provider_id = (int) $request->get_param('providerId');
+    $date = (string) $request->get_param('date');
+    $time = (string) $request->get_param('time');
+    $customer_in = (array) ($request->get_param('customer') ?: []);
+    $status = (string) ($request->get_param('status') ?: 'approved');
+    $internal_notes = (string) ($request->get_param('internalNotes') ?: '');
+
+    if (!$service_id || !$provider_id || !$date || !$time) {
+        return new WP_REST_Response(['error' => 'missing_params', 'required' => ['serviceId', 'providerId', 'date', 'time', 'customer']], 400);
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !preg_match('/^\d{2}:\d{2}$/', $time)) {
+        return new WP_REST_Response(['error' => 'invalid_date_or_time', 'expected' => 'date=YYYY-MM-DD, time=HH:MM (lokale Zeit)'], 400);
+    }
+    if (!in_array($status, ['approved', 'pending'], true)) {
+        return new WP_REST_Response(['error' => 'invalid_status', 'allowed' => ['approved', 'pending']], 400);
+    }
+
+    $first_name = trim((string) ($customer_in['firstName'] ?? ''));
+    $last_name = trim((string) ($customer_in['lastName'] ?? ''));
+    $email = trim((string) ($customer_in['email'] ?? ''));
+    $phone = trim((string) ($customer_in['phone'] ?? ''));
+    if ($first_name === '' || $last_name === '' || $email === '') {
+        return new WP_REST_Response(['error' => 'missing_customer_fields', 'required' => ['firstName', 'lastName', 'email']], 400);
+    }
+
+    $services_table = $prefix . 'amelia_services';
+    $service = $wpdb->get_row($wpdb->prepare(
+        "SELECT id, duration, categoryId, name FROM {$services_table} WHERE id = %d",
+        $service_id
+    ));
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+    if (!$service) {
+        return new WP_REST_Response(['error' => 'unknown_service', 'serviceId' => $service_id], 404);
+    }
+
+    if (!ST_RESCHEDULE_ADMIN_USER_ID) {
+        return new WP_REST_Response(['error' => 'not_configured', 'detail' => 'ST_RESCHEDULE_ADMIN_USER_ID ist noch nicht gesetzt (siehe Kommentar im Code) — wird auch von /booking-dispatch für die Admin-Session gebraucht.'], 500);
+    }
+    wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID);
+
+    // Bestehenden Kunden per E-Mail wiederverwenden statt Duplikate
+    // anzulegen — dieselbe Person, die schon einmal gebucht hat, soll in
+    // Amelia nicht mehrfach als Kunde auftauchen.
+    $existing_customer_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$prefix}amelia_users WHERE type = 'customer' AND email = %s LIMIT 1",
+        $email
+    ));
+    if ($wpdb->last_error) {
+        return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
+    }
+
+    $payload = st_build_create_payload_(
+        $service,
+        $provider_id,
+        $date,
+        $time,
+        $existing_customer_id ? (int) $existing_customer_id : null,
+        ['firstName' => $first_name, 'lastName' => $last_name, 'email' => $email, 'phone' => $phone],
+        $internal_notes
+    );
+
+    $result = st_amelia_ajax_call_('POST', '/appointments', [], $payload);
+    if (is_wp_error($result)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
+    }
+    if (($result['code'] ?? 0) >= 400) {
+        return new WP_REST_Response(['error' => 'amelia_rejected_create', 'amelia_response' => $result['data'], 'payload_sent' => $payload], 502);
+    }
+
+    $new_id = st_extract_new_appointment_id_($result['data']);
+    if (!$new_id) {
+        return new WP_REST_Response([
+            'error' => 'created_but_id_not_found',
+            'detail' => 'Amelia hat mit Code ' . $result['code'] . ' geantwortet, aber keine Termin-ID im erwarteten Format geliefert — amelia_response prüfen und st_extract_new_appointment_id_() um den echten Pfad ergänzen. Ob wirklich ein Termin angelegt wurde, bitte manuell in Amelia (wp-admin) nachsehen.',
+            'amelia_response' => $result['data'],
+            'payload_sent' => $payload,
+        ], 502);
+    }
+
+    $approve_response = null;
+    if ($status === 'approved') {
+        $approve_result = st_amelia_ajax_call_('POST', '/appointments/status/' . $new_id, [], ['status' => 'approved']);
+        if (is_wp_error($approve_result)) {
+            return new WP_REST_Response([
+                'ok' => true,
+                'appointmentId' => $new_id,
+                'status' => 'pending',
+                'warning' => 'created_but_approve_failed',
+                'detail' => $approve_result->get_error_message(),
+            ], 200);
+        }
+        $approve_response = $approve_result['data'];
+    }
+
+    return new WP_REST_Response([
+        'ok' => true,
+        'appointmentId' => $new_id,
+        'status' => $status,
+        'amelia_create_response' => $result['data'],
+        'amelia_approve_response' => $approve_response,
+    ], 200);
 }
 
 function st_booking_availability_handler(WP_REST_Request $request) {
