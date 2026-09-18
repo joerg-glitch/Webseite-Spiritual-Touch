@@ -296,11 +296,35 @@ danach funktioniert `/booking-dispatch` für ihn wie gewohnt über die
 Amelias eigene Oberfläche einen neuen Kunden beim Anlegen eines Termins
 anlegt (Option, die beim ersten Test bewusst zurückgestellt wurde) — exakt
 dieselbe Methode, mit der auch alle anderen Schreib-Aktionen hier gebaut
-wurden, siehe "Payload-Form" unten. Außerdem: den genauen Pfad, an dem
-`st_extract_new_appointment_id_()` die Termin-ID im Erfolgsfall gefunden
-hat, einmal aus einer rohen JSON-Antwort (nicht PowerShells verkürzter
-Objekt-Anzeige) nachtragen — schärft die Fehlermeldung, falls sich das
-Antwortformat mal ändert.
+wurden, siehe "Payload-Form" unten.
+
+### Stufe 2 (Freigeben) — live bestätigt (18.09.2026)
+
+Termin #116 danach über `/booking-dispatch-confirm` freigegeben (ohne
+`room`): erfolgreich, `"message": "Der Status des Termins wurde geändert
+zu freigegeben"`, `oldStatus: "pending"` → `status: "approved"`, Preis
+korrekt mit €290 (die 2-Std.-Variante, nicht der Basis-Preis €250) neu
+berechnet — bestätigt, dass Amelia den Preis serverseitig aus
+`serviceId`+`duration` zieht, wie in `st_build_create_payload_()`
+angenommen. Amelia hat außerdem automatisch einen
+`googleCalendarEventId` gesetzt — der native Hilfskalender-Sync griff wie
+erwartet.
+
+Dabei ein zweiter, unabhängiger Bug gefunden und behoben: die Confirm-Route
+rief `st_amelia_ajax_call_()` auf, ohne vorher `wp_set_current_user()` zu
+setzen (anders als `/booking-dispatch` und `/booking-reschedule`, die das
+schon korrekt taten) — Nonce-Scraping bekam dadurch die WordPress-
+Login-Seite statt der echten Amelia-Bookings-Seite zurück, exakt das
+gleiche Fehlerbild wie der historische 21.08.2026-Bug, nur an neuer
+Stelle. Fix: `wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID)` ergänzt.
+
+Aus der jetzt sichtbaren vollen Antwort auch geklärt: Die neue Termin-ID
+steckt unter `data.appointment.id` — `st_extract_new_appointment_id_()`
+prüft diesen Pfad bereits als ersten Kandidaten, passt also.
+
+**Noch nicht getestet:** die Raum-Kopie (`room`-Parameter, Apps-Script-
+Aktion `copyToRoom`) — braucht ein separat deploytes `team-app/App Script`
+mit den echten Secrets.
 
 ### Health-Check & Benachrichtigung bei Ausfall
 
