@@ -149,8 +149,18 @@
  *                 Test) Service-/Kategorie-/Mitarbeiter-IDs abfragen, ohne
  *                 eine (aktuell nicht zuverlässig erkannte, siehe
  *                 Health-Check-Diagnose) Admin-Browser-Session zu haben.
+ *   2026-09-18.5  Neue Route /amelia-schema-debug: Jörgs Katalog nutzt
+ *                 Amelias "Preise nach Dauer"-Funktion (mehrere Dauer/
+ *                 Preis-Varianten innerhalb einer Dienstleistung) — die
+ *                 zugehörige Tabelle kennt amelia-reference nicht (liest
+ *                 nur die Basis-Dauer aus amelia_services). Statt den
+ *                 Tabellennamen zu raten: ohne ?table= listet die neue
+ *                 Route alle amelia_*-Tabellen, mit ?table=xyz zusätzlich
+ *                 deren Spalten + Beispielzeilen. Grundlage, um
+ *                 st_build_create_payload_() später um eine wählbare
+ *                 Dauer/Preis-Variante zu erweitern.
  */
-define('ST_BD_VERSION', '2026-09-18.4');
+define('ST_BD_VERSION', '2026-09-18.5');
 
 /**
  * ST Buchungs-Dashboard
@@ -864,6 +874,24 @@ add_action('rest_api_init', function () {
         'permission_callback' => $dispatch_secret_ok,
     ]);
 
+    // Reines Schema-Diagnosewerkzeug (18.09.2026 eingeführt): Jörgs
+    // Katalog nutzt Amelias "Preise nach Dauer"-Funktion (mehrere
+    // Dauer/Preis-Varianten INNERHALB einer Dienstleistung, z. B. 1,5h
+    // Basis + 2h/2,5h/3h/3,5h-Varianten mit eigenem Preis) — die steckt in
+    // einer eigenen Tabelle, die amelia-reference bisher nicht kennt (die
+    // liest nur die Basis-Dauer aus amelia_services). Statt den Tabellen-
+    // namen zu raten (ändert sich je nach Amelia-Version, siehe an
+    // mehreren Stellen in diesem Datei-Header): ohne ?table= listet diese
+    // Route alle {$prefix}amelia_*-Tabellennamen auf, mit ?table=xyz
+    // zusätzlich deren Spalten + bis zu 5 Beispielzeilen. Gleiche
+    // Berechtigung wie alle anderen Dispatch-Routen (kein neues
+    // Vertrauensniveau — booking-overview zeigt ohnehin schon Kundendaten).
+    register_rest_route('st/v1', '/amelia-schema-debug', [
+        'methods' => 'GET',
+        'callback' => 'st_amelia_schema_debug_handler',
+        'permission_callback' => $dispatch_secret_ok,
+    ]);
+
     // Rückrichtung Kalender/Team-App → Amelia: zwei Aufrufer.
     // (1) apps-script/raum-einladung-sync ruft einmal täglich auf, wenn es
     //     bei einem der bekannten Raumkalender (Termin per "Termin-ID:"-
@@ -1412,6 +1440,43 @@ function st_amelia_reference_handler(WP_REST_Request $request) {
         'services' => $services,
         'providers' => $providers,
     ], 200);
+}
+
+/**
+ * Reines Diagnosewerkzeug, um Amelias tatsächliches DB-Schema zu finden,
+ * statt Tabellennamen zu raten (siehe Routen-Kommentar oben). Ohne ?table=
+ * nur die Tabellennamen, mit ?table= zusätzlich Spalten + Beispielzeilen
+ * dieser einen Tabelle.
+ */
+function st_amelia_schema_debug_handler(WP_REST_Request $request) {
+    global $wpdb;
+    $prefix = $wpdb->prefix;
+
+    $table_param = $request->get_param('table');
+    if ($table_param) {
+        // Nur a-z, A-Z, 0-9, Unterstrich zulassen — $table_param landet
+        // sonst direkt im SQL-Tabellennamen (kann nicht per %s
+        // parametrisiert werden), das hier ist die Absicherung dagegen.
+        $safe_name = preg_replace('/[^a-zA-Z0-9_]/', '', $table_param);
+        $table = $prefix . $safe_name;
+
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if (!$exists) {
+            return new WP_REST_Response(['error' => 'table_not_found', 'table' => $table], 404);
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        $sample_rows = $wpdb->get_results("SELECT * FROM {$table} LIMIT 5", ARRAY_A);
+        return new WP_REST_Response([
+            'ok' => true,
+            'table' => $table,
+            'columns' => $columns,
+            'sample_rows' => $sample_rows,
+        ], 200);
+    }
+
+    $tables = $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $prefix . 'amelia_%'));
+    return new WP_REST_Response(['ok' => true, 'tables' => $tables], 200);
 }
 
 function st_find_snippet_($haystack, $needle, $context = 500) {
