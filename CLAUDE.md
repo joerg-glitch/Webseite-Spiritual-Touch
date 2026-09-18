@@ -32,7 +32,9 @@ auf, keine Preisberechnung.
 Vollständige Doku, inkl. Beispiel-Payloads und Stand der Live-Tests:
 `wordpress/buchungs-dashboard/README.md`, Abschnitt **"Dispatch"**.
 Immer dort nachlesen, bevor eine Dispatch-Nachricht beantwortet wird —
-der Stand kann sich ändern. Kurzfassung des Ablaufs:
+der Stand kann sich ändern. Eigenständige, mobil-taugliche Kurzanleitung
+(kein Repo-Zugriff nötig, für Jörgs eigene Ablage): `DISPATCH.md`.
+Kurzfassung des Ablaufs:
 
 1. **IDs auflösen.** Jörg nennt Kategorie/Dienstleistung und
    Mitarbeiter:in in Klartext. Per
