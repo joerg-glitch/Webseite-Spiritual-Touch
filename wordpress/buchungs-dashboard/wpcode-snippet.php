@@ -129,8 +129,20 @@
  *                 hat den automatischen Kopier-Mechanismus abgeschaltet,
  *                 "zu viel Chaos"), delegiert an die neue Aktion
  *                 "copyToRoom" im schon laufenden team-app/App Script.
+ *   2026-09-18.3  Fix: /booking-dispatch* lieferte bei falscher
+ *                 Autorisierung nur WordPress' generische
+ *                 "rest_forbidden"-Meldung ohne jeden Hinweis, was genau
+ *                 fehlte (Jörgs erster Live-Test: 401 trotz nach eigener
+ *                 Prüfung korrekt gesetztem Secret/URL/User). Ursache lässt
+ *                 sich aus der alten Meldung nicht erkennen. $dispatch_
+ *                 secret_ok gibt bei Fehlschlag jetzt einen WP_Error mit
+ *                 Diagnosedaten zurück (Admin-Session erkannt?, Header
+ *                 überhaupt angekommen?, dessen Länge, ob ST_DISPATCH_SECRET
+ *                 noch der unveränderte Platzhalter ist) statt nur false —
+ *                 verrät nie den echten Secret-Wert, grenzt den Fehler aber
+ *                 in einer Zeile ein.
  */
-define('ST_BD_VERSION', '2026-09-18.2');
+define('ST_BD_VERSION', '2026-09-18.3');
 
 /**
  * ST Buchungs-Dashboard
@@ -759,7 +771,28 @@ add_action('rest_api_init', function () {
             return true;
         }
         $given = $request->get_header('x-st-dispatch-secret');
-        return is_string($given) && hash_equals(ST_DISPATCH_SECRET, $given);
+        if (is_string($given) && $given !== '' && hash_equals(ST_DISPATCH_SECRET, $given)) {
+            return true;
+        }
+
+        // Bei Fehlschlag NICHT einfach false zurückgeben — dann ersetzt
+        // WordPress das durch seine eigene, nichtssagende "rest_forbidden"-
+        // Meldung ("Du bist leider nicht berechtigt..."), ohne jeden Hinweis,
+        // WELCHER der beiden möglichen Wege (Admin-Session ODER Header)
+        // fehlgeschlagen ist. Ein WP_Error mit eigenen Diagnosedaten wird
+        // dagegen unverändert durchgereicht — verrät nie den echten
+        // Secret-Wert, aber genug, um den Fehler in einer Zeile einzugrenzen
+        // (z. B. "header_received: false" -> Header kam nie an; "true" bei
+        // falscher Länge -> Tippfehler/unsichtbares Zeichen beim Einfügen).
+        return new WP_Error('st_dispatch_unauthorized', 'Weder eine eingeloggte Admin-Session noch ein gültiger X-ST-Dispatch-Secret-Header.', [
+            'status' => 401,
+            'admin_session_detected' => is_user_logged_in(),
+            'admin_session_has_manage_options' => is_user_logged_in() ? current_user_can('manage_options') : null,
+            'header_received' => $given !== null && $given !== '',
+            'header_length_received' => $given !== null ? strlen($given) : 0,
+            'secret_configured_length' => strlen(ST_DISPATCH_SECRET),
+            'secret_still_placeholder' => (strpos(ST_DISPATCH_SECRET, 'DEIN-ZUFAELLIGES-PASSWORT') !== false),
+        ]);
     };
 
     register_rest_route('st/v1', '/booking-overview', [
