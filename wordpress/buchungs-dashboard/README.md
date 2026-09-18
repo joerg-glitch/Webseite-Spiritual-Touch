@@ -164,6 +164,7 @@ Body:
   "providerId": 7,
   "date": "2026-09-25",
   "time": "14:00",
+  "durationSeconds": 7200,
   "status": "pending",
   "customer": {
     "firstName": "Anna",
@@ -184,6 +185,17 @@ Testphase); `"approved"` nur, wenn Jörg in derselben Nachricht ausdrücklich
 sofortige Freigabe sagt. Ein Kunde mit gleicher E-Mail wird wiederverwendet
 statt dupliziert. Antwort enthält die neue `appointmentId` — die braucht
 Schritt 2.
+
+`durationSeconds` ist optional und nur relevant für Services mit Amelias
+"Preise nach Dauer"-Funktion (mehrere Dauer/Preis-Varianten innerhalb
+**einer** Dienstleistung, z. B. Basis 1,5 Std./€250 plus 2 Std./€290,
+2,5 Std./€340, …, sichtbar unter `durationOptions` in der
+`/amelia-reference`-Antwort). Weglassen = Basis-Dauer des Service. Angegeben,
+aber keine gültige Variante für diesen Service → `422
+invalid_duration_for_service` mit der Liste erlaubter Werte in der Antwort,
+statt stillschweigend die falsche Dauer zu nehmen. Amelia berechnet den
+Preis serverseitig selbst aus `serviceId` + `duration` — im Payload wird
+kein eigener Preis mitgeschickt.
 
 ### Stufe 2 — `POST /wp-json/st/v1/booking-dispatch-confirm`
 

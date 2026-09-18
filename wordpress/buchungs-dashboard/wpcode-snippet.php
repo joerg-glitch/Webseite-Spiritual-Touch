@@ -159,8 +159,21 @@
  *                 deren Spalten + Beispielzeilen. Grundlage, um
  *                 st_build_create_payload_() später um eine wählbare
  *                 Dauer/Preis-Variante zu erweitern.
+ *   2026-09-18.6  Gefunden über /amelia-schema-debug: Die Dauer/Preis-
+ *                 Varianten ("Preise nach Dauer") stecken in einem
+ *                 JSON-Feld customPricing direkt auf amelia_services, keine
+ *                 eigene Tabelle. Neue Funktion
+ *                 st_service_duration_options_() liest Basis-Dauer +
+ *                 Varianten daraus; /amelia-reference zeigt sie jetzt pro
+ *                 Service als durationOptions; /booking-dispatch akzeptiert
+ *                 einen neuen optionalen Parameter durationSeconds, geprüft
+ *                 gegen genau diese Liste (422 bei ungültiger Kombination,
+ *                 inkl. der erlaubten Werte in der Antwort). Ohne den
+ *                 Parameter unverändertes Verhalten (Basis-Dauer). Kein
+ *                 eigener price-Wert im Anlegen-Payload nötig — Amelia
+ *                 berechnet ihn serverseitig aus serviceId+duration neu.
  */
-define('ST_BD_VERSION', '2026-09-18.5');
+define('ST_BD_VERSION', '2026-09-18.6');
 
 /**
  * ST Buchungs-Dashboard
@@ -623,6 +636,33 @@ define('ST_APPS_SCRIPT_URL', 'https://script.google.com/macros/s/BITTE-EXEC-URL-
 define('ST_APPS_SCRIPT_DISPATCH_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER-3');
 
 /**
+ * Liest die gültigen Dauer/Preis-Varianten einer Dienstleistung: die
+ * Basis-Dauer/-Preis (Spalten duration/price) plus, falls Jörgs "Preise
+ * nach Dauer"-Funktion aktiv ist, die Varianten aus dem JSON-Feld
+ * customPricing (Format: {"enabled":"duration","durations":{"7200":
+ * {"price":290},...}}, gefunden 18.09.2026 über /amelia-schema-debug — sehe
+ * dort für die Herkunft). Liefert ein Array [duration_seconds => price],
+ * die Basis-Dauer immer inklusive. Ungültiges/fehlendes JSON wird als "keine
+ * Varianten" behandelt (nur Basis-Dauer gültig) statt einen Fehler zu
+ * werfen — customPricing ist bei den meisten Services leer/deaktiviert.
+ */
+function st_service_duration_options_($service) {
+    $options = [(int) $service->duration => (float) $service->price];
+
+    if (empty($service->customPricing)) {
+        return $options;
+    }
+    $decoded = json_decode($service->customPricing, true);
+    if (!is_array($decoded) || ($decoded['enabled'] ?? null) !== 'duration' || empty($decoded['durations'])) {
+        return $options;
+    }
+    foreach ($decoded['durations'] as $duration_seconds => $variant) {
+        $options[(int) $duration_seconds] = (float) ($variant['price'] ?? 0);
+    }
+    return $options;
+}
+
+/**
  * Baut das komplette Termin-Objekt für eine NEUE Amelia-Anfrage (Gegenstück
  * zu st_build_reassign_payload_(), die einen BESTEHENDEN Termin umschreibt).
  * Anders als bei den Ändern-Routen gibt es hier keine echte Amelia-Anfrage,
@@ -632,12 +672,20 @@ define('ST_APPS_SCRIPT_DISPATCH_SECRET', 'DEIN-ZUFAELLIGES-PASSWORT-HIER-3');
  * Kunden (kein customerId, stattdessen ein "customer"-Objekt direkt im
  * Booking) ist eine begründete Vermutung, keine bestätigte Tatsache — siehe
  * README, Abschnitt "Dispatch", für den nötigen ersten Live-Test.
+ *
+ * $duration_seconds kommt von st_resolve_service_duration_() — entweder die
+ * Basis-Dauer des Service ODER eine der "Preise nach Dauer"-Varianten aus
+ * dessen customPricing-Feld (siehe README, Abschnitt "Preise nach Dauer").
+ * Bewusst KEIN eigener price-Wert im Payload: das gecapturte "Aktualisieren"-
+ * Payload (README, "Payload-Form") enthält im Booking-Objekt selbst kein
+ * price-Feld — Amelia berechnet den Preis serverseitig aus serviceId +
+ * duration (inkl. customPricing-Zuordnung) neu, das reicht.
  */
-function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes) {
+function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes, $duration_seconds) {
     $booking = [
         'coupon' => ['id' => null],
         'customFields' => new stdClass(),
-        'duration' => (int) $service->duration,
+        'duration' => (int) $duration_seconds,
         'extras' => [],
         'packageCustomerService' => null,
         'persons' => 1,
@@ -1047,6 +1095,7 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     $date = (string) $request->get_param('date');
     $time = (string) $request->get_param('time');
     $customer_in = (array) ($request->get_param('customer') ?: []);
+    $duration_param = $request->get_param('durationSeconds');
     // Standard bewusst "pending", nicht "approved": Jörgs Testphasen-Ablauf
     // (siehe README, Abschnitt "Dispatch") ist erst "Anfrage anlegen, im
     // Dashboard prüfen", dann per separatem /booking-dispatch-confirm
@@ -1075,7 +1124,7 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
 
     $services_table = $prefix . 'amelia_services';
     $service = $wpdb->get_row($wpdb->prepare(
-        "SELECT id, duration, categoryId, name FROM {$services_table} WHERE id = %d",
+        "SELECT id, duration, price, customPricing, categoryId, name FROM {$services_table} WHERE id = %d",
         $service_id
     ));
     if ($wpdb->last_error) {
@@ -1083,6 +1132,26 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     }
     if (!$service) {
         return new WP_REST_Response(['error' => 'unknown_service', 'serviceId' => $service_id], 404);
+    }
+
+    // Dauer bestimmen: ohne durationSeconds die Basis-Dauer des Service
+    // (bisheriges Verhalten), mit durationSeconds muss der Wert eine der
+    // laut customPricing gültigen Varianten sein (siehe
+    // st_service_duration_options_(), "Preise nach Dauer"). Amelia berechnet
+    // den Preis daraus serverseitig selbst neu, siehe st_build_create_payload_().
+    $duration_options = st_service_duration_options_($service);
+    if ($duration_param !== null && $duration_param !== '') {
+        $duration_seconds = (int) $duration_param;
+        if (!array_key_exists($duration_seconds, $duration_options)) {
+            return new WP_REST_Response([
+                'error' => 'invalid_duration_for_service',
+                'serviceId' => $service_id,
+                'requestedDurationSeconds' => $duration_seconds,
+                'allowedDurations' => $duration_options,
+            ], 422);
+        }
+    } else {
+        $duration_seconds = (int) $service->duration;
     }
 
     if (!ST_RESCHEDULE_ADMIN_USER_ID) {
@@ -1108,7 +1177,8 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         $time,
         $existing_customer_id ? (int) $existing_customer_id : null,
         ['firstName' => $first_name, 'lastName' => $last_name, 'email' => $email, 'phone' => $phone],
-        $internal_notes
+        $internal_notes,
+        $duration_seconds
     );
 
     $result = st_amelia_ajax_call_('POST', '/appointments', [], $payload);
@@ -1421,9 +1491,20 @@ function st_amelia_reference_handler(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'db_error', 'table' => 'amelia_categories', 'detail' => $wpdb->last_error], 500);
     }
 
-    $services = $wpdb->get_results("SELECT id, name, categoryId, duration FROM {$prefix}amelia_services ORDER BY name");
+    // price/customPricing zusätzlich zur Basis-Dauer: manche Services (z. B.
+    // "Intuitive Tantramassage") haben über Amelias "Preise nach Dauer"-
+    // Funktion mehrere Dauer/Preis-Varianten (customPricing-JSON, gefunden
+    // 18.09.2026 über /amelia-schema-debug), nicht nur die eine Basis-Dauer
+    // in der duration-Spalte — durationOptions unten macht das direkt
+    // sichtbar, statt bei jedem neuen Service erneut per Schema-Debug
+    // suchen zu müssen.
+    $services = $wpdb->get_results("SELECT id, name, categoryId, duration, price, customPricing FROM {$prefix}amelia_services ORDER BY name");
     if ($wpdb->last_error) {
         return new WP_REST_Response(['error' => 'db_error', 'table' => 'amelia_services', 'detail' => $wpdb->last_error], 500);
+    }
+    foreach ($services as $s) {
+        $s->durationOptions = st_service_duration_options_($s);
+        unset($s->customPricing); // roh nicht nötig, durationOptions ist die aufbereitete Form
     }
 
     // amelia_users enthält Kunden UND Mitarbeiter/Pseudo-Mitarbeiter — über
