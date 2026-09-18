@@ -141,8 +141,16 @@
  *                 noch der unveränderte Platzhalter ist) statt nur false —
  *                 verrät nie den echten Secret-Wert, grenzt den Fehler aber
  *                 in einer Zeile ein.
+ *   2026-09-18.4  Fix: /amelia-reference verlangte noch $admin_only statt
+ *                 $dispatch_secret_ok — die README beschrieb den
+ *                 X-ST-Dispatch-Secret-Header hier bereits als Weg für den
+ *                 Dispatch-Agenten, im Code fehlte er. Ohne den Fix konnte
+ *                 weder der Agent noch Jörg per curl (siehe Health-Check-
+ *                 Test) Service-/Kategorie-/Mitarbeiter-IDs abfragen, ohne
+ *                 eine (aktuell nicht zuverlässig erkannte, siehe
+ *                 Health-Check-Diagnose) Admin-Browser-Session zu haben.
  */
-define('ST_BD_VERSION', '2026-09-18.3');
+define('ST_BD_VERSION', '2026-09-18.4');
 
 /**
  * ST Buchungs-Dashboard
@@ -846,7 +854,14 @@ add_action('rest_api_init', function () {
     register_rest_route('st/v1', '/amelia-reference', [
         'methods' => 'GET',
         'callback' => 'st_amelia_reference_handler',
-        'permission_callback' => $admin_only,
+        // Fix 18.09.2026: brauchte bisher zwingend eine Admin-Session
+        // (Nonce/Cookie) — genau die, die beim Dispatch-Agenten (Claude,
+        // curl, kein Browser) nie vorhanden ist. Die README beschrieb den
+        // Header-Weg hier bereits als Option, im Code fehlte er tatsächlich.
+        // $dispatch_secret_ok deckt admin_only mit ab (siehe dort), daher
+        // keine Verhaltensänderung für den bestehenden "Referenz
+        // anzeigen"-Button im Dashboard (nutzt weiterhin die Nonce-Session).
+        'permission_callback' => $dispatch_secret_ok,
     ]);
 
     // Rückrichtung Kalender/Team-App → Amelia: zwei Aufrufer.
