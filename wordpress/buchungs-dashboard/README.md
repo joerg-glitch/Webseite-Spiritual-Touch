@@ -264,31 +264,43 @@ dieselbe /exec-URL bzw. denselben Geheimwert gesetzt sein.
    "Geheimnisse" ganz unten) — Jörg teilt den aktuellen Wert dem
    jeweiligen Chat direkt mit.
 
-### ⚠️ Noch nicht live verifiziert: Anlegen-Payload
+### Anlegen-Payload: Status nach dem ersten Live-Test (18.09.2026)
 
-Alle anderen Schreib-Aktionen in dieser Datei (Freigeben, Zuweisen,
-Verschieben) wurden erst per DevTools-Mitschnitt einer echten Amelia-
-Aktion gebaut, dann live getestet (siehe Abschnitt "Smart Freigeben" unten
-für die Methode). Für **komplett neue** Anfragen gibt es diesen Mitschnitt
-noch nicht — `st_build_create_payload_()` in `wpcode-snippet.php` ist eine
-begründete Ableitung aus dem bekannten "Aktualisieren"-Payload (siehe
-"Payload-Form" unten), nicht bestätigt:
+Erster echter Test (Termin #116, Tim Metzger, Stephanie, 22.09. 18:00,
+2-Std.-Variante von "Intuitive Tantramassage", `status: "pending"`):
 
-- Unklar, ob `POST admin-ajax.php?action=wpamelia_api&call=/appointments`
-  (ohne ID) tatsächlich der richtige Endpunkt fürs Neu-Anlegen ist.
-- Unklar, ob ein neuer Kunde wirklich per eingebettetem `"customer"`-Objekt
-  im Booking (statt `customerId`) angelegt wird, und ob die erwarteten
-  Feldnamen stimmen.
-- Unklar, in welcher Form die neue Termin-ID in der Antwort steckt —
-  `st_extract_new_appointment_id_()` probiert mehrere plausible Pfade.
+- ✅ **Bestehender Kunde (per E-Mail gefunden → `customerId`):
+  funktioniert.** `POST admin-ajax.php?action=wpamelia_api&call=
+  /appointments` (ohne ID) ist der richtige Endpunkt fürs Neu-Anlegen,
+  Antwort `{"message":"Successfully added new appointment", "data": {...
+  Termin-ID irgendwo darin, siehe unten}}`. `st_extract_new_appointment_id_()`
+  hat die ID beim ersten echten Versuch korrekt gefunden (genauer Pfad
+  innerhalb `data` noch nicht dokumentiert, siehe TODO unten). Kategorie,
+  Service inkl. Dauer/Preis-Variante (`durationSeconds`, siehe oben),
+  Mitarbeiter:in und Zeit kamen alle korrekt an.
+- ❌ **Neuer Kunde (eingebettetes `"customer"`-Objekt statt `customerId`):
+  funktioniert NICHT.** Amelia antwortet mit einem eigenen SQL-Fehler
+  (`AmeliaBooking\Infrastructure\Repository\AbstractRepository`, "You have
+  an error in your SQL syntax ... near ')' at line 2") — die Vermutung, dass
+  der Aktualisieren-Endpunkt auch einen neuen Kunden inline anlegt, war so
+  **falsch**. `/booking-dispatch` braucht deshalb bis auf Weiteres einen in
+  Amelia **bereits existierenden** Kunden (per E-Mail gefunden) — bei einem
+  wirklich neuen Kunden schlägt die Anfrage fehl.
 
-**Vor dem ersten echten Einsatz:** Einmal eine Test-Anfrage über
-`/booking-dispatch` mit `status: "pending"` schicken (keine Bestätigungsmail),
-das Ergebnis prüfen (`ok`/`error`, in Amelia nachsehen, ob wirklich ein
-Termin + Kunde angelegt wurden) und bei einem Fehler mit den mitgelieferten
-Diagnosedaten (`amelia_response`, `payload_sent`) nachbessern lassen — exakt
-derselbe Iterationsweg, mit dem auch die anderen Routen hier fertig gebaut
-wurden.
+**Workaround, bis das behoben ist:** Neuen Kunden einmal manuell in Amelia
+anlegen (Kunden → Neuer Kunde, gleiche E-Mail wie in der Dispatch-Nachricht),
+danach funktioniert `/booking-dispatch` für ihn wie gewohnt über die
+`customerId`-Zuordnung.
+
+**TODO für eine echte Neu-Kunden-Unterstützung:** DevTools-Mitschnitt, wie
+Amelias eigene Oberfläche einen neuen Kunden beim Anlegen eines Termins
+anlegt (Option, die beim ersten Test bewusst zurückgestellt wurde) — exakt
+dieselbe Methode, mit der auch alle anderen Schreib-Aktionen hier gebaut
+wurden, siehe "Payload-Form" unten. Außerdem: den genauen Pfad, an dem
+`st_extract_new_appointment_id_()` die Termin-ID im Erfolgsfall gefunden
+hat, einmal aus einer rohen JSON-Antwort (nicht PowerShells verkürzter
+Objekt-Anzeige) nachtragen — schärft die Fehlermeldung, falls sich das
+Antwortformat mal ändert.
 
 ### Health-Check & Benachrichtigung bei Ausfall
 
