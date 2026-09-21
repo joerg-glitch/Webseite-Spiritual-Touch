@@ -303,13 +303,12 @@ Erster echter Test (Termin #116, Tim Metzger, Stephanie, 22.09. 18:00,
   Kunden) in den Termin-Anlegen-Request geht — `st_build_create_payload_()`
   kennt jetzt gar keinen Inline-Kunde-Zweig mehr, nur noch `customerId`.
 
-  ⚠️ **Noch nicht live verifiziert:** das Antwortformat der Kundenanlage
-  (der Mitschnitt zeigte nur den Request, nicht die Response) —
-  `st_extract_new_customer_id_()` probiert mehrere plausible Pfade
-  (`data.user.id`, `data.id`, `id`, …), analog zur Termin-ID-Suche. Erster
-  Live-Test zeigt, ob einer davon passt; falls nicht, gibt der Fehler
-  `customer_created_but_id_not_found` die komplette Rohantwort mit, um den
-  richtigen Pfad in einer Zeile nachzutragen.
+  ✅ **Live bestätigt (21.09.2026):** kompletter Dispatch-Durchlauf mit
+  einem garantiert neuen Kunden erfolgreich — Kunde wurde über
+  `/users/customers` angelegt, `st_extract_new_customer_id_()` hat die
+  neue ID korrekt gefunden, der Termin wurde damit angelegt. Damit ist der
+  komplette Dispatch-Ablauf (neue **und** bestehende Kunden, Dauer/Preis-
+  Varianten, sofortige Freigabe in einem Schritt) live durchgetestet.
 
 ### Stufe 2 (Freigeben) — live bestätigt (18.09.2026)
 

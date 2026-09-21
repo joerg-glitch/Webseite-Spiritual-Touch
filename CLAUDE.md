@@ -55,9 +55,8 @@ Kurzfassung des Ablaufs:
    explizit `"approved"` **nur**, wenn Jörg in derselben Nachricht
    ausdrücklich sofortige Freigabe sagt.
    Neue Kunden werden automatisch angelegt (seit 21.09.2026, über Amelias
-   eigenen `/users/customers`-Endpunkt, per DevTools-Mitschnitt gefunden —
-   siehe README). Das Antwortformat der Kundenanlage ist aber noch nicht
-   live verifiziert. Schlägt ein Versuch mit `customer_create_failed` oder
+   eigenen `/users/customers`-Endpunkt — live bestätigt, siehe README).
+   Schlägt ein Versuch trotzdem mit `customer_create_failed` oder
    `customer_created_but_id_not_found` fehl: NICHT einfach nochmal
    versuchen — Jörg den genauen Fehler (inkl. `debug`/`amelia_response`)
    zeigen, notfalls den Kunden einmal manuell in Amelia anlegen (Kunden →

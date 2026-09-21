@@ -53,13 +53,12 @@ Fehlt etwas davon, fragt Claude kurz nach, statt zu raten.
 ## Neue Kunden
 
 Werden seit 21.09.2026 automatisch mit angelegt (über Amelias eigenen
-Kundenanlage-Endpunkt, per DevTools-Mitschnitt gefunden). Das
-Antwortformat ist noch nicht an vielen echten Fällen verifiziert — schlägt
-es ausnahmsweise fehl, nicht einfach nochmal versuchen, sondern Claude den
-Fehler zeigen lassen (`wordpress/buchungs-dashboard/README.md`, Abschnitt
-"Dispatch", hat Details). Workaround falls nötig: Kunden einmal kurz
-selbst in Amelia anlegen (Kunden → Neuer Kunde, gleiche E-Mail) und
-Dispatch danach wiederholen.
+Kundenanlage-Endpunkt) — live bestätigt. Schlägt es ausnahmsweise fehl,
+nicht einfach nochmal versuchen, sondern Claude den Fehler zeigen lassen
+(`wordpress/buchungs-dashboard/README.md`, Abschnitt "Dispatch", hat
+Details). Workaround falls nötig: Kunden einmal kurz selbst in Amelia
+anlegen (Kunden → Neuer Kunde, gleiche E-Mail) und Dispatch danach
+wiederholen.
 
 ## Ablauf, den Claude automatisch ausführt
 
