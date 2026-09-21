@@ -278,41 +278,38 @@ Erster echter Test (Termin #116, Tim Metzger, Stephanie, 22.09. 18:00,
   innerhalb `data` noch nicht dokumentiert, siehe TODO unten). Kategorie,
   Service inkl. Dauer/Preis-Variante (`durationSeconds`, siehe oben),
   Mitarbeiter:in und Zeit kamen alle korrekt an.
-- ⚠️ **Neuer Kunde (eingebettetes `"customer"`-Objekt statt `customerId`):
-  uneindeutig, zwei widersprüchliche Ergebnisse.**
-  - Erster Test (Tim Metzger, `me-tim@gmx.net`): Amelia antwortete mit
-    einem eigenen SQL-Fehler (`AmeliaBooking\Infrastructure\Repository\
-    AbstractRepository`, "You have an error in your SQL syntax ... near
-    ')' at line 2").
-  - Zweiter Test, selbe E-Mail-Adresse `joerg@spiritual-touch.de` wie ein
-    **bestehender Mitarbeiter-Account** (Jörg selbst, `amelia_users.id=1,
-    type=provider`): derselbe SQL-Fehler.
-  - Dritter Test, komplett neue E-Mail `kontakt@joerg-saur.de` (keine
-    Kollision mit einem bestehenden Account): **erfolgreich**, Kunde
-    wurde angelegt.
+- ✅ **Neuer Kunde — gelöst (21.09.2026), per DevTools-Mitschnitt.**
+  Der ursprüngliche Ansatz (ein `"customer"`-Objekt eingebettet im
+  Termin-Anlegen-Request) war schlicht der **falsche Endpunkt** — daher
+  der SQL-Fehler in allen drei ersten Tests, auch dem scheinbar
+  erfolgreichen (der lief vermutlich nur, weil der Kunde durch einen
+  vorherigen Versuch bereits als Karteileiche existierte). Ein
+  DevTools-Mitschnitt von Jörgs eigenem Kundenanlegen in Amelia zeigt:
+  Amelias Oberfläche legt einen neuen Kunden über einen **eigenständigen**
+  Endpunkt an, bevor der Termin überhaupt gebaut wird:
+  ```
+  POST admin-ajax.php?action=wpamelia_api&call=/users/customers
+  {
+    "birthday": null, "countryPhoneIso": "de", "customFields": {},
+    "email": "...", "externalId": "", "firstName": "...", "gender": "",
+    "id": 0, "language": "", "lastName": "...", "note": "",
+    "phone": "...", "status": "visible", "translations": null,
+    "type": "customer"
+  }
+  ```
+  `id: 0` (nicht `null`, nicht weggelassen) signalisiert "neu". Neue
+  Funktion `st_create_amelia_customer_()` ruft das auf und liefert die
+  neue `customerId`, die dann ganz normal (wie bei einem bestehenden
+  Kunden) in den Termin-Anlegen-Request geht — `st_build_create_payload_()`
+  kennt jetzt gar keinen Inline-Kunde-Zweig mehr, nur noch `customerId`.
 
-  **Arbeitshypothese (nicht bestätigt):** Der Fehler tritt evtl. nur auf,
-  wenn die E-Mail bereits irgendwo in `amelia_users` existiert (auch unter
-  `type=provider`), nicht bei einer wirklich neuen Adresse — würde
-  erklären, warum Test 2 (Kollision mit dem eigenen Mitarbeiter-Account)
-  fehlschlug, Test 3 (garantiert neu) aber klappte. **Erklärt aber
-  nicht**, warum auch Test 1 (Tim Metzger, `me-tim@gmx.net`, keine
-  bekannte Kollision) fehlschlug. Rohdaten von Test 3 (erfolgreiche
-  `amelia_response`) liegen noch nicht vor — würden helfen, das zu klären.
-
-  **Vorsichtiger Umgang bis geklärt:** Bei einem neuen Kunden zunächst
-  davon ausgehen, dass es klappen KANN, aber bei einem `amelia_rejected_
-  create`-Fehler nicht wiederholt blind erneut versuchen — Jörg Bescheid
-  geben. Workaround, falls es fehlschlägt: Kunden einmal manuell in Amelia
-  anlegen (Kunden → Neuer Kunde, gleiche E-Mail), danach funktioniert
-  `/booking-dispatch` für ihn über die `customerId`-Zuordnung.
-
-**TODO für eine geklärte Neu-Kunden-Unterstützung:** entweder Rohdaten
-eines weiteren erfolgreichen/fehlgeschlagenen Versuchs sammeln, um die
-Hypothese oben zu bestätigen/widerlegen, oder ein DevTools-Mitschnitt, wie
-Amelias eigene Oberfläche einen neuen Kunden beim Anlegen eines Termins
-anlegt — exakt dieselbe Methode, mit der auch alle anderen Schreib-
-Aktionen hier gebaut wurden, siehe "Payload-Form" unten.
+  ⚠️ **Noch nicht live verifiziert:** das Antwortformat der Kundenanlage
+  (der Mitschnitt zeigte nur den Request, nicht die Response) —
+  `st_extract_new_customer_id_()` probiert mehrere plausible Pfade
+  (`data.user.id`, `data.id`, `id`, …), analog zur Termin-ID-Suche. Erster
+  Live-Test zeigt, ob einer davon passt; falls nicht, gibt der Fehler
+  `customer_created_but_id_not_found` die komplette Rohantwort mit, um den
+  richtigen Pfad in einer Zeile nachzutragen.
 
 ### Stufe 2 (Freigeben) — live bestätigt (18.09.2026)
 

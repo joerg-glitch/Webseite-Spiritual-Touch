@@ -50,17 +50,16 @@ Schritt 3 unten.
 
 Fehlt etwas davon, fragt Claude kurz nach, statt zu raten.
 
-## ⚠️ Neue Kunden: meist ok, aber noch nicht zuverlässig bestätigt
+## Neue Kunden
 
-Ein neuer Kunde (noch nicht in Amelia) wird beim Anlegen automatisch mit
-angelegt — das hat in einem Test bereits funktioniert. In zwei anderen
-Tests ist es aber mit einem Amelia-eigenen Fehler fehlgeschlagen (Stand
-18.09.2026, Ursache noch nicht sicher geklärt — siehe
-`wordpress/buchungs-dashboard/README.md`, Abschnitt "Dispatch"). Schlägt
-ein Versuch fehl: nicht einfach nochmal versuchen. Entweder den Kunden
-einmal kurz selbst in Amelia anlegen (Kunden → Neuer Kunde, gleiche
-E-Mail) und Dispatch danach wiederholen, oder Claude einfach den Fehler
-melden lassen.
+Werden seit 21.09.2026 automatisch mit angelegt (über Amelias eigenen
+Kundenanlage-Endpunkt, per DevTools-Mitschnitt gefunden). Das
+Antwortformat ist noch nicht an vielen echten Fällen verifiziert — schlägt
+es ausnahmsweise fehl, nicht einfach nochmal versuchen, sondern Claude den
+Fehler zeigen lassen (`wordpress/buchungs-dashboard/README.md`, Abschnitt
+"Dispatch", hat Details). Workaround falls nötig: Kunden einmal kurz
+selbst in Amelia anlegen (Kunden → Neuer Kunde, gleiche E-Mail) und
+Dispatch danach wiederholen.
 
 ## Ablauf, den Claude automatisch ausführt
 

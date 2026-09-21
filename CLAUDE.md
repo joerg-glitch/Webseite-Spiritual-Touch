@@ -54,14 +54,15 @@ Kurzfassung des Ablaufs:
    `status` weglassen (Standard: nur "pending" anlegen — Testphase!) oder
    explizit `"approved"` **nur**, wenn Jörg in derselben Nachricht
    ausdrücklich sofortige Freigabe sagt.
-   ⚠️ **Neue Kunden sind noch nicht zuverlässig getestet** (Stand
-   18.09.2026, siehe README, Abschnitt "Dispatch" — zwei fehlgeschlagene
-   und ein erfolgreicher Live-Test, Ursache für den Unterschied noch
-   ungeklärt). Meist funktioniert es. Schlägt ein Versuch mit
-   `amelia_rejected_create` fehl: NICHT einfach nochmal versuchen —
-   Jörg bitten, den Kunden einmal manuell in Amelia anzulegen (Kunden →
-   Neuer Kunde, gleiche E-Mail), dann denselben Dispatch-Aufruf
-   wiederholen.
+   Neue Kunden werden automatisch angelegt (seit 21.09.2026, über Amelias
+   eigenen `/users/customers`-Endpunkt, per DevTools-Mitschnitt gefunden —
+   siehe README). Das Antwortformat der Kundenanlage ist aber noch nicht
+   live verifiziert. Schlägt ein Versuch mit `customer_create_failed` oder
+   `customer_created_but_id_not_found` fehl: NICHT einfach nochmal
+   versuchen — Jörg den genauen Fehler (inkl. `debug`/`amelia_response`)
+   zeigen, notfalls den Kunden einmal manuell in Amelia anlegen (Kunden →
+   Neuer Kunde, gleiche E-Mail) als Workaround, dann denselben
+   Dispatch-Aufruf wiederholen.
 3. **Freigeben** (meist eine zweite, spätere Nachricht, z. B. "passt, gib
    frei" oder "gib frei und kopiere in Raum 2").
    `POST https://spiritual-touch.de/wp-json/st/v1/booking-dispatch-confirm`

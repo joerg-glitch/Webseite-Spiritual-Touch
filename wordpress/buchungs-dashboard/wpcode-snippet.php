@@ -192,8 +192,22 @@
  *                 st_build_create_payload_() bekommt den gewünschten Status
  *                 jetzt direkt mit, kein Nachziehen mehr nötig — eine
  *                 einzige Mail bei sofortiger Freigabe.
+ *   2026-09-21.1  Neue Kunden per Dispatch endlich richtig gelöst: DevTools-
+ *                 Mitschnitt zeigte, dass Amelias eigene Oberfläche einen
+ *                 neuen Kunden über einen EIGENEN Endpunkt anlegt
+ *                 (call=/users/customers, Payload mit id:0), NICHT über ein
+ *                 eingebettetes Kundenobjekt im Termin-Anlegen-Request — das
+ *                 war die tatsächliche Ursache des AbstractRepository-SQL-
+ *                 Fehlers vom 18.09. Neue Funktion
+ *                 st_create_amelia_customer_() legt den Kunden jetzt zuerst
+ *                 über den richtigen Endpunkt an, st_build_create_payload_()
+ *                 braucht nur noch eine customerId (kein Inline-Zweig mehr).
+ *                 Antwortformat der Kundenanlage noch nicht live verifiziert
+ *                 (nur der Request wurde mitgeschnitten) — erster Test
+ *                 zeigt, ob st_extract_new_customer_id_() den richtigen Pfad
+ *                 findet.
  */
-define('ST_BD_VERSION', '2026-09-18.8');
+define('ST_BD_VERSION', '2026-09-21.1');
 
 /**
  * ST Buchungs-Dashboard
@@ -683,15 +697,86 @@ function st_service_duration_options_($service) {
 }
 
 /**
+ * Legt einen neuen Kunden über Amelias eigenen, per DevTools-Mitschnitt
+ * gefundenen Endpunkt an (21.09.2026, siehe README, Abschnitt "Dispatch" —
+ * derselbe Weg, den Amelias eigene Oberfläche beim Anlegen eines neuen
+ * Kunden im Termin-Formular benutzt: POST call=/users/customers, NICHT ein
+ * eingebettetes "customer"-Objekt im Anlegen-Termin-Request. Das erklärt den
+ * früheren AbstractRepository-SQL-Fehler — der alte Weg war schlicht der
+ * falsche Endpunkt). `id: 0` (nicht null, nicht weggelassen) signalisiert
+ * "neu", exakt wie im mitgeschnittenen Request.
+ */
+function st_create_amelia_customer_($first_name, $last_name, $email, $phone) {
+    $payload = [
+        'birthday' => null,
+        'countryPhoneIso' => 'de',
+        'customFields' => new stdClass(),
+        'email' => $email,
+        'externalId' => '',
+        'firstName' => $first_name,
+        'gender' => '',
+        'id' => 0,
+        'language' => '',
+        'lastName' => $last_name,
+        'note' => '',
+        'phone' => $phone,
+        'status' => 'visible',
+        'translations' => null,
+        'type' => 'customer',
+    ];
+
+    $result = st_amelia_ajax_call_('POST', '/users/customers', [], $payload);
+    if (is_wp_error($result)) {
+        return $result;
+    }
+    if (($result['code'] ?? 0) >= 400) {
+        return new WP_Error('amelia_customer_create_rejected', 'Amelia hat die Kundenanlage abgelehnt.', ['amelia_response' => $result['data'], 'payload_sent' => $payload]);
+    }
+
+    $new_customer_id = st_extract_new_customer_id_($result['data']);
+    if (!$new_customer_id) {
+        return new WP_Error('customer_created_but_id_not_found', 'Amelia hat mit Code ' . $result['code'] . ' geantwortet, aber keine Kunden-ID im erwarteten Format geliefert.', ['amelia_response' => $result['data']]);
+    }
+
+    return $new_customer_id;
+}
+
+/**
+ * Sucht die neue Kunden-ID in Amelias Antwort auf die Kundenanlage — Format
+ * noch nicht an einer echten Antwort verifiziert (der DevTools-Mitschnitt
+ * zeigte nur den Request, nicht den Response-Body), deshalb mehrere
+ * plausible Pfade probieren, analog st_extract_new_appointment_id_().
+ */
+function st_extract_new_customer_id_($data) {
+    if (!is_array($data)) {
+        return null;
+    }
+    $candidates = [
+        $data['user']['id'] ?? null,
+        $data['data']['user']['id'] ?? null,
+        $data['customer']['id'] ?? null,
+        $data['data']['id'] ?? null,
+        $data['id'] ?? null,
+    ];
+    foreach ($candidates as $c) {
+        if (is_numeric($c)) {
+            return (int) $c;
+        }
+    }
+    return null;
+}
+
+/**
  * Baut das komplette Termin-Objekt für eine NEUE Amelia-Anfrage (Gegenstück
  * zu st_build_reassign_payload_(), die einen BESTEHENDEN Termin umschreibt).
  * Anders als bei den Ändern-Routen gibt es hier keine echte Amelia-Anfrage,
  * aus der sich das Payload-Format ableiten ließe — der Aufbau folgt so eng
  * wie möglich dem bekannten "Aktualisieren"-Payload (siehe README), einfach
- * ohne "id" (Neu-Anlage statt Update). Insbesondere der Zweig für einen NEUEN
- * Kunden (kein customerId, stattdessen ein "customer"-Objekt direkt im
- * Booking) ist eine begründete Vermutung, keine bestätigte Tatsache — siehe
- * README, Abschnitt "Dispatch", für den nötigen ersten Live-Test.
+ * ohne "id" (Neu-Anlage statt Update). $customer_id ist immer eine echte,
+ * bereits existierende (oder gerade per st_create_amelia_customer_() neu
+ * angelegte) Amelia-Kunden-ID — kein eingebettetes Kundenobjekt mehr (siehe
+ * README, Abschnitt "Dispatch", für die Historie: der alte Ansatz war der
+ * falsche Endpunkt und schlug fehl).
  *
  * $duration_seconds kommt von st_resolve_service_duration_() — entweder die
  * Basis-Dauer des Service ODER eine der "Preise nach Dauer"-Varianten aus
@@ -712,7 +797,7 @@ function st_service_duration_options_($service) {
  * Kennenlern-Gespräch) — deshalb jetzt direkt den gewünschten Status
  * mitgeben, kein Nachziehen mehr nötig.
  */
-function st_build_create_payload_($service, $provider_id, $date, $time, $existing_customer_id, $customer, $internal_notes, $duration_seconds, $booking_status) {
+function st_build_create_payload_($service, $provider_id, $date, $time, $customer_id, $internal_notes, $duration_seconds, $booking_status) {
     $booking = [
         'coupon' => ['id' => null],
         'customFields' => new stdClass(),
@@ -721,15 +806,8 @@ function st_build_create_payload_($service, $provider_id, $date, $time, $existin
         'packageCustomerService' => null,
         'persons' => 1,
         'status' => $booking_status,
+        'customerId' => (int) $customer_id,
     ];
-    if ($existing_customer_id) {
-        $booking['customerId'] = $existing_customer_id;
-    } else {
-        // UNVERIFIZIERT (siehe Funktionskommentar oben): Vermutung, dass
-        // Amelias "Aktualisieren"-Endpunkt auch fürs Neu-Anlegen ein
-        // eingebettetes Kundenobjekt statt einer customerId akzeptiert.
-        $booking['customer'] = $customer;
-    }
 
     return [
         'bookings' => [$booking],
@@ -1188,7 +1266,7 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     // Bestehenden Kunden per E-Mail wiederverwenden statt Duplikate
     // anzulegen — dieselbe Person, die schon einmal gebucht hat, soll in
     // Amelia nicht mehrfach als Kunde auftauchen.
-    $existing_customer_id = $wpdb->get_var($wpdb->prepare(
+    $customer_id = $wpdb->get_var($wpdb->prepare(
         "SELECT id FROM {$prefix}amelia_users WHERE type = 'customer' AND email = %s LIMIT 1",
         $email
     ));
@@ -1196,13 +1274,29 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         return new WP_REST_Response(['error' => 'db_error', 'detail' => $wpdb->last_error], 500);
     }
 
+    // Kein bestehender Kunde gefunden -> über Amelias eigenen Endpunkt neu
+    // anlegen (per DevTools-Mitschnitt 21.09.2026 gefunden, siehe
+    // st_create_amelia_customer_()) statt wie früher ein Kundenobjekt in
+    // den Termin-Request einzubetten (führte zu einem Amelia-eigenen
+    // SQL-Fehler — falscher Endpunkt).
+    if (!$customer_id) {
+        $new_customer_id = st_create_amelia_customer_($first_name, $last_name, $email, $phone);
+        if (is_wp_error($new_customer_id)) {
+            return new WP_REST_Response([
+                'error' => 'customer_create_failed',
+                'detail' => $new_customer_id->get_error_message(),
+                'debug' => $new_customer_id->get_error_data(),
+            ], 502);
+        }
+        $customer_id = $new_customer_id;
+    }
+
     $payload = st_build_create_payload_(
         $service,
         $provider_id,
         $date,
         $time,
-        $existing_customer_id ? (int) $existing_customer_id : null,
-        ['firstName' => $first_name, 'lastName' => $last_name, 'email' => $email, 'phone' => $phone],
+        (int) $customer_id,
         $internal_notes,
         $duration_seconds,
         $status
