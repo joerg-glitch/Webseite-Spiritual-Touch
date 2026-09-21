@@ -206,8 +206,27 @@
  *                 (nur der Request wurde mitgeschnitten) — erster Test
  *                 zeigt, ob st_extract_new_customer_id_() den richtigen Pfad
  *                 findet.
+ *   2026-09-21.2  Fix (Live-Feedback): Neu-Kunden-Dispatch löste gelegentlich
+ *                 einen 502/Timeout aus, obwohl am Ende alles korrekt
+ *                 angelegt wurde — Ursache: zwei sequenzielle Amelia-
+ *                 Schreibaufrufe (Kunde anlegen, dann Termin anlegen)
+ *                 scrapten JEWEILS einzeln einen frischen Sicherheits-Code
+ *                 (eigener Seitenabruf + HTML-Durchsuchen), macht in Summe
+ *                 leicht 30-60+ Sekunden, bevor die eigentliche Arbeit
+ *                 überhaupt läuft. st_amelia_ajax_call_() und
+ *                 st_create_amelia_customer_() akzeptieren jetzt einen
+ *                 optionalen mitgegebenen Nonce; st_booking_dispatch_
+ *                 handler() holt ihn nur noch EINMAL pro Request und reicht
+ *                 ihn an beide Aufrufe durch — halbiert die
+ *                 Sequenz-Netzwerklaufzeit im Neu-Kunden-Fall. Zusätzlich
+ *                 Sicherheitsnetz: Schreib-Timeout von 20 auf 30 Sekunden
+ *                 angehoben. Falls der 502 trotzdem auftritt, liegt er
+ *                 vermutlich an einem Proxy-/Hosting-Timeout außerhalb
+ *                 unseres Codes — dann bitte NICHT blind wiederholen
+ *                 (Duplikat-Risiko), sondern erst in Amelia prüfen, ob der
+ *                 Datensatz schon existiert (siehe CLAUDE.md/DISPATCH.md).
  */
-define('ST_BD_VERSION', '2026-09-21.1');
+define('ST_BD_VERSION', '2026-09-21.2');
 
 /**
  * ST Buchungs-Dashboard
@@ -337,19 +356,31 @@ function st_scrape_amelia_nonce_() {
  * Ruft admin-ajax.php?action=wpamelia_api&call=... mit der Session des
  * aktuellen Admins auf (Cookies live weitergereicht, frischer Nonce).
  */
-function st_amelia_ajax_call_($method, $call_path, $query_extra = [], $body = null) {
-    $ctx = st_scrape_amelia_nonce_();
-    if (is_wp_error($ctx)) {
-        return $ctx;
+// $nonce_override: überspringt das Nonce-Scraping (eigener Seitenabruf +
+// HTML-Durchsuchen, spürbar langsam), wenn der Aufrufer den Nonce schon
+// aus einem vorherigen Aufruf INNERHALB DESSELBEN Requests hat — siehe
+// Fix 21.09.2026 unten (Neu-Kunden-Dispatch: zwei Amelia-Schreibaufrufe
+// nacheinander scrapten bisher zweimal, das summierte sich zu einem
+// spürbaren 502-Timeout-Risiko). Ohne Angabe unverändertes Verhalten
+// (frisches Scraping bei jedem Aufruf, für alle anderen Aufrufer hier).
+function st_amelia_ajax_call_($method, $call_path, $query_extra = [], $body = null, $nonce_override = null) {
+    if ($nonce_override !== null) {
+        $nonce = $nonce_override;
+    } else {
+        $ctx = st_scrape_amelia_nonce_();
+        if (is_wp_error($ctx)) {
+            return $ctx;
+        }
+        $nonce = $ctx['nonce'];
     }
 
-    $query = array_merge(['action' => 'wpamelia_api', 'call' => $call_path, 'wpAmeliaNonce' => $ctx['nonce']], $query_extra);
+    $query = array_merge(['action' => 'wpamelia_api', 'call' => $call_path, 'wpAmeliaNonce' => $nonce], $query_extra);
     $url = admin_url('admin-ajax.php') . '?' . http_build_query($query);
 
     $args = [
         'method' => $method,
         'cookies' => st_forward_cookies_(),
-        'timeout' => 20,
+        'timeout' => 30,
     ];
     if ($body !== null) {
         $args['headers'] = ['Content-Type' => 'application/json'];
@@ -706,7 +737,7 @@ function st_service_duration_options_($service) {
  * falsche Endpunkt). `id: 0` (nicht null, nicht weggelassen) signalisiert
  * "neu", exakt wie im mitgeschnittenen Request.
  */
-function st_create_amelia_customer_($first_name, $last_name, $email, $phone) {
+function st_create_amelia_customer_($first_name, $last_name, $email, $phone, $nonce_override = null) {
     $payload = [
         'birthday' => null,
         'countryPhoneIso' => 'de',
@@ -725,7 +756,7 @@ function st_create_amelia_customer_($first_name, $last_name, $email, $phone) {
         'type' => 'customer',
     ];
 
-    $result = st_amelia_ajax_call_('POST', '/users/customers', [], $payload);
+    $result = st_amelia_ajax_call_('POST', '/users/customers', [], $payload, $nonce_override);
     if (is_wp_error($result)) {
         return $result;
     }
@@ -1263,6 +1294,20 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     }
     wp_set_current_user(ST_RESCHEDULE_ADMIN_USER_ID);
 
+    // Nonce EINMAL für diesen Request holen und an beide möglichen
+    // Amelia-Schreibaufrufe (Kundenanlage + Termin-Anlegen) durchreichen,
+    // statt ihn wie bisher zweimal separat zu scrapen (eigener HTTP-Request
+    // + komplettes HTML durchsuchen, spürbar langsam). Fix 21.09.2026:
+    // zwei sequenzielle Scrapes plus zwei Schreibaufrufe summierten sich
+    // beim Neu-Kunden-Dispatch zu einer Laufzeit, die einen 502/Timeout
+    // auf der Website ausgelöst hat (Live-Feedback), obwohl beide
+    // Amelia-Aktionen selbst am Ende erfolgreich durchliefen.
+    $nonce_ctx = st_scrape_amelia_nonce_();
+    if (is_wp_error($nonce_ctx)) {
+        return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $nonce_ctx->get_error_message(), 'debug' => $nonce_ctx->get_error_data()], 502);
+    }
+    $nonce = $nonce_ctx['nonce'];
+
     // Bestehenden Kunden per E-Mail wiederverwenden statt Duplikate
     // anzulegen — dieselbe Person, die schon einmal gebucht hat, soll in
     // Amelia nicht mehrfach als Kunde auftauchen.
@@ -1280,7 +1325,7 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
     // den Termin-Request einzubetten (führte zu einem Amelia-eigenen
     // SQL-Fehler — falscher Endpunkt).
     if (!$customer_id) {
-        $new_customer_id = st_create_amelia_customer_($first_name, $last_name, $email, $phone);
+        $new_customer_id = st_create_amelia_customer_($first_name, $last_name, $email, $phone, $nonce);
         if (is_wp_error($new_customer_id)) {
             return new WP_REST_Response([
                 'error' => 'customer_create_failed',
@@ -1302,7 +1347,7 @@ function st_booking_dispatch_handler(WP_REST_Request $request) {
         $status
     );
 
-    $result = st_amelia_ajax_call_('POST', '/appointments', [], $payload);
+    $result = st_amelia_ajax_call_('POST', '/appointments', [], $payload, $nonce);
     if (is_wp_error($result)) {
         return new WP_REST_Response(['error' => 'amelia_request_failed', 'detail' => $result->get_error_message(), 'debug' => $result->get_error_data()], 502);
     }

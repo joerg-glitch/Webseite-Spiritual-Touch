@@ -310,6 +310,21 @@ Erster echter Test (Termin #116, Tim Metzger, Stephanie, 22.09. 18:00,
   komplette Dispatch-Ablauf (neue **und** bestehende Kunden, Dauer/Preis-
   Varianten, sofortige Freigabe in einem Schritt) live durchgetestet.
 
+  ⚠️ **Nachbesserung, selber Tag:** Ein zweiter Neu-Kunden-Test löste einen
+  502/Timeout auf der Website aus, obwohl Kunde und Termin am Ende korrekt
+  angelegt waren. Ursache: `/booking-dispatch` macht bei einem neuen
+  Kunden zwei sequenzielle Amelia-Schreibaufrufe (Kunde, dann Termin) —
+  jeder scrapte bisher **separat** einen frischen Sicherheits-Code
+  (eigener Seitenabruf + HTML-Durchsuchen), macht in Summe leicht
+  30-60+ Sekunden. Fix: Der Nonce wird jetzt einmal pro Request geholt und
+  an beide Aufrufe durchgereicht (`st_amelia_ajax_call_()`/
+  `st_create_amelia_customer_()` akzeptieren einen optionalen
+  mitgegebenen Nonce), zusätzlich Schreib-Timeout 20→30s. Noch nicht
+  erneut live getestet, ob der 502 damit verschwindet — falls er trotzdem
+  auftritt, ist es vermutlich ein Proxy-/Hosting-Timeout außerhalb des
+  Codes; dann nicht blind wiederholen (Duplikat-Risiko), sondern in Amelia
+  prüfen, ob der Datensatz schon existiert.
+
 ### Stufe 2 (Freigeben) — live bestätigt (18.09.2026)
 
 Termin #116 danach über `/booking-dispatch-confirm` freigegeben (ohne
