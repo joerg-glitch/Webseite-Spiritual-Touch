@@ -9,6 +9,7 @@ import json, pathlib
 
 here = pathlib.Path(__file__).parent
 kopf = (here / "seiten-kopf.html").read_text(encoding="utf-8")
+kats = (here / "seiten-kategorien.html").read_text(encoding="utf-8")
 fuss = (here / "seiten-fuss.html").read_text(encoding="utf-8")
 
 def html_widget(wid, code):
@@ -16,8 +17,15 @@ def html_widget(wid, code):
             "settings": {"html": code, "_css_classes": "stg-w"},
             "elements": [], "widgetType": "html"}
 
+# Reihenfolge der Kategorien (Amelia-Kategorie-IDs): Kennenlern-Gespräch, Zu Zweit,
+# Männer, Frauen, Coaching. Die Klasse st-kat-<ID> steht auf der jeweiligen Karte.
+KATEGORIEN = [2, 5, 3, 4, 6]
+shortcodes = "\n".join(
+    f'[ameliabooking category={k} trigger="st-kat-{k}" trigger_type="class" in_dialog=1]'
+    for k in KATEGORIEN)
+
 amelia = {"id": "a3e1c07", "elType": "widget",
-          "settings": {"shortcode": "[ameliabooking]", "_css_classes": "stg-w stg-form"},
+          "settings": {"shortcode": shortcodes, "_css_classes": "stg-w"},
           "elements": [], "widgetType": "shortcode"}
 
 root = {"id": "9c4d2b1", "elType": "container",
@@ -31,7 +39,7 @@ root = {"id": "9c4d2b1", "elType": "container",
             "background_color": "#F7F1EA",
             "min_height": {"unit": "vh", "size": 100, "sizes": []},
         },
-        "elements": [html_widget("5b8f3a2", kopf), amelia, html_widget("d72e6c9", fuss)],
+        "elements": [html_widget("5b8f3a2", kopf), html_widget("e19a4d6", kats), amelia, html_widget("d72e6c9", fuss)],
         "isInner": False}
 
 template = {

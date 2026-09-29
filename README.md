@@ -15,7 +15,7 @@ Dieses Repository bündelt alle Code-Projekte rund um [spiritual-touch.de](https
 | `wordpress/google-buchungslink/` | WPCode-Snippet: Google-Buchungslink | [README](wordpress/google-buchungslink/README.md) |
 | `elementor-widgets/coverflow-card-slider/` | Nachgebautes Elementor-HTML-Widget (Coverflow-Card-Slider) | [README](elementor-widgets/coverflow-card-slider/README.md) |
 | `whatsapp-vorschaltseite/` | WhatsApp-Look Vorschaltseite zur Lead-Filterung (DE/EN) | — |
-| `google-buchungsseite/` | Elementor-Seite mit eingebettetem Amelia-Formular für den Google-Business-Profil-Buchungslink (Testphase) | [README](google-buchungsseite/README.md) |
+| `google-buchungsseite/` | Elementor-Seite mit Kategorie-Karten (2,5,3,4,6) und Amelia-Popups für den Google-Business-Profil-Buchungslink (Testphase) | [README](google-buchungsseite/README.md) |
 | `PLAN.md`, `TASKS.md`, `TEAM-APP-ROADMAP.md` | Planungs-/Aufgaben-Dokus zur Team-App | — |
 | `.agents/skills/`, `.claude/skills/`, `skills-lock.json` | Design-Taste-Skills für Claude-Code-Sessions (kein Website-Code) | — |
 

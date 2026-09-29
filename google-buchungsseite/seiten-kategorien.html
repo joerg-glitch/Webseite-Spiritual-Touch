@@ -1,0 +1,86 @@
+<!-- ============================================================
+  Google-Buchungsseite – KATEGORIEN (Elementor HTML-Widget, zweites Widget)
+  Fünf Karten, Reihenfolge wie gewünscht: 2, 5, 3, 4, 6.
+  Jede Karte trägt eine eigene Klasse (st-kat-N); das Shortcode-Widget
+  darunter hängt pro Kategorie ein Amelia-Popup an genau diese Klasse.
+  Kategorien: 2 = Kennenlern-Gespräch, 5 = Zu Zweit, 3 = Angebote für Männer,
+              4 = Angebote für Frauen, 6 = Coaching & Begleitung
+  ============================================================ -->
+<style>
+  .stg-cats{ display:flex; flex-direction:column; gap:12px; padding:20px 0 8px; }
+
+  .stg-cat{
+    display:flex; align-items:center; gap:14px; width:100%;
+    text-align:left; cursor:pointer; font:inherit;
+    background:#fff !important; color:#2E2A28 !important;
+    border:1px solid rgba(91,67,56,.14) !important; border-radius:14px !important;
+    padding:16px 18px !important;
+    box-shadow:0 1px 2px rgba(46,42,40,.05);
+    transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .stg-cat:hover, .stg-cat:focus-visible{
+    border-color:#C8B178 !important; transform:translateY(-1px);
+    box-shadow:0 6px 20px rgba(46,42,40,.09);
+    outline:none;
+  }
+  .stg-cat:active{ transform:none; filter:brightness(.98); }
+
+  .stg-cat-text{ flex:1 1 auto; min-width:0; }
+  .stg-cat-title{
+    display:block;
+    font-family:"Playfair Display",Georgia,serif; font-size:19px; line-height:1.25;
+    color:#2E2A28;
+  }
+  .stg-cat-sub{ display:block; margin-top:3px; font-size:14px; line-height:1.45; color:#7A7A7A; }
+  .stg-cat-chev{ flex:0 0 auto; color:#C8B178; }
+
+  /* erste Karte (Kennenlern-Gespräch) leicht abgesetzt: Gold-Hintergrund wie st-btn-primary */
+  .stg-cat.stg-cat-intro{
+    background:#FBF6E9 !important; border-color:#C8B178 !important;
+  }
+</style>
+
+<section class="stg-cats" aria-label="Angebot wählen">
+
+  <button type="button" class="stg-cat stg-cat-intro st-kat-2">
+    <span class="stg-cat-text">
+      <span class="stg-cat-title">Unsicher? Kostenloses Kennenlern-Gespräch</span>
+      <span class="stg-cat-sub">Unverbindlich – wir lernen uns kurz kennen</span>
+    </span>
+    <svg class="stg-cat-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <button type="button" class="stg-cat st-kat-5">
+    <span class="stg-cat-text">
+      <span class="stg-cat-title">Zu Zweit</span>
+      <span class="stg-cat-sub">Für Paare und Rituale zu zweit oder zu dritt</span>
+    </span>
+    <svg class="stg-cat-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <button type="button" class="stg-cat st-kat-3">
+    <span class="stg-cat-text">
+      <span class="stg-cat-title">Angebote für Männer</span>
+      <span class="stg-cat-sub">Tantramassage, Bodyflow, Körperarbeit &amp; mehr</span>
+    </span>
+    <svg class="stg-cat-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <button type="button" class="stg-cat st-kat-4">
+    <span class="stg-cat-text">
+      <span class="stg-cat-title">Angebote für Frauen</span>
+      <span class="stg-cat-sub">Tantramassage, Bodyflow, Körperarbeit &amp; mehr</span>
+    </span>
+    <svg class="stg-cat-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <button type="button" class="stg-cat st-kat-6">
+    <span class="stg-cat-text">
+      <span class="stg-cat-title">Coaching &amp; Begleitung</span>
+      <span class="stg-cat-sub">Körperorientiertes Coaching einzeln oder zu zweit</span>
+    </span>
+    <svg class="stg-cat-chev" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+</section>

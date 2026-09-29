@@ -1,22 +1,30 @@
 # Google-Buchungsseite (Amelia) – Testphase
 
-Eigenständige Elementor-Seite mit dem **Amelia-Buchungsformular direkt eingebettet**
-(kein Popup), gedacht als Ziel für den **„Online buchen"-Button im Google
-Business Profil**. Testphase, bevor der Amelia-Button auf der ganzen Website
-freigeschaltet wird – so bleibt die restliche Seite unberührt.
+Eigenständige Elementor-Seite mit **fünf Kategorie-Karten**; ein Klick öffnet
+das **Amelia-Buchungsformular der Kategorie als Popup**. Ziel ist der
+**„Online buchen"-Button im Google Business Profil**. Testphase, bevor der
+Amelia-Button auf der ganzen Website freigeschaltet wird – so bleibt die
+restliche Seite unberührt.
 
 Aufbau analog zur [WhatsApp-Vorschaltseite](../whatsapp-vorschaltseite/):
-Elementor-Canvas-Seite (ohne Header/Footer), Kopf und Fuß als HTML-Widget,
-dazwischen Amelia.
+Elementor-Canvas-Seite (ohne Header/Footer), Auswahl per Karten, Amelia
+öffnet per Trigger-Klasse als Popup.
+
+| Reihenfolge | Amelia-Kategorie | Karte | Trigger-Klasse |
+|---|---|---|---|
+| 1 | 2 | Unsicher? Kostenloses Kennenlern-Gespräch | `st-kat-2` |
+| 2 | 5 | Zu Zweit | `st-kat-5` |
+| 3 | 3 | Angebote für Männer | `st-kat-3` |
+| 4 | 4 | Angebote für Frauen | `st-kat-4` |
+| 5 | 6 | Coaching & Begleitung | `st-kat-6` |
 
 ```
-┌──────────────────────────────┐
-│ HTML-Widget: seiten-kopf.html │  Marke, Überschrift, Adresse
-├──────────────────────────────┤
-│ Shortcode-Widget              │  [ameliabooking]  (weiße Karte)
-├──────────────────────────────┤
-│ HTML-Widget: seiten-fuss.html │  WhatsApp/Anrufen, Preise, FAQ, Impressum
-└──────────────────────────────┘
+┌───────────────────────────────────┐
+│ HTML-Widget: seiten-kopf.html      │  Marke, Überschrift, Adresse
+│ HTML-Widget: seiten-kategorien.html│  die 5 Karten
+│ Shortcode-Widget                   │  5× [ameliabooking category=N trigger=…]
+│ HTML-Widget: seiten-fuss.html      │  WhatsApp/Anrufen, Preise, FAQ, Impressum
+└───────────────────────────────────┘
 ```
 
 ## Variante A – Template importieren (schnell)
@@ -35,20 +43,25 @@ dazwischen Amelia.
 1. Neue Seite „Online buchen", Seitenlayout **Elementor Canvas**.
 2. Einen Container (Spalte) anlegen, darin nacheinander:
    - **HTML-Widget** → Inhalt von `seiten-kopf.html`
-   - **Shortcode-Widget** → `[ameliabooking]`; unter *Erweitert → CSS-Klassen*: `stg-w stg-form`
+   - **HTML-Widget** → Inhalt von `seiten-kategorien.html`
+   - **Shortcode-Widget** → diese fünf Zeilen:
+     ```
+     [ameliabooking category=2 trigger="st-kat-2" trigger_type="class" in_dialog=1]
+     [ameliabooking category=5 trigger="st-kat-5" trigger_type="class" in_dialog=1]
+     [ameliabooking category=3 trigger="st-kat-3" trigger_type="class" in_dialog=1]
+     [ameliabooking category=4 trigger="st-kat-4" trigger_type="class" in_dialog=1]
+     [ameliabooking category=6 trigger="st-kat-6" trigger_type="class" in_dialog=1]
+     ```
    - **HTML-Widget** → Inhalt von `seiten-fuss.html`
-3. Bei den beiden HTML-Widgets unter *Erweitert → CSS-Klassen*: `stg-w`.
+3. Bei den HTML-/Shortcode-Widgets unter *Erweitert → CSS-Klassen*: `stg-w`.
 
 ## Vor dem Veröffentlichen prüfen
 
-- **Kategorien „Anfrage" (ID 8) und „Bestätigt" (ID 7)** dürfen im öffentlichen
-  Formular nicht auftauchen (siehe [google-buchungslink/README.md](../wordpress/google-buchungslink/README.md)).
-  `[ameliabooking]` ohne Parameter zeigt den kompletten Katalog – im
-  **Inkognito-Fenster** einmal durchklicken: Kategorien, Mitarbeiter:innen,
-  keine „männliche/weibliche Begleitung"-Pseudo-Mitarbeiter sichtbar?
-  Falls doch: in Amelia die Kategorie/Mitarbeiter:innen für die Online-Buchung
-  ausblenden – oder statt des vollen Katalogs auf eine Kategorie einschränken,
-  z. B. `[ameliabooking category=3]` (Angebote für Männer).
+- **Jede der 5 Karten einzeln anklicken:** öffnet sich das richtige Popup, mit
+  den richtigen Angeboten? Weil pro Kategorie ein eigener Amelia-Shortcode
+  auf der Seite steht, sind „Anfrage" (ID 8) und „Bestätigt" (ID 7) gar nicht
+  erreichbar. Falls beim Klick nichts passiert oder ein falsches Popup
+  aufgeht: Trigger-Klasse der Karte und Shortcode vergleichen (`st-kat-N`).
 - **Bis zum Ende testen** (Probebuchung), damit man sieht, was Kund:innen danach
   erhalten und wie die Buchung bei euch als Anfrage/Bestätigt landet.
 - **Suchmaschinen:** die Seite ist ein reines Ziel für den Google-Link. Unter
@@ -75,15 +88,14 @@ dazwischen Amelia.
 
 ## Anpassen
 
-- **Texte/Farben:** in `seiten-kopf.html` / `seiten-fuss.html` ändern, dann
+- **Texte/Farben:** in `seiten-kopf.html`, `seiten-kategorien.html` bzw. `seiten-fuss.html` ändern, dann
   `python3 build_template.py` ausführen → neue `elementor-template.json`.
   (Oder direkt im HTML-Widget auf der Seite editieren.)
 - **Farben** entsprechen dem Elementor-Kit: Text `#2E2A28`/`#4A4442`, Gold
   `#C8B178` (wie `st-btn-primary`), Hintergrund `#F7F1EA`; Schrift Playfair Display.
-- **Farben im Formular selbst** (Buttons, Auswahl): nicht hier, sondern in
+- **Farben im Popup-Formular** (Buttons, Auswahl): nicht hier, sondern in
   Amelia → *Anpassen → Formulare* (Gold `#C8B178` passt zur Seite).
-- **Später optional:** kostenloses Vorgespräch als zweiter Einstieg
-  (`[ameliabooking service=12 trigger="st-vorgespraech-trigger" trigger_type="class" in_dialog=1]`
-  + Button mit Klasse `st-vorgespraech-trigger`). Bewusst nicht enthalten, weil
-  zwei Amelia-Instanzen auf einer Seite in der Testphase eine unnötige
-  Fehlerquelle wären.
+- **Kategorie ändern/ergänzen:** in `seiten-kategorien.html` eine Karte
+  kopieren (neue Klasse `st-kat-N`), in `build_template.py` die ID in
+  `KATEGORIEN` ergänzen – Reihenfolge der Liste = Reihenfolge der Shortcodes;
+  die Reihenfolge der Karten steht in `seiten-kategorien.html`.
