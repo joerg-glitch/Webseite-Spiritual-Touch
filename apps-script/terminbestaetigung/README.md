@@ -114,6 +114,92 @@ muss in Gmail unter „Senden als“ eingerichtet sein) und `ANTWORT_AN`.
 - Mail noch einmal schicken: den Termin neu kopieren und die alte Kopie
   löschen (neue Kopie = neuer Termin).
 
+## Erweiterungen (`Erweiterungen.gs`) – gebaut, noch ausgeschaltet
+
+Vier Bausteine, die an den bestätigten Terminen im Raumkalender hängen. Datei
+liegt im selben Projekt wie `Code.gs`. **Ausgeliefert ist alles aus**
+(`FUNKTIONEN` ganz oben in der Datei, alle vier auf `false`): Solange die
+Schalter aus sind, passiert nichts, auch wenn die Datei schon im Projekt liegt.
+
+| Baustein | Was passiert | Wann | Vorlage |
+|---|---|---|---|
+| `team` | Info-Mail an die Begleitung (`vorname@spiritual-touch.de`) mit Termin, Raum, Gast (Name, Mobilnummer, Mail, Sprache), Wünschen und Nachricht des Gastes. **Nicht** an Jörg selbst (`TEAM_OHNE_MAIL`). | im Lauf der Kundenbestätigung (spätestens 10 Min. danach) | fester Text im Skript (`teamText_`) |
+| `erinnerung` | Erinnerung an den Kunden | ab 24 h vor Beginn; nicht, wenn der Termin in <4 h beginnt oder erst <24 h vorher bestätigt wurde | Docs [deutsch](https://docs.google.com/document/d/10yp5r67Mffy7UD6BJYP1C8FlRUvbZSsVmZHpvdB-9w4/edit) / [englisch](https://docs.google.com/document/d/1A_IivOj9RRp0Z0GwFysH6udeay9F-nSR4EMPdsONcU4/edit) |
+| `feedback` | Feedback-Anfrage an den Kunden | 3 Tage nach dem **Ende** des Termins (später als 7 Tage danach nicht mehr) | Docs [deutsch](https://docs.google.com/document/d/1eBWS5r0MvlD8SNrD1XS9KEYgwTEh0R9xeimYKo0CoZk/edit) / [englisch](https://docs.google.com/document/d/1UFzeWprIcdIjVniEP74XL3mlCKaqnZX3DCH14WuMlHc/edit) |
+| `kontaktlog` | Jeder Kontakt (Bestätigung, Team-Info, Erinnerung, Feedback-Anfrage) wird als Zeile in einer Google-Tabelle protokolliert | sofort nach dem jeweiligen Versand | — |
+
+Die Kundenvorlagen sind Kopien der Bestätigungs-Docs (gleiches Logo, gleiche
+Signatur, gleiche Platzhalter) und werden wie diese im Doc bearbeitet. Sprache
+(Deutsch/English) wird auch hier aus der Zeile `Sprache:` gewählt.
+Erinnerung und Feedback gehen nur zwischen 8 und 21 Uhr raus.
+
+### Verhalten, das man kennen sollte
+- Alles gilt nur für Termine, die `Code.gs` bestätigt hat. Altbestand bleibt
+  unberührt, ebenso Termine ohne Teammitglied im Titel.
+- **Absage:** Termin im Raumkalender löschen → Erinnerung und Feedback
+  entfallen von selbst.
+- **Verschiebung:** Erinnerung und Feedback richten sich nach der neuen Zeit,
+  solange sie noch nicht gesendet wurden. Eine bereits gesendete Erinnerung
+  wird nicht wiederholt.
+- **Kein rückwirkender Versand:** Beim ersten Einschalten eines Bausteins
+  merkt sich das Skript den Zeitpunkt. Team-Info und Kontaktverlauf gelten nur
+  für Termine, die danach bestätigt wurden, Feedback nur für Termine, die
+  danach enden. Die Erinnerung gilt für alle bestätigten, noch bevorstehenden
+  Termine – direkt nach dem Einschalten bekommen also auch Termine in den
+  nächsten 4–24 Stunden eine Erinnerung.
+- Jeder Schritt hat seine eigene Markierung und Fehlerbehandlung: Ein Fehler
+  im Kontaktverlauf blockiert weder Team-Info noch Erinnerung. Nach einem
+  Fehler wird automatisch erneut versucht (Fehlermail höchstens alle 6 h je
+  Termin und Schritt).
+
+### Einschalten (empfohlene Reihenfolge)
+1. `Code.gs` **und** `Erweiterungen.gs` aus dem Repo in das Apps-Script-Projekt
+   übernehmen (Code.gs hat zwei kleine Einhängepunkte bekommen und verhält sich
+   mit ausgeschalteten Erweiterungen unverändert).
+2. `erweiterungenTesten` ausführen → fünf Beispiel-Entwürfe in Gmail
+   (Erinnerung de/en, Feedback de/en, Team-Info). Aussehen prüfen.
+3. `trockenlauf` ausführen → das Ausführungsprotokoll zeigt, was jetzt
+   passieren würde, ohne etwas zu senden oder zu markieren.
+4. Einen Baustein in `FUNKTIONEN` auf `true` stellen, mit `MODUS = 'ENTWURF'`
+   beginnen, ein paar Tage beobachten, dann `MODUS = 'SENDEN'`.
+   Reihenfolge-Vorschlag: `kontaktlog` → `team` → `erinnerung` → `feedback`.
+5. Für `kontaktlog` zuerst `kontaktTabelleAnlegen` ausführen: Die Tabelle
+   entsteht im eigenen Drive, der Link steht im Protokoll und kommt per Mail.
+   **Nur für Dich freigeben.**
+
+### Kontaktverlauf (Kundendatenbank)
+- Blatt **Kontaktverlauf**: eine Zeile je Kontakt mit Zeit, Ereignis, Kunde,
+  E-Mail, Telefon, Sprache, Termin, Uhrzeit, Begleitung, Raum, Dauer, Preis,
+  Modus (gesendet/Entwurf), Termin-ID (Kalender) und einer leeren Spalte
+  **Notiz** für eigene Anmerkungen.
+- Blatt **Kunden**: Auswertung je E-Mail-Adresse (Name, Anzahl Termine, letzte
+  Bestätigung) per Formel, nichts zu pflegen.
+- Der Freitext der Gäste (`Nachricht`, `Wunsch`, `Alternativen`) wird
+  **bewusst nicht** gespeichert (Datensparsamkeit). Ausgeschrieben steht er nur
+  in der Team-Info an die Begleitung.
+- Eingaben, die mit `=`, `+`, `-` oder `@` beginnen, werden als Text abgelegt,
+  damit Kundeneingaben nie als Formel laufen.
+- Die Tabelle enthält personenbezogene Daten über Massage-Kunden. Bitte
+  festlegen, wie lange Einträge aufbewahrt werden (z. B. 2–3 Jahre nach dem
+  letzten Termin) und Zeilen auf Wunsch löschen. Löschen einer Zeile hat keine
+  Auswirkung auf den Versand.
+
+### Offene Punkte vor dem Einschalten
+- **Adressen im Team:** Es wird `vorname@spiritual-touch.de` verwendet. Für
+  Eva und Mila bitte prüfen, ob diese Adresse (Chat-Raum) existiert; sonst
+  `TEAM_MAIL_AUSNAHMEN` ergänzen oder `TEAM_OHNE_MAIL` erweitern.
+- **Feedback-Link:** Optional `FEEDBACK_LINK` setzen und `{{FeedbackLink}}` ins
+  Feedback-Doc einfügen (z. B. Google-Bewertungslink). Ohne Link bittet die
+  Mail um eine Antwort per Mail.
+- **Feedback-Anfragen sind rechtlich nicht dasselbe wie Erinnerungen:**
+  Bewertungs-/Feedback-Mails gelten in Deutschland häufig als Werbung. Die
+  Vorlage enthält deshalb eine Abmelde-Zeile; sicherer ist zusätzlich ein
+  Hinweis bzw. Häkchen im WPForms-Formular. Das ist keine Rechtsberatung —
+  bitte im Zweifel kurz prüfen lassen.
+- **Abmelden:** Wer keine Feedback-Mails mehr will, antwortet per Mail. Eine
+  automatische Sperrliste gibt es bisher nicht; Zeile in der Tabelle mit
+  Notiz „kein Feedback" ist der manuelle Weg.
+
 ## Hinweis zu den Amelia-Skripten
 
 `raum-einladung-sync/` (Rückspiegelung nach Amelia) und die

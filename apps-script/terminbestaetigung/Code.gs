@@ -137,6 +137,10 @@ function bestaetigungenVersenden() {
         }
       });
     });
+
+    // Optional: Team-Info, Erinnerung, Feedback, Kontaktverlauf (Erweiterungen.gs).
+    // Ohne diese Datei oder mit allen Schaltern auf false passiert hier nichts.
+    if (typeof zusatzschritte_ === 'function') zusatzschritte_(false);
   } catch (err) {
     meldeFehler_('lauf', 'Fehler im Lauf', err.message + '\n\n' + err.stack);
     throw err;
@@ -169,6 +173,7 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
     throw err;
   }
   ev.setTag(TAG_KEY, MODUS === 'SENDEN' ? 'gesendet' : 'entwurf');
+  try { ev.setTag('bestaetigt_am', String(Date.now())); } catch (ignore) { /* nur für Erweiterungen.gs, nicht kritisch */ }
   Logger.log((MODUS === 'SENDEN' ? 'Gesendet' : 'Entwurf') + ': ' + termin.email +
     ' (' + raumName + ', ' + termin.sprache + ', ' + formatDatum_(termin.start) + ' ' + formatUhrzeit_(termin.start) + ')');
 }
