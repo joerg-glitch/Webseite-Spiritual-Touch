@@ -123,13 +123,16 @@ Schalter aus sind, passiert nichts, auch wenn die Datei schon im Projekt liegt.
 
 | Baustein | Was passiert | Wann | Vorlage |
 |---|---|---|---|
-| `team` | Info-Mail an die Begleitung (`vorname@spiritual-touch.de`) mit Termin, Raum, Gast (Name, Mobilnummer, Mail, Sprache), Wünschen und Nachricht des Gastes. **Nicht** an Jörg selbst (`TEAM_OHNE_MAIL`). | im Lauf der Kundenbestätigung (spätestens 10 Min. danach) | fester Text im Skript (`teamText_`) |
+| `team` | Info-Mail an die Begleitung (Adresse aus der Liste `TEAM_MAILS`) mit Termin, Raum, Gast (Name, Mobilnummer, Mail, Sprache), Wünschen und Nachricht des Gastes. **Nicht** an Jörg selbst (`TEAM_OHNE_MAIL`). | im Lauf der Kundenbestätigung (spätestens 10 Min. danach) | fester Text im Skript (`teamText_`) |
 | `erinnerung` | Erinnerung an den Kunden | ab 24 h vor Beginn; nicht, wenn der Termin in <4 h beginnt oder erst <24 h vorher bestätigt wurde | Docs [deutsch](https://docs.google.com/document/d/10yp5r67Mffy7UD6BJYP1C8FlRUvbZSsVmZHpvdB-9w4/edit) / [englisch](https://docs.google.com/document/d/1A_IivOj9RRp0Z0GwFysH6udeay9F-nSR4EMPdsONcU4/edit) |
 | `feedback` | Feedback-Anfrage an den Kunden | 3 Tage nach dem **Ende** des Termins (später als 7 Tage danach nicht mehr) | Docs [deutsch](https://docs.google.com/document/d/1eBWS5r0MvlD8SNrD1XS9KEYgwTEh0R9xeimYKo0CoZk/edit) / [englisch](https://docs.google.com/document/d/1UFzeWprIcdIjVniEP74XL3mlCKaqnZX3DCH14WuMlHc/edit) |
 | `kontaktlog` | Jeder Kontakt (Bestätigung, Team-Info, Erinnerung, Feedback-Anfrage) wird als Zeile in einer Google-Tabelle protokolliert | sofort nach dem jeweiligen Versand | — |
 
 Die Kundenvorlagen sind Kopien der Bestätigungs-Docs (gleiches Logo, gleiche
-Signatur, gleiche Platzhalter) und werden wie diese im Doc bearbeitet. Sprache
+Signatur, gleiche Platzhalter) und werden wie diese im Doc bearbeitet. Das
+Feedback-Doc übernimmt den Text der bisherigen Amelia-Feedback-Mail; die drei
+Links (Feedback-Formular, Google, Trustpilot) sind direkt im Doc hinterlegt,
+es gibt dafür keinen Platzhalter und nichts im Skript zu pflegen. Sprache
 (Deutsch/English) wird auch hier aus der Zeile `Sprache:` gewählt.
 Erinnerung und Feedback gehen nur zwischen 8 und 21 Uhr raus.
 
@@ -184,21 +187,34 @@ Erinnerung und Feedback gehen nur zwischen 8 und 21 Uhr raus.
   letzten Termin) und Zeilen auf Wunsch löschen. Löschen einer Zeile hat keine
   Auswirkung auf den Versand.
 
+### Team-Adressen pflegen
+Eine Team-Info geht nur an Personen, die in `TEAM_MAILS` (`Erweiterungen.gs`)
+mit Adresse eingetragen sind. Neues Teammitglied:
+1. Vorname in `TEAM` (`Code.gs`) ergänzen → Termine mit diesem Namen im Titel
+   werden erkannt und bestätigt.
+2. Adresse in `TEAM_MAILS` eintragen, sobald sie existiert.
+
+Steht jemand in `TEAM`, aber (noch) nicht in `TEAM_MAILS`, geht an den Gast
+trotzdem alles normal raus. Jörg bekommt eine Mail „Keine Team-Adresse für …“
+(höchstens alle 6 h je Termin), und die Team-Info wird automatisch nachgeholt,
+sobald die Adresse eingetragen ist. Wer bewusst nie eine Team-Info bekommen
+soll (Jörg), steht in `TEAM_OHNE_MAIL` – ohne Hinweismail. Vorbelegt sind die
+Adressen `vorname@spiritual-touch.de` für alle bisherigen Mitglieder (Eva
+bestätigt); **Mila fehlt noch**, bis ihre Adresse existiert.
+
 ### Offene Punkte vor dem Einschalten
-- **Adressen im Team:** Es wird `vorname@spiritual-touch.de` verwendet. Für
-  Eva und Mila bitte prüfen, ob diese Adresse (Chat-Raum) existiert; sonst
-  `TEAM_MAIL_AUSNAHMEN` ergänzen oder `TEAM_OHNE_MAIL` erweitern.
-- **Feedback-Link:** Optional `FEEDBACK_LINK` setzen und `{{FeedbackLink}}` ins
-  Feedback-Doc einfügen (z. B. Google-Bewertungslink). Ohne Link bittet die
-  Mail um eine Antwort per Mail.
 - **Feedback-Anfragen sind rechtlich nicht dasselbe wie Erinnerungen:**
   Bewertungs-/Feedback-Mails gelten in Deutschland häufig als Werbung. Die
-  Vorlage enthält deshalb eine Abmelde-Zeile; sicherer ist zusätzlich ein
-  Hinweis bzw. Häkchen im WPForms-Formular. Das ist keine Rechtsberatung —
+  Vorlage enthält deshalb am Ende eine kurze Abmelde-Zeile („Wenn Du solche
+  Nachrichten nicht möchtest, sag uns kurz Bescheid.“); sicherer ist zusätzlich
+  ein Hinweis bzw. Häkchen im WPForms-Formular. Das ist keine Rechtsberatung —
   bitte im Zweifel kurz prüfen lassen.
 - **Abmelden:** Wer keine Feedback-Mails mehr will, antwortet per Mail. Eine
-  automatische Sperrliste gibt es bisher nicht; Zeile in der Tabelle mit
-  Notiz „kein Feedback" ist der manuelle Weg.
+  automatische Sperrliste gibt es bisher nicht; Notiz „kein Feedback“ in der
+  Kontakt-Tabelle ist der manuelle Weg.
+- **Englisches Feedback-Formular:** Der Link im englischen Doc führt zur
+  deutschen Seite `spiritual-touch.de/feedback-termine`. Falls es eine
+  englische Version gibt, im englischen Doc austauschen.
 
 ## Hinweis zu den Amelia-Skripten
 

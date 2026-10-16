@@ -6,7 +6,7 @@
  * ein-/ausschaltbar über FUNKTIONEN unten. AUSGELIEFERT ALLES AUS: solange
  * alle Schalter auf false stehen, tut diese Datei nichts.
  *
- *  1. team        Info-Mail an die Begleitung (NAME@spiritual-touch.de),
+ *  1. team        Info-Mail an die Begleitung (Adresse aus TEAM_MAILS),
  *                 gleichzeitig zur Kundenbestätigung. Ausnahme: TEAM_OHNE_MAIL
  *                 (Jörg selbst).
  *  2. erinnerung  Erinnerung an den Kunden ca. 24 h vor dem Termin.
@@ -54,11 +54,27 @@ var FUNKTIONEN = {
   kontaktlog: false,
 };
 
-// Team-Adressen: Vorname kleingeschrieben @ TEAM_DOMAIN (Google-Chat-Räume,
-// siehe apps-script/raum-einladung-sync/README.md, Teil 1).
-var TEAM_DOMAIN = 'spiritual-touch.de';
-var TEAM_OHNE_MAIL = ['Jörg'];            // bekommen keine Team-Info
-var TEAM_MAIL_AUSNAHMEN = {};             // z. B. { 'Mila': 'annamilena@…' }, falls abweichend
+// Team-Adressen (Google-Chat-Räume, siehe apps-script/raum-einladung-sync/
+// README.md, Teil 1). NUR wer hier steht, bekommt eine Team-Info. Neues
+// Teammitglied: erst den Vornamen in TEAM (Code.gs) ergänzen, dann hier die
+// Adresse eintragen, sobald sie existiert. Steht jemand in TEAM, aber nicht
+// hier (und nicht in TEAM_OHNE_MAIL), geht keine Team-Info raus und Jörg
+// bekommt eine Erinnerungsmail (höchstens alle 6 h je Termin).
+var TEAM_MAILS = {
+  'Tara':       'tara@spiritual-touch.de',
+  'Eva':        'eva@spiritual-touch.de',
+  'Asmita':     'asmita@spiritual-touch.de',
+  'Amila':      'amila@spiritual-touch.de',
+  'Sarah':      'sarah@spiritual-touch.de',
+  'Dominik':    'dominik@spiritual-touch.de',
+  'Konstantin': 'konstantin@spiritual-touch.de',
+  'Alea':       'alea@spiritual-touch.de',
+  'Stephanie':  'stephanie@spiritual-touch.de',
+  'Karen':      'karen@spiritual-touch.de',
+  'Maxine':     'maxine@spiritual-touch.de',
+  // 'Mila':    'mila@spiritual-touch.de', // eintragen, sobald die Adresse existiert
+};
+var TEAM_OHNE_MAIL = ['Jörg'];  // bekommen bewusst keine Team-Info, auch keine Erinnerungsmail
 
 var VORLAGEN_ERINNERUNG = {
   de: { docId: '10yp5r67Mffy7UD6BJYP1C8FlRUvbZSsVmZHpvdB-9w4', betreff: 'Erinnerung an Deinen Termin' },
@@ -68,10 +84,6 @@ var VORLAGEN_FEEDBACK = {
   de: { docId: '1eBWS5r0MvlD8SNrD1XS9KEYgwTEh0R9xeimYKo0CoZk', betreff: 'Wie war Dein Termin?' },
   en: { docId: '1UFzeWprIcdIjVniEP74XL3mlCKaqnZX3DCH14WuMlHc', betreff: 'How was your appointment?' },
 };
-
-// Optional: Link für Bewertungen/Feedback. Gilt für den Platzhalter
-// {{FeedbackLink}} in den Docs (leer = nichts einsetzen).
-var FEEDBACK_LINK = '';
 
 var ERINNERUNG_VORLAUF_H = 24;     // Erinnerung ab 24 h vor Beginn …
 var ERINNERUNG_MIN_VORLAUF_H = 4;  // … aber nicht mehr, wenn der Termin in weniger als 4 h beginnt
@@ -154,14 +166,22 @@ function zusatzFuerTermin_(ev, raumName, jetzt, aktiv, trocken) {
 
   // 1. Team-Info an die Begleitung
   if (aktiv.team && bestaetigtAm && bestaetigtAm >= aktiv.team &&
-      TEAM_OHNE_MAIL.indexOf(termin.begleitung) < 0) {
-    var adresse = teamAdresse_(termin.begleitung);
-    isoliert('Team-Info', function () {
-      var gesendet = schritt_(ev, TAG_TEAM, trocken, 'Team-Info an ' + adresse, function () {
-        sendeIntern_(adresse, teamBetreff_(termin), teamText_(termin, gast, raumName));
+      TEAM_OHNE_MAIL.indexOf(termin.begleitung) < 0 && !ev.getTag(TAG_TEAM)) {
+    var adresse = TEAM_MAILS[termin.begleitung];
+    if (!adresse) {
+      meldeFehler_('team-adresse-' + ev.getId(), 'Keine Team-Adresse für ' + termin.begleitung,
+        'Für "' + termin.begleitung + '" ist in Erweiterungen.gs (TEAM_MAILS) keine Adresse eingetragen, ' +
+        'deshalb ging keine Team-Info raus.\n\nTermin: ' + formatDatum_(termin.start, 'de') + ' ' +
+        formatUhrzeit_(termin.start) + ' Uhr, ' + raumName + ', Gast ' + termin.name +
+        '\n\nSobald die Adresse in TEAM_MAILS steht, wird die Team-Info im nächsten Lauf nachgeholt.');
+    } else {
+      isoliert('Team-Info', function () {
+        var gesendet = schritt_(ev, TAG_TEAM, trocken, 'Team-Info an ' + adresse, function () {
+          sendeIntern_(adresse, teamBetreff_(termin), teamText_(termin, gast, raumName));
+        });
+        if (gesendet) protokoll('Team-Info');
       });
-      if (gesendet) protokoll('Team-Info');
-    });
+    }
   }
 
   // 2. Erinnerung ca. 24 h vorher
@@ -239,22 +259,14 @@ function inRuhezeit_(jetztMs) {
 
 // ---------- KUNDEN-MAILS (Erinnerung, Feedback) ----------
 
-function werteErweitert_(termin) {
-  var werte = werteFuerVorlage_(termin);
-  werte['{{FeedbackLink}}'] = FEEDBACK_LINK;
-  return werte;
-}
-
+// Die Links (Feedback-Formular, Google, Trustpilot) sind direkt im Doc
+// hinterlegt – hier ist kein Platzhalter dafür nötig.
 function sendeKundenmail_(termin, vorlage) {
-  var inhalt = rendereVorlage_(werteErweitert_(termin), vorlage.docId);
+  var inhalt = rendereVorlage_(werteFuerVorlage_(termin), vorlage.docId);
   sende_(termin.email, vorlage.betreff, inhalt);
 }
 
 // ---------- TEAM-INFO ----------
-
-function teamAdresse_(begleitung) {
-  return TEAM_MAIL_AUSNAHMEN[begleitung] || (begleitung.toLowerCase() + '@' + TEAM_DOMAIN);
-}
 
 function teamBetreff_(termin) {
   return 'Neuer Termin: ' + formatDatum_(termin.start, 'de') + ', ' + formatUhrzeit_(termin.start) + ' Uhr – ' + termin.name;
@@ -409,7 +421,7 @@ function erweiterungenTesten() {
     var t = Object.assign({ sprache: sprache }, beispiel);
     [['ERINNERUNG', VORLAGEN_ERINNERUNG], ['FEEDBACK', VORLAGEN_FEEDBACK]].forEach(function (paar) {
       var vorlage = paar[1][sprache];
-      var inhalt = rendereVorlage_(werteErweitert_(t), vorlage.docId);
+      var inhalt = rendereVorlage_(werteFuerVorlage_(t), vorlage.docId);
       GmailApp.createDraft(ALERT_EMAIL, '[TEST ' + paar[0] + ' ' + sprache.toUpperCase() + '] ' + vorlage.betreff, inhalt.text,
         { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder });
     });
