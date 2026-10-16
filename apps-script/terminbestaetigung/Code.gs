@@ -188,8 +188,14 @@ function leseTermin_(ev) {
   var name = gast.match(/^[ \t]*Name:[ \t]*(.+)$/mi);
   if (!name || !name[1].trim()) throw new Error('Kundenname ("Name:") in der Beschreibung nicht gefunden.');
 
-  var dauerPreis = kopf.match(/^[ \t]*Dauer:[ \t]*(.+?)[ \t]+-[ \t]+([\d.,]+)[ \t]*€/mi);
-  if (!dauerPreis) throw new Error('Zeile "Dauer: … - … €" in der Beschreibung nicht gefunden.');
+  // "Dauer: 2 Stunden - 290,00 €" – Strich darf auch ein Gedankenstrich sein,
+  // Währung €, "&euro;" (falls nicht entschlüsselt) oder EUR.
+  var dauerPreis = kopf.match(/^[ \t]*Dauer:[ \t]*(.+?)[ \t]+[-–—][ \t]+([\d.,]+)[ \t]*(?:€|&euro;|EUR)/mi);
+  if (!dauerPreis) {
+    var zeile = kopf.match(/^.*Dauer.*$/mi);
+    throw new Error('Zeile "Dauer: … - … €" in der Beschreibung nicht gefunden. Gefunden wurde: ' +
+      (zeile ? JSON.stringify(zeile[0]) : '(keine Zeile mit "Dauer")'));
+  }
 
   return {
     email: mail[1],
@@ -218,17 +224,24 @@ function findeBegleitung_(titel) {
 
 // Beschreibung kann als HTML gespeichert sein (z. B. Mail-Links) → in Text wandeln.
 function beschreibungAlsText_(roh) {
-  return String(roh || '')
+  var text = String(roh || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&euro;/g, '€')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&amp;/g, '&');
+    .replace(/<[^>]+>/g, '');
+  // Zweimal entschlüsseln: WPForms/Kalender speichern Sonderzeichen teils
+  // doppelt kodiert ("&amp;euro;" statt "&euro;" – im Kalender sichtbar als
+  // ein wörtliches "&euro;").
+  for (var i = 0; i < 2; i++) {
+    text = text
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&euro;/g, '€')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#0?39;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+  return text.replace(/\u00a0/g, ' ');
 }
 
 function werteFuerVorlage_(t) {
