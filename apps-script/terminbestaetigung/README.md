@@ -29,6 +29,27 @@ Verschiebungen lösen keine zweite Mail aus.
 
 Der Freitext `Nachricht:` des Kunden wird nie ausgewertet.
 
+## Zweisprachigkeit (Deutsch / English)
+
+Das WPForms-Formular hat ein Feld **„Sprache / Language“**; seine Zeile
+`Sprache: …` steht in der Terminbeschreibung im Block `Gastdaten:` (vor
+`Nachricht:`). Das Skript wählt danach die Vorlage:
+
+| Zeile in der Beschreibung | Vorlage | Betreff |
+|---|---|---|
+| enthält „English“/„Englisch“ | Doc „Terminbestätigung englisch“ | Appointment confirmation |
+| „Deutsch“, unbekannter Wert oder Zeile fehlt | Doc „Terminbestätigung deutsch“ | Terminbestätigung |
+
+In der englischen Mail werden Datum und Dauer mit übersetzt
+(„Saturday, 17 October 2026“, „2 hours“, „€290.00“). Die Platzhalter im
+englischen Doc heißen **genauso** wie im deutschen (`{{Datum}}`, `{{Dauer}}`
+…), nur der Text drumherum ist Englisch. Beide Doc-IDs stehen in `VORLAGEN`
+in `Code.gs`. Eine weitere Sprache = weiteres Doc + Eintrag dort + Erkennung
+in `leseTermin_`.
+
+Der Link „terms and conditions“ im englischen Doc zeigt noch auf die deutsche
+AGB-Seite — bei Bedarf im Doc auf eine englische Seite umstellen.
+
 ## Vorlage vorbereiten (einmalig)
 
 Im Google Doc „Terminbestätigung deutsch“ die kursiven Wörter durch
@@ -56,7 +77,8 @@ an der Vorlage wirken sofort, ohne am Skript etwas zu ändern.
 2. `Code.gs` einfügen; in den Projekteinstellungen „appsscript.json im Editor
    anzeigen“ und dessen Inhalt durch die Datei hier ersetzen (Zeitzone).
 3. `vorlageTesten` ausführen (▶) → Berechtigungen erlauben (Kalender, Docs,
-   Gmail) → in Gmail liegt ein Entwurf mit Beispieldaten. Aussehen prüfen.
+   Gmail) → in Gmail liegen zwei Entwürfe (Deutsch und English) mit
+   Beispieldaten. Aussehen prüfen.
 4. `einrichten` ausführen: setzt den Startzeitpunkt und legt den
    10-Minuten-Trigger an. Nur einmal nötig.
 5. Testtermin **neu** in einen Raumkalender kopieren (Titel mit Vorname,

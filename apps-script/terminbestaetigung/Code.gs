@@ -36,7 +36,7 @@
  * je Termin). Verschiebt oder ändert jemand den Termin später, wird NICHT
  * erneut bestätigt.
  *
- * VORLAGE: Google Doc VORLAGE_DOC_ID. Text, Fett/Kursiv, Links und das
+ * VORLAGE: Google Doc je Sprache (VORLAGEN). Text, Fett/Kursiv, Links und das
  * Logo werden übernommen. Platzhalter stehen in doppelten geschweiften
  * Klammern: {{Vorname}} {{Name}} {{Datum}} {{Uhrzeit}} {{Begleitung}}
  * {{Dauer}} {{Preis}}. Die Formatierung eines Platzhalters (fett/kursiv)
@@ -63,8 +63,13 @@
 // 'SENDEN'  = Mail geht direkt an den Kunden.
 var MODUS = 'ENTWURF';
 
-var VORLAGE_DOC_ID = '1zS4Cg7elvCFLtPA8o_UOsn6R_sjroRlvfWnL-XRpJJo';
-var BETREFF = 'Terminbestätigung';
+// Vorlagen je Sprache (Google Docs). Welche gilt, entscheidet die Zeile
+// "Sprache:" in der Terminbeschreibung (WPForms-Feld). Fehlt sie oder ist sie
+// unklar, wird auf Deutsch bestätigt.
+var VORLAGEN = {
+  de: { docId: '1zS4Cg7elvCFLtPA8o_UOsn6R_sjroRlvfWnL-XRpJJo', betreff: 'Terminbestätigung' },
+  en: { docId: '1lYI2Kf9ZdfW2jkgavlQBc4m7Vb5NBvQxL64nsGBoHq4', betreff: 'Appointment confirmation' },
+};
 var ABSENDER_NAME = 'Spiritual Touch';
 var ABSENDER_ALIAS = '';  // optional: Gmail-"Senden als"-Adresse, leer = Standardadresse (nur bei MODUS 'SENDEN')
 var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
@@ -91,6 +96,9 @@ var TAG_KEY = 'bestaetigung';
 // \r, \u000b oder \u2028 – alle gelten als Umbruch.
 var ZEILENUMBRUCH = /\r\n|\r|\u000b|\u2028|\n/g;
 
+var WOCHENTAGE_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+var MONATE_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+                 'September', 'October', 'November', 'December'];
 var WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 var MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August',
               'September', 'Oktober', 'November', 'Dezember'];
@@ -145,8 +153,9 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
   var termin = leseTermin_(ev);
   if (!termin) return; // kein Kundentermin oder Begleitung im Titel fehlt noch
 
+  var vorlage = VORLAGEN[termin.sprache];
   var werte = werteFuerVorlage_(termin);
-  var inhalt = rendereVorlage_(werte); // wirft bei Vorlagenfehler, BEVOR markiert wird
+  var inhalt = rendereVorlage_(werte, vorlage.docId); // wirft bei Vorlagenfehler, BEVOR markiert wird
 
   // Erst markieren, dann senden: scheitert das Markieren, geht keine Mail raus.
   ev.setTag(TAG_KEY, 'in-arbeit');
@@ -154,14 +163,14 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
     throw new Error('Markierung am Termin konnte nicht gespeichert werden – nichts gesendet.');
   }
   try {
-    sende_(termin.email, inhalt);
+    sende_(termin.email, vorlage.betreff, inhalt);
   } catch (err) {
     ev.deleteTag(TAG_KEY);
     throw err;
   }
   ev.setTag(TAG_KEY, MODUS === 'SENDEN' ? 'gesendet' : 'entwurf');
   Logger.log((MODUS === 'SENDEN' ? 'Gesendet' : 'Entwurf') + ': ' + termin.email +
-    ' (' + raumName + ', ' + formatDatum_(termin.start) + ' ' + formatUhrzeit_(termin.start) + ')');
+    ' (' + raumName + ', ' + termin.sprache + ', ' + formatDatum_(termin.start) + ' ' + formatUhrzeit_(termin.start) + ')');
 }
 
 // ---------- TERMIN LESEN ----------
@@ -197,8 +206,14 @@ function leseTermin_(ev) {
       (zeile ? JSON.stringify(zeile[0]) : '(keine Zeile mit "Dauer")'));
   }
 
+  // Zeile "Sprache: English" / "Sprache: Deutsch" (auch "Language:"). Nur der
+  // Gastdaten-Block zählt; alles außer eindeutig Englisch → Deutsch.
+  var sprachZeile = gast.match(/^[ \t]*(?:Sprache|Language)[^:\n]*:[ \t]*(.+)$/mi);
+  var sprache = (sprachZeile && /engl/i.test(sprachZeile[1]) && !/^\s*(deutsch|german)/i.test(sprachZeile[1])) ? 'en' : 'de';
+
   return {
     email: mail[1],
+    sprache: sprache,
     name: name[1].trim(),
     vorname: name[1].trim().split(/\s+/)[0],
     begleitung: begleitung,
@@ -245,22 +260,43 @@ function beschreibungAlsText_(roh) {
 }
 
 function werteFuerVorlage_(t) {
+  var en = t.sprache === 'en';
   return {
     '{{Vorname}}': t.vorname,
     '{{Name}}': t.name,
-    '{{Datum}}': formatDatum_(t.start),
+    '{{Datum}}': formatDatum_(t.start, t.sprache),
     '{{Uhrzeit}}': formatUhrzeit_(t.start),
     '{{Begleitung}}': t.begleitung,
-    '{{Dauer}}': t.dauer,
-    '{{Preis}}': t.preis,
+    '{{Dauer}}': en ? dauerEnglisch_(t.dauer) : t.dauer,
+    '{{Preis}}': en ? preisEnglisch_(t.preis) : t.preis,
   };
 }
 
-function formatDatum_(d) {
-  var wochentag = WOCHENTAGE[Number(Utilities.formatDate(d, TIMEZONE, 'u')) - 1];
+function formatDatum_(d, sprache) {
+  var en = sprache === 'en';
+  var wochentag = (en ? WOCHENTAGE_EN : WOCHENTAGE)[Number(Utilities.formatDate(d, TIMEZONE, 'u')) - 1];
   var tag = Number(Utilities.formatDate(d, TIMEZONE, 'd'));
-  var monat = MONATE[Number(Utilities.formatDate(d, TIMEZONE, 'M')) - 1];
-  return wochentag + ', ' + tag + '. ' + monat + ' ' + Utilities.formatDate(d, TIMEZONE, 'yyyy');
+  var monat = (en ? MONATE_EN : MONATE)[Number(Utilities.formatDate(d, TIMEZONE, 'M')) - 1];
+  var jahr = Utilities.formatDate(d, TIMEZONE, 'yyyy');
+  return en ? wochentag + ', ' + tag + ' ' + monat + ' ' + jahr
+            : wochentag + ', ' + tag + '. ' + monat + ' ' + jahr;
+}
+
+// "2 Stunden" -> "2 hours", "1,5 Stunden" -> "1.5 hours", "90 Minuten" -> "90 minutes"
+function dauerEnglisch_(dauer) {
+  return dauer
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/\bStunden\b/gi, 'hours')
+    .replace(/\bStunde\b/gi, 'hour')
+    .replace(/\bMinuten\b/gi, 'minutes')
+    .replace(/\bMinute\b/gi, 'minute');
+}
+
+// "290,00 €" -> "€290.00", "1.290,00 €" -> "€1,290.00"
+function preisEnglisch_(preis) {
+  var zahl = parseFloat(String(preis).replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.'));
+  if (isNaN(zahl)) return preis;
+  return '€' + zahl.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function formatUhrzeit_(d) {
@@ -269,8 +305,8 @@ function formatUhrzeit_(d) {
 
 // ---------- VORLAGE (Google Doc → HTML + Text) ----------
 
-function rendereVorlage_(werte) {
-  var body = DocumentApp.openById(VORLAGE_DOC_ID).getBody();
+function rendereVorlage_(werte, docId) {
+  var body = DocumentApp.openById(docId).getBody();
   var vorlagenText = body.getText();
 
   var erwartet = (vorlagenText.match(/\{\{[^}]*\}\}/g) || []);
@@ -379,14 +415,14 @@ function escapeHtml_(s) {
 
 // ---------- VERSAND ----------
 
-function sende_(an, inhalt) {
+function sende_(an, betreff, inhalt) {
   var optionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
   if (ANTWORT_AN) optionen.replyTo = ANTWORT_AN;
   if (MODUS === 'SENDEN') {
     if (ABSENDER_ALIAS) optionen.from = ABSENDER_ALIAS;
-    GmailApp.sendEmail(an, BETREFF, inhalt.text, optionen);
+    GmailApp.sendEmail(an, betreff, inhalt.text, optionen);
   } else {
-    GmailApp.createDraft(an, BETREFF, inhalt.text, optionen);
+    GmailApp.createDraft(an, betreff, inhalt.text, optionen);
   }
 }
 
@@ -405,16 +441,19 @@ function einrichten() {
     ' – Modus: ' + MODUS);
 }
 
-// Legt einen Entwurf mit Beispieldaten an ALERT_EMAIL an – zum Prüfen der
-// Vorlage, ohne Kalender. Sendet nie an einen Kunden.
+// Legt je Sprache (Deutsch, English) einen Entwurf mit Beispieldaten an
+// ALERT_EMAIL an – zum Prüfen der Vorlagen, ohne Kalender. Sendet nie an
+// einen Kunden.
 function vorlageTesten() {
-  var inhalt = rendereVorlage_(werteFuerVorlage_({
-    vorname: 'Max', name: 'Max Mustermann', begleitung: 'Asmita',
-    dauer: '2 Stunden', preis: '290,00 €', start: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-  }));
-  GmailApp.createDraft(ALERT_EMAIL, '[TEST] ' + BETREFF, inhalt.text,
-    { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder });
-  Logger.log('Test-Entwurf an ' + ALERT_EMAIL + ' liegt in Gmail unter Entwürfe.');
+  ['de', 'en'].forEach(function (sprache) {
+    var inhalt = rendereVorlage_(werteFuerVorlage_({
+      sprache: sprache, vorname: 'Max', name: 'Max Mustermann', begleitung: 'Asmita',
+      dauer: '2 Stunden', preis: '290,00 €', start: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    }), VORLAGEN[sprache].docId);
+    GmailApp.createDraft(ALERT_EMAIL, '[TEST ' + sprache.toUpperCase() + '] ' + VORLAGEN[sprache].betreff, inhalt.text,
+      { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder });
+  });
+  Logger.log('2 Test-Entwürfe (de/en) an ' + ALERT_EMAIL + ' liegen in Gmail unter Entwürfe.');
 }
 
 // Falls ein Termin versehentlich nicht bestätigt werden soll bzw. noch
