@@ -39,9 +39,10 @@
  * VORLAGE: Google Doc VORLAGE_DOC_ID. Text, Fett/Kursiv, Links und das
  * Logo werden übernommen. Platzhalter stehen in doppelten geschweiften
  * Klammern: {{Vorname}} {{Name}} {{Datum}} {{Uhrzeit}} {{Begleitung}}
- * {{Dauer}} {{Preis}}. Jeder Platzhalter muss in EINEM Zug getippt/
- * formatiert sein (nicht halb fett, halb normal). Unbekannte oder
- * zerrissene Platzhalter → es wird nichts gesendet, Jörg bekommt eine Mail.
+ * {{Dauer}} {{Preis}}. Die Formatierung eines Platzhalters (fett/kursiv)
+ * ist egal, auch wenn sie mitten im Platzhalter wechselt – sie richtet sich
+ * nach der ersten Klammer. Unbekannte Platzhalter → es wird nichts
+ * gesendet, Jörg bekommt eine Mail.
  *
  * SETUP
  * 1. Neues Projekt auf script.google.com als joerg@spiritual-touch.de.
@@ -291,8 +292,8 @@ function rendereVorlage_(werte) {
   }
 
   if (zaehler.n !== erwartet.length) {
-    throw new Error('Platzhalter in der Vorlage sind uneinheitlich formatiert (' + zaehler.n + ' von ' +
-      erwartet.length + ' ersetzt). Jeden Platzhalter am Stück und in einer Formatierung schreiben.');
+    throw new Error('Interner Fehler: nur ' + zaehler.n + ' von ' + erwartet.length +
+      ' Platzhaltern der Vorlage wurden ersetzt – nichts gesendet.');
   }
 
   return {
@@ -303,21 +304,44 @@ function rendereVorlage_(werte) {
   };
 }
 
+// Google Docs teilt einen Absatz überall dort in "Formatierungsabschnitte",
+// wo sich irgendein Merkmal ändert (auch unsichtbare wie Schriftgröße,
+// Farbton oder Rechtschreib-Reste). Ein Platzhalter kann dadurch mitten
+// durchgeschnitten werden. Darum werden Platzhalter hier immer am Stück aus
+// dem GANZEN Absatztext gesucht und als Einheit ersetzt; die Formatierung
+// (fett/kursiv/Link) übernimmt der Platzhalter von seiner ersten Klammer.
 function textAlsHtml_(text, werte, zaehler) {
   var s = text.getText();
   var idx = text.getTextAttributeIndices();
+  var stile = idx.map(function (von) {
+    return { b: text.isBold(von), i: text.isItalic(von), l: text.getLinkUrl(von) };
+  });
+  var treffer = [];
+  s.replace(/\{\{[^}]*\}\}/g, function (p, off) { treffer.push({ von: off, bis: off + p.length, p: p }); });
+
   var out = '';
-  for (var k = 0; k < idx.length; k++) {
-    var von = idx[k];
-    var bis = k + 1 < idx.length ? idx[k + 1] : s.length;
-    var stueck = s.substring(von, bis);
-    if (!stueck) continue;
-    var h = escapeHtml_(ersetze_(stueck, werte, zaehler)).replace(/\u000b|\n/g, '<br>');
-    if (text.isBold(von)) h = '<strong>' + h + '</strong>';
-    if (text.isItalic(von)) h = '<em>' + h + '</em>';
-    var link = text.getLinkUrl(von);
-    if (link) h = '<a href="' + escapeHtml_(link) + '" style="color:#1155cc">' + h + '</a>';
+  var pos = 0;
+  while (pos < s.length) {
+    var t = null;
+    treffer.forEach(function (x) { if (x.von === pos) t = x; });
+    var ende, inhalt;
+    if (t) {
+      ende = t.bis;
+      if (t.p in werte) { zaehler.n++; inhalt = werte[t.p]; } else { inhalt = t.p; }
+    } else {
+      ende = s.length;
+      idx.forEach(function (v) { if (v > pos && v < ende) ende = v; });
+      treffer.forEach(function (x) { if (x.von > pos && x.von < ende) ende = x.von; });
+      inhalt = s.substring(pos, ende);
+    }
+    var k = 0;
+    idx.forEach(function (v, m) { if (v <= pos) k = m; });
+    var h = escapeHtml_(inhalt).replace(/\u000b|\n/g, '<br>');
+    if (stile[k].b) h = '<strong>' + h + '</strong>';
+    if (stile[k].i) h = '<em>' + h + '</em>';
+    if (stile[k].l) h = '<a href="' + escapeHtml_(stile[k].l) + '" style="color:#1155cc">' + h + '</a>';
     out += h;
+    pos = ende;
   }
   return out;
 }

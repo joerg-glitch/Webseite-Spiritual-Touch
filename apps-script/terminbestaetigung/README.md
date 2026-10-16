@@ -32,8 +32,9 @@ Der Freitext `Nachricht:` des Kunden wird nie ausgewertet.
 ## Vorlage vorbereiten (einmalig)
 
 Im Google Doc „Terminbestätigung deutsch“ die kursiven Wörter durch
-Platzhalter ersetzen (Kursiv dabei wegnehmen, Fett darf bleiben; jeden
-Platzhalter am Stück tippen):
+Platzhalter ersetzen (Kursiv dabei wegnehmen, Fett darf bleiben). Die
+Formatierung eines Platzhalters übernimmt das Skript von seiner ersten
+Klammer `{{`; unsichtbare Formatwechsel mitten im Platzhalter schaden nicht:
 
 | Im Doc steht jetzt | Ersetzen durch |
 |---|---|
