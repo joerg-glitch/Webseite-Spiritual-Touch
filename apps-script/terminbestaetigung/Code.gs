@@ -87,6 +87,10 @@ var SCAN_TAGE_VORAUS = 180;
 var TIMEZONE = 'Europe/Berlin';
 var TAG_KEY = 'bestaetigung';
 
+// Weiche Zeilenumbrüche (Shift+Enter) liefert Apps Script je nach Quelle als
+// \r, \u000b oder \u2028 – alle gelten als Umbruch.
+var ZEILENUMBRUCH = /\r\n|\r|\u000b|\u2028|\n/g;
+
 var WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 var MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August',
               'September', 'Oktober', 'November', 'Dezember'];
@@ -299,7 +303,7 @@ function rendereVorlage_(werte) {
   return {
     html: '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#0f1b2a">' +
       absaetze.join('') + '</div>',
-    text: ersetze_(vorlagenText, werte, { n: 0 }).replace(/\u000b/g, '\n'),
+    text: ersetze_(vorlagenText, werte, { n: 0 }).replace(ZEILENUMBRUCH, '\n'),
     bilder: bilder,
   };
 }
@@ -336,7 +340,7 @@ function textAlsHtml_(text, werte, zaehler) {
     }
     var k = 0;
     idx.forEach(function (v, m) { if (v <= pos) k = m; });
-    var h = escapeHtml_(inhalt).replace(/\u000b|\n/g, '<br>');
+    var h = escapeHtml_(inhalt).replace(ZEILENUMBRUCH, '<br>');
     if (stile[k].b) h = '<strong>' + h + '</strong>';
     if (stile[k].i) h = '<em>' + h + '</em>';
     if (stile[k].l) h = '<a href="' + escapeHtml_(stile[k].l) + '" style="color:#1155cc">' + h + '</a>';
