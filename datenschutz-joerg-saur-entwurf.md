@@ -57,10 +57,10 @@ Zur Verwaltung nutzen wir das WordPress-Plugin **Complianz**. Es speichert Ihre 
 ## 6. Kontaktaufnahme
 
 ### E-Mail und Telefon
-Wenn Sie uns per E-Mail oder Telefon kontaktieren, verarbeiten wir Ihre Angaben, um Ihre Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b oder f DSGVO. Wir löschen die Daten, wenn die Anfrage erledigt ist und keine Aufbewahrungspflicht besteht [Frist festlegen, z. B. 12 Monate].
+Wenn Sie uns per E-Mail oder Telefon kontaktieren, verarbeiten wir Ihre Angaben, um Ihre Anfrage zu bearbeiten. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b oder f DSGVO. Wir löschen die Daten, wenn die Anfrage erledigt ist und keine Aufbewahrungspflicht besteht, spätestens 12 Monate nach Abschluss der Anfrage.
 
 ### Kontaktformular (WPForms)
-Für das Kontaktformular nutzen wir das WordPress-Plugin **WPForms**. Ihre Eingaben (z. B. Name, E-Mail, Nachricht) werden an uns per E-Mail gesendet und **in der Datenbank unserer Website gespeichert**. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b oder f DSGVO. Wir löschen die Einträge, wenn die Anfrage erledigt ist [Frist festlegen und in WPForms einstellen].
+Für das Kontaktformular nutzen wir das WordPress-Plugin **WPForms**. Ihre Eingaben (z. B. Name, E-Mail, Nachricht) werden an uns per E-Mail gesendet und **in der Datenbank unserer Website gespeichert**. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b oder f DSGVO. Wir löschen die Einträge, wenn die Anfrage erledigt ist, spätestens 12 Monate nach Abschluss der Anfrage.
 
 ### WhatsApp Business
 Sie können uns über **WhatsApp Business** kontaktieren. Anbieter ist die WhatsApp Ireland Limited, Merrion Road, Dublin 4, Irland, die zu Meta gehört. Nachrichten sind Ende-zu-Ende-verschlüsselt. Meta verarbeitet jedoch Metadaten (z. B. Telefonnummer, Zeitpunkt der Kommunikation) und kann Daten in Drittländer wie die USA übermitteln. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b oder f DSGVO. Weitere Informationen finden Sie in der Datenschutzerklärung von WhatsApp.
@@ -77,10 +77,11 @@ Ticket Tailor ist auf unserer Website teils als **eingebettetes Widget**, teils 
 ### Zahlung
 Zahlungen können über **PayPal** (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxembourg) erfolgen, entweder über die Buchungsplattform oder über einen Zahlungslink, den wir Ihnen per E-Mail senden. Außerdem sind Kartenzahlung vor Ort mit einem Kartenterminal von **SumUp** (SumUp Payments Limited, Irland) [Anschrift laut SumUp-Datenschutzerklärung ergänzen] und Zahlung auf Rechnung möglich. Kartendaten verarbeitet SumUp; wir erhalten sie nicht. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
 
-### Aufbewahrung
-Über die für die Buchung und Abrechnung erforderlichen Angaben hinaus speichern wir keine personenbezogenen Daten von Teilnehmenden. Rechnungs- und Buchungsdaten bewahren wir wegen steuer- und handelsrechtlicher Pflichten gesetzlich auf (Art. 6 Abs. 1 lit. c DSGVO), je nach Unterlage 8 bis 10 Jahre. Nach Ablauf der Fristen werden sie gelöscht.
+### Terminverwaltung im Google Kalender
+Zur Organisation unserer Termine führen wir Einträge in unserem **Google Kalender** (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland). Darin stehen der Vorname der Teilnehmenden sowie Handynummer und E-Mail-Adresse, damit wir Sie bei Terminänderungen erreichen können. Google kann Daten in die USA übermitteln; die Übermittlung stützt sich auf den EU-US Data Privacy Framework-Beschluss. Mit Google besteht ein Vertrag zur Auftragsverarbeitung. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Wir löschen die Einträge [Frist festlegen, Vorschlag: 12 Monate nach dem Termin].
 
-[Offen: Werden Termine mit Namen im Google Kalender geführt? Falls ja, hier einen Absatz zu Google (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland; Übermittlung in die USA auf Grundlage des EU-US Data Privacy Framework; Auftragsverarbeitungsvertrag) ergänzen.]
+### Aufbewahrung
+Rechnungs- und Buchungsdaten bewahren wir wegen steuer- und handelsrechtlicher Pflichten gesetzlich auf (Art. 6 Abs. 1 lit. c DSGVO), je nach Unterlage 8 bis 10 Jahre. Nach Ablauf der Fristen werden sie gelöscht. Darüber hinaus speichern wir keine Teilnehmerlisten.
 
 ## 8. Besondere Kategorien personenbezogener Daten
 
