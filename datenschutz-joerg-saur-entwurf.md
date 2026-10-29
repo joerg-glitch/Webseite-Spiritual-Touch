@@ -78,7 +78,7 @@ Ticket Tailor ist auf unserer Website teils als **eingebettetes Widget**, teils 
 Zahlungen können über **PayPal** (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxembourg) erfolgen, entweder über die Buchungsplattform oder über einen Zahlungslink, den wir Ihnen per E-Mail senden. Außerdem sind Kartenzahlung vor Ort mit einem Kartenterminal von **SumUp** (SumUp Payments Limited, Irland) [Anschrift laut SumUp-Datenschutzerklärung ergänzen] und Zahlung auf Rechnung möglich. Kartendaten verarbeitet SumUp; wir erhalten sie nicht. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
 
 ### Terminverwaltung im Google Kalender
-Zur Organisation unserer Termine führen wir Einträge in unserem **Google Kalender** (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland). Darin stehen der Vorname der Teilnehmenden sowie Handynummer und E-Mail-Adresse, damit wir Sie bei Terminänderungen erreichen können. Google kann Daten in die USA übermitteln; die Übermittlung stützt sich auf den EU-US Data Privacy Framework-Beschluss. Mit Google besteht ein Vertrag zur Auftragsverarbeitung. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Wir löschen die Einträge [Frist festlegen, Vorschlag: 12 Monate nach dem Termin].
+Zur Organisation unserer Termine führen wir Einträge in unserem **Google Kalender** (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland). Darin stehen der Vorname der Teilnehmenden sowie Handynummer und E-Mail-Adresse, damit wir Sie bei Terminänderungen erreichen können. Google kann Daten in die USA übermitteln; die Übermittlung stützt sich auf den EU-US Data Privacy Framework-Beschluss. Mit Google besteht ein Vertrag zur Auftragsverarbeitung. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Wir löschen die Einträge 12 Monate nach dem Termin.
 
 ### Aufbewahrung
 Rechnungs- und Buchungsdaten bewahren wir wegen steuer- und handelsrechtlicher Pflichten gesetzlich auf (Art. 6 Abs. 1 lit. c DSGVO), je nach Unterlage 8 bis 10 Jahre. Nach Ablauf der Fristen werden sie gelöscht. Darüber hinaus speichern wir keine Teilnehmerlisten.
@@ -101,7 +101,7 @@ Brevo misst, ob Sie den Newsletter öffnen und welche Links Sie anklicken (**Ope
 
 Mit Ihrer Einwilligung nutzen wir **Google Analytics 4**, einen Webanalysedienst der Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland. Er erfasst, wie Besucher die Website nutzen (z. B. aufgerufene Seiten, Verweildauer, grobe Herkunft). Die Daten werden an Google übertragen und können in die USA übermittelt werden (Rechtsgrundlage: EU-US Data Privacy Framework).
 
-Rechtsgrundlage ist Ihre Einwilligung, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG. Sie können sie jederzeit über die Cookie-Einstellungen widerrufen. Die Daten speichern wir [2 oder 14 Monate; in Google Analytics einstellen] und löschen sie danach.
+Rechtsgrundlage ist Ihre Einwilligung, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG. Sie können sie jederzeit über die Cookie-Einstellungen widerrufen. Die Daten speichern wir 14 Monate und löschen sie danach.
 
 ## 11. Google Maps und Google Kalender (eingebettet)
 
@@ -135,7 +135,8 @@ Wir passen diese Erklärung an, wenn sich unsere Angebote oder die Rechtslage ä
 ## Anhang A: Vor dem Livegang erledigen
 
 - [ ] Complianz installieren, Cookie-Scan laufen lassen, Google Analytics, Maps, Kalender und ggf. Ticket-Tailor-Widget als einwilligungspflichtig hinterlegen
-- [ ] Google Analytics 4 über Complianz einbinden (Consent Mode), Speicherdauer einstellen
+- [ ] Google Analytics 4 über Complianz einbinden (Consent Mode), Datenaufbewahrung in GA4 auf 14 Monate stellen (Verwaltung > Datenerhebung und -änderung > Datenaufbewahrung)
+- [ ] Google Kalender: Einträge nach 12 Monaten löschen (Erinnerung einrichten, z. B. quartalsweise)
 - [ ] Google Fonts mit OMGF lokal einbinden
 - [ ] Auftragsverarbeitungsverträge: liegen vor (all-inkl, Ticket Tailor, Brevo, Google, SumUp); beim Umzug nur prüfen, dass der all-inkl-Vertrag für den neuen Account gilt
 - [ ] WPForms: Löschfrist für Einsendungen festlegen
