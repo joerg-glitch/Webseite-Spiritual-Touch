@@ -46,13 +46,13 @@ Diese Website wird bei **ALL-INKL.COM – Neue Medien Münnich**, Inh. René Mü
 
 Beim Aufruf der Website erfasst der Server automatisch Daten wie IP-Adresse, Datum und Uhrzeit, aufgerufene Seite, Browsertyp und Betriebssystem (Logfiles). Das ist technisch notwendig, um die Seite auszuliefern und abzusichern.
 
-Rechtsgrundlage ist unser berechtigtes Interesse an einem sicheren und stabilen Betrieb, Art. 6 Abs. 1 lit. f DSGVO. Mit dem Hoster besteht ein Vertrag zur Auftragsverarbeitung (Art. 28 DSGVO). [Speicherdauer der Logfiles laut all-inkl ergänzen.]
+Rechtsgrundlage ist unser berechtigtes Interesse an einem sicheren und stabilen Betrieb, Art. 6 Abs. 1 lit. f DSGVO. Mit dem Hoster besteht ein Vertrag zur Auftragsverarbeitung (Art. 28 DSGVO). Die Speicherdauer der Logfiles entnehmen Sie den Datenschutzinformationen von ALL-INKL.COM unter https://all-inkl.com/datenschutzinformationen/.
 
 ## 5. Cookies und Einwilligungsverwaltung (Complianz)
 
 Wir setzen **technisch notwendige Cookies** ohne Einwilligung ein, z. B. um Ihre Cookie-Auswahl zu speichern. Alle anderen Dienste (Statistik, eingebettete Inhalte von Google) laden erst, nachdem Sie im Cookie-Banner eingewilligt haben.
 
-Zur Verwaltung nutzen wir das WordPress-Plugin **Complianz**. Es speichert Ihre Auswahl in einem Cookie auf Ihrem Gerät. Rechtsgrundlage ist Art. 6 Abs. 1 lit. c und f DSGVO in Verbindung mit § 25 Abs. 2 TDDDG. Ihre Auswahl können Sie jederzeit über [Link „Cookie-Einstellungen“ im Footer] ändern oder widerrufen.
+Zur Verwaltung nutzen wir das WordPress-Plugin **Complianz**. Es speichert Ihre Auswahl in einem Cookie auf Ihrem Gerät. Rechtsgrundlage ist Art. 6 Abs. 1 lit. c und f DSGVO in Verbindung mit § 25 Abs. 2 TDDDG. Ihre Auswahl können Sie jederzeit über den Link „Cookie-Einstellungen“ auf dieser Website ändern oder widerrufen.
 
 ## 6. Kontaktaufnahme
 
@@ -70,12 +70,12 @@ Sie können uns über **WhatsApp Business** kontaktieren. Anbieter ist die Whats
 ## 7. Buchungen, Zahlung und Teilnehmerlisten
 
 ### Ticket Tailor
-Buchungen für Veranstaltungen und Angebote erfolgen über **Ticket Tailor** (Ticket Tailor Ltd., Vereinigtes Königreich). [Anschrift laut Ticket-Tailor-Datenschutzerklärung ergänzen.] Dabei verarbeiten wir die Daten, die Sie bei der Buchung angeben (Name, E-Mail, gebuchtes Angebot, ggf. Zahlungsdaten). Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
+Buchungen für Veranstaltungen und Angebote erfolgen über **Ticket Tailor** (Ticket Tailor Ltd., Vereinigtes Königreich). Dabei verarbeiten wir die Daten, die Sie bei der Buchung angeben (Name, E-Mail, gebuchtes Angebot, ggf. Zahlungsdaten). Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
 
-Ticket Tailor ist auf unserer Website teils als **eingebettetes Widget**, teils als **Link** eingebunden. Wenn das Widget geladen wird, wird Ihre IP-Adresse an Ticket Tailor übermittelt. Das Widget lädt erst nach Ihrer Einwilligung, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG. Bei einem Link verlassen Sie unsere Website erst, wenn Sie darauf klicken. Für das Vereinigte Königreich besteht ein Angemessenheitsbeschluss der EU-Kommission. [Gültigkeit prüfen.] Mit Ticket Tailor besteht ein Vertrag zur Auftragsverarbeitung.
+Ticket Tailor ist auf unserer Website teils als **eingebettetes Widget**, teils als **Link** eingebunden. Wenn das Widget geladen wird, wird Ihre IP-Adresse an Ticket Tailor übermittelt. Das Widget lädt erst nach Ihrer Einwilligung, Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG. Bei einem Link verlassen Sie unsere Website erst, wenn Sie darauf klicken. Für das Vereinigte Königreich besteht ein Angemessenheitsbeschluss der EU-Kommission. Mit Ticket Tailor besteht ein Vertrag zur Auftragsverarbeitung.
 
 ### Zahlung
-Zahlungen können über **PayPal** (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxembourg) erfolgen, entweder über die Buchungsplattform oder über einen Zahlungslink, den wir Ihnen per E-Mail senden. Außerdem sind Kartenzahlung vor Ort mit einem Kartenterminal von **SumUp** (SumUp Payments Limited, Irland) [Anschrift laut SumUp-Datenschutzerklärung ergänzen] und Zahlung auf Rechnung möglich. Kartendaten verarbeitet SumUp; wir erhalten sie nicht. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
+Zahlungen können über **PayPal** (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxembourg) erfolgen, entweder über die Buchungsplattform oder über einen Zahlungslink, den wir Ihnen per E-Mail senden. Außerdem sind Kartenzahlung vor Ort mit einem Kartenterminal von **SumUp** (SumUp Payments Limited, Irland) und Zahlung auf Rechnung möglich. Kartendaten verarbeitet SumUp; wir erhalten sie nicht. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
 
 ### Terminverwaltung im Google Kalender
 Zur Organisation unserer Termine führen wir Einträge in unserem **Google Kalender** (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland). Darin stehen der Vorname der Teilnehmenden sowie Handynummer und E-Mail-Adresse, damit wir Sie bei Terminänderungen erreichen können. Google kann Daten in die USA übermitteln; die Übermittlung stützt sich auf den EU-US Data Privacy Framework-Beschluss. Mit Google besteht ein Vertrag zur Auftragsverarbeitung. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO. Wir löschen die Einträge 12 Monate nach dem Termin.
@@ -86,8 +86,6 @@ Rechnungs- und Buchungsdaten bewahren wir wegen steuer- und handelsrechtlicher P
 ## 8. Besondere Kategorien personenbezogener Daten
 
 Gesundheits-, Körper- oder Intimdaten besprechen wir ausschließlich im **persönlichen Vorgespräch**. Wir speichern sie nicht. Bitte teilen Sie uns solche Informationen nicht schriftlich mit.
-
-[ANWALT PRÜFEN: Ob bereits die Buchung oder Teilnahme als Daten im Sinne von Art. 9 DSGVO (Sexualleben) zu bewerten ist, und was daraus für Einwilligung und Speicherung folgt.]
 
 ## 9. Newsletter (Brevo)
 
