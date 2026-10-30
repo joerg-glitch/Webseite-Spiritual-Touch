@@ -7,6 +7,11 @@
  * ABLAUF
  * 1. Kunde bucht über WPForms → Termin landet im Anfragenkalender, die
  *    Kundendaten stehen in der Beschreibung (Block "Gastdaten:").
+ *    ODER: Jörg trägt einen eigenen Termin über das zweite WPForms-Formular
+ *    ein → Termin landet im Kalender "Verfügbarkeit", Beschreibung im
+ *    Kurzformat ohne Beschriftungen (Name / Sprache / Telefon / Mail /
+ *    Eintrags-ID), Dauer im Titel ("Tantramassage 2,5 Stunden Maxine"), der
+ *    Preis fehlt (→ PREISLISTE). Beide Wege werden danach gleich behandelt.
  * 2. Jörg verteilt den Termin und KOPIERT ihn in einen Raumkalender
  *    (Raum 1/2/3). Im Titel der Kopie nennt er die Begleitung, z. B.
  *    "Tantramassage 2h (Asmita)".
@@ -19,7 +24,8 @@
  *  - liegt in einem Raumkalender, ist kein Ganztagstermin
  *  - wurde NACH dem Einrichten (AKTIV_SEIT) angelegt → Altbestand wird nie
  *    angefasst
- *  - die Beschreibung enthält den Block "Gastdaten:" mit "Mail:"
+ *  - die Beschreibung enthält den Block "Gastdaten:" mit "Mail:" – oder, im
+ *    Kurzformat, eine Zeile, die nur aus einer Mailadresse besteht
  *  - im Titel steht der Vorname eines Teammitglieds (Liste TEAM unten).
  *    Solange er fehlt (z. B. direkt nach dem Kopieren, wenn noch der
  *    Anfragen-Titel "Tantramassage (Tantric massage)" drinsteht), wartet
@@ -73,6 +79,14 @@ var VORLAGEN = {
 var ABSENDER_NAME = 'Spiritual Touch';
 var ABSENDER_ALIAS = '';  // optional: Gmail-"Senden als"-Adresse, leer = Standardadresse (nur bei MODUS 'SENDEN')
 var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
+
+// Nur für das Kurzformat (eigene Termine, Formular 2): dort steht kein Preis
+// in der Beschreibung. Schlüssel = Dauer wie im Titel ("2 Stunden", "2,5 Stunden",
+// "90 Minuten"), Wert = Preis wie in der Mail. Fehlt die Dauer hier, wird NICHT
+// gesendet und Jörg bekommt eine Fehlermail. Steht ein Preis mit €-Zeichen in
+// der Beschreibung, hat der Vorrang.
+// Beispiel: { '2 Stunden': '290,00 €', '2,5 Stunden': '350,00 €' }
+var PREISLISTE = {};
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
@@ -180,7 +194,7 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
 function leseTermin_(ev) {
   var text = beschreibungAlsText_(ev.getDescription());
   var gastPos = text.search(/Gastdaten:/i);
-  if (gastPos < 0) return null;
+  if (gastPos < 0) return leseKurzformat_(ev, text);
 
   var kopf = text.substring(0, gastPos);
   var gast = text.substring(gastPos);
@@ -219,6 +233,67 @@ function leseTermin_(ev) {
     begleitung: begleitung,
     dauer: dauerPreis[1].trim(),
     preis: dauerPreis[2] + ' €',
+    start: ev.getStartTime(),
+  };
+}
+
+// Kurzformat des zweiten WPForms-Formulars (eigene Termine), ohne
+// Beschriftungen. Beispiel Beschreibung:
+//   Thomas / Deutsch / 393315824625 / thomas@example.com / 1653 (Eintrags-ID)
+// und Titel "Tantramassage 2,5 Stunden Maxine". Die Dauer steht im Titel, die
+// Sprache als eigene Zeile, der Preis nicht (siehe PREISLISTE).
+// Gibt null zurück, wenn keine eigenständige Mailzeile oder keine Begleitung
+// im Titel vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
+function leseKurzformat_(ev, text) {
+  var zeilen = text.split(ZEILENUMBRUCH)
+    .map(function (z) { return z.trim(); })
+    .filter(function (z) { return z; });
+
+  var mailIdx = -1;
+  zeilen.forEach(function (z, i) {
+    if (mailIdx < 0 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(z)) mailIdx = i;
+  });
+  if (mailIdx < 0) return null;
+
+  var titel = ev.getTitle() || '';
+  var begleitung = findeBegleitung_(titel);
+  if (!begleitung) return null;
+
+  // Name = erste Zeile, muss vor der Mailzeile stehen und echter Text sein.
+  var name = mailIdx > 0 ? zeilen[0] : '';
+  if (!name || /^[\d\s+().\/-]+$/.test(name) || /^(deutsch|german|english|englisch)$/i.test(name)) {
+    throw new Error('Kundenname (erste Zeile der Beschreibung) nicht gefunden.');
+  }
+
+  var dauerMatch = titel.match(/(\d+(?:[.,]\d+)?)\s*(Stunden?|Std\.?|h|Minuten?|Min\.?)(?![A-Za-zÀ-ÿ])/i);
+  if (!dauerMatch) {
+    throw new Error('Dauer im Titel nicht gefunden (z. B. "Tantramassage 2,5 Stunden Maxine"). Titel: ' +
+      JSON.stringify(titel));
+  }
+  var zahl = dauerMatch[1].replace('.', ',');
+  var istMinuten = /^min/i.test(dauerMatch[2]);
+  var dauer = zahl + ' ' + (istMinuten ? 'Minuten' : (zahl === '1' ? 'Stunde' : 'Stunden'));
+
+  var preis = null;
+  var preisMatch = text.match(/(\d[\d.,]*)\s*(?:€|&euro;|EUR)/i);
+  if (preisMatch) preis = preisMatch[1] + ' €';
+  else if (PREISLISTE[dauer]) preis = PREISLISTE[dauer];
+  if (!preis) {
+    throw new Error('Kein Preis für "' + dauer + '" bekannt. Bitte in der Beschreibung ergänzen (z. B. "290 €") ' +
+      'oder in PREISLISTE im Skript eintragen.');
+  }
+
+  var sprache = 'de';
+  zeilen.forEach(function (z) { if (/^(english|englisch)$/i.test(z)) sprache = 'en'; });
+
+  return {
+    email: zeilen[mailIdx],
+    sprache: sprache,
+    name: name,
+    vorname: name.split(/\s+/)[0],
+    begleitung: begleitung,
+    dauer: dauer,
+    preis: preis,
     start: ev.getStartTime(),
   };
 }

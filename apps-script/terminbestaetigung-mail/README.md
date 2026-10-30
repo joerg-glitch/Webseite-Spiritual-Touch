@@ -19,7 +19,34 @@ dort.
    Beschreibung und die Begleitung aus dem Titel, füllt die Mailvorlage
    (Google Doc, je Sprache) und verschickt die Bestätigung.
 
-## Erwartetes Format der Terminbeschreibung
+## Zwei Eingangswege, ein Skript
+
+| | Buchungsformular | Eigene Termine (zweites Formular) |
+|---|---|---|
+| Kalender vor dem Kopieren | Anfragen | Verfügbarkeit |
+| Beschreibung | beschriftet (`Gastdaten:` …) | Kurzformat, siehe unten |
+| Dauer | aus `Dauer: …` | aus dem Titel (`2,5 Stunden`) |
+| Preis | aus `Dauer: … - … €` | Preis in der Beschreibung (`290 €`) oder `PREISLISTE` im Skript |
+
+In beiden Fällen kopierst du den Termin in einen Raumkalender und nennst die
+Begleitung im Titel. Erst dann wird bestätigt.
+
+### Kurzformat (eigene Termine)
+
+```
+Thomas                      ← Name (erste Zeile)
+ Deutsch                    ← Sprache (Deutsch/English), sonst Deutsch
+ 393315824625               ← Telefon (wird ignoriert)
+thomas@example.com          ← Mail, eigene Zeile
+1653                        ← Eintrags-ID (wird ignoriert)
+```
+
+Titel: `Tantramassage 2,5 Stunden Maxine` (Dauer + Begleitung). Der Preis steht
+nicht im Termin; trage ihn in `PREISLISTE` im Skript ein, z. B.
+`{ '2 Stunden': '290,00 €', '2,5 Stunden': '350,00 €' }`. Fehlt die Dauer dort,
+wird **nichts gesendet** und Jörg bekommt eine Fehlermail.
+
+## Erwartetes Format der Terminbeschreibung (Buchungsformular)
 
 ```
 Dauer: 2 Stunden - 290,00 €
