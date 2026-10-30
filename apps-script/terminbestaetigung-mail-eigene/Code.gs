@@ -100,8 +100,8 @@ var TIMEZONE = 'Europe/Berlin';
 var TAG_KEY = 'bestaetigung';
 
 // Weiche Zeilenumbrüche (Shift+Enter) liefert Apps Script je nach Quelle als
-// \r, \u000b oder   – alle gelten als Umbruch.
-var ZEILENUMBRUCH = /\r\n|\r|\u000b| |\n/g;
+// \r, \u000b oder \u2028 – alle gelten als Umbruch.
+var ZEILENUMBRUCH = /\r\n|\r|\u000b|\u2028|\n/g;
 
 var WOCHENTAGE_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 var MONATE_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
