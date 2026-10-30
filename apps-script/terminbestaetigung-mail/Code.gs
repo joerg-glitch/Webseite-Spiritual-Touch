@@ -85,8 +85,11 @@ var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
 // "90 Minuten"), Wert = Preis wie in der Mail. Fehlt die Dauer hier, wird NICHT
 // gesendet und Jörg bekommt eine Fehlermail. Steht ein Preis mit €-Zeichen in
 // der Beschreibung, hat der Vorrang.
-// Beispiel: { '2 Stunden': '290,00 €', '2,5 Stunden': '350,00 €' }
-var PREISLISTE = {};
+var PREISLISTE = {
+  '2 Stunden': '290,00 €',
+  '2,5 Stunden': '340,00 €',
+  '3 Stunden': '390,00 €',
+};
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 

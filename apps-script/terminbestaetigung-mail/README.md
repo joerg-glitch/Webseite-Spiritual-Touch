@@ -42,9 +42,9 @@ thomas@example.com          ← Mail, eigene Zeile
 ```
 
 Titel: `Tantramassage 2,5 Stunden Maxine` (Dauer + Begleitung). Der Preis steht
-nicht im Termin; trage ihn in `PREISLISTE` im Skript ein, z. B.
-`{ '2 Stunden': '290,00 €', '2,5 Stunden': '350,00 €' }`. Fehlt die Dauer dort,
-wird **nichts gesendet** und Jörg bekommt eine Fehlermail.
+nicht im Termin; er kommt aus `PREISLISTE` im Skript (aktuell 2 Std. 290 €,
+2,5 Std. 340 €, 3 Std. 390 €). Für neue Dauern dort ergänzen. Fehlt die Dauer
+dort, wird **nichts gesendet** und Jörg bekommt eine Fehlermail.
 
 ## Erwartetes Format der Terminbeschreibung (Buchungsformular)
 
