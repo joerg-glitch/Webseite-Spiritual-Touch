@@ -7,16 +7,15 @@ Dieses Repository bündelt alle Code-Projekte rund um [spiritual-touch.de](https
 | Ordner | Was ist das | Details |
 |---|---|---|
 | `database/` | Backup der WordPress-Datenbank (Seiteninhalte, Elementor-Layouts) | siehe Abschnitt „Datenbank-Backup" unten |
-| `team-app/` | PIN-geschützte Web-App fürs Team (Verfügbarkeiten, Amelia-Termine ändern/absagen) | [team-app/README.md](team-app/README.md) |
-| `apps-script/anfragen-verfuegbarkeit-sync/` | Google Apps Script: Anfragen/Verfügbarkeit-Sync fürs Buchungssystem | [README](apps-script/anfragen-verfuegbarkeit-sync/README.md) |
-| `apps-script/raum-einladung-sync/` | Google Apps Script: Raum-Einladungs-Sync (Kalender ↔ Amelia) | [README](apps-script/raum-einladung-sync/README.md) |
-| `wordpress/buchungs-dashboard/` | WPCode-Snippet: Buchungs-Dashboard (Smart-Freigeben) | [README](wordpress/buchungs-dashboard/README.md) |
-| `wordpress/booking-confirmation-link/` | WPCode-Snippet: Buchungsbestätigungs-Link | [README](wordpress/booking-confirmation-link/README.md) |
-| `wordpress/google-buchungslink/` | WPCode-Snippet: Google-Buchungslink | [README](wordpress/google-buchungslink/README.md) |
+| `team-app/` | PIN-geschützte Web-App fürs Team (Verfügbarkeiten eintragen) | [team-app/README.md](team-app/README.md) |
 | `elementor-widgets/coverflow-card-slider/` | Nachgebautes Elementor-HTML-Widget (Coverflow-Card-Slider) | [README](elementor-widgets/coverflow-card-slider/README.md) |
 | `whatsapp-vorschaltseite/` | WhatsApp-Look Vorschaltseite zur Lead-Filterung (DE/EN) | — |
-| `PLAN.md`, `TASKS.md`, `TEAM-APP-ROADMAP.md` | Planungs-/Aufgaben-Dokus zur Team-App | — |
+| `PLAN.md`, `TASKS.md`, `TEAM-APP-ROADMAP.md` | Planungs-/Aufgaben-Dokus zur Team-App (PLAN/TASKS: historisch) | — |
 | `.agents/skills/`, `.claude/skills/`, `skills-lock.json` | Design-Taste-Skills für Claude-Code-Sessions (kein Website-Code) | — |
+
+## Rückbau Amelia-Booking (02.11.2026)
+
+Alle Code-Bausteine rund um die Synchronisation Google Calendar ↔ Amelia (Apps-Script-Syncs, WPCode-Snippets Buchungs-Dashboard / Bestätigungslink / Buchungslink, Termin-Funktionen der Team-App) wurden aus dem Repo entfernt. Der alte Stand liegt in der Git-Historie. Live-Systeme (Apps-Script-Projekte, Trigger, WPCode-Snippets, Amelia selbst) sind davon unabhängig und müssen separat deaktiviert werden.
 
 ## Hinweis zu Branches
 

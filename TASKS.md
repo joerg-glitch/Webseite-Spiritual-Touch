@@ -1,5 +1,7 @@
 # Tasks: Team-Verfügbarkeit → Amelia (Stand 03.08.2026)
 
+> ⚠️ **Historisch (Rückbau 02.11.2026):** Dieses Dokument beschreibt die inzwischen zurückgebaute Anbindung Team-Verfügbarkeit ↔ Amelia / Google Calendar. Der zugehörige Code (Syncs, WPCode-Snippets, Termin-Funktionen der Team-App) wurde aus dem Repo entfernt; der Inhalt unten ist nur noch Dokumentation des früheren Stands.
+
 ## Phase 0 — Bestandsaufnahme (erledigt, 03.08.2026)
 - Notion-Doku gelesen, echte Kalenderdaten aller Hilfskalender gegen die
   Doku geprüft

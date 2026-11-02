@@ -100,11 +100,6 @@
 #st button.st-edit{color:var(--sage) !important;font-size:14px !important;font-weight:500 !important;display:inline !important;}
 #st button.st-del{color:var(--danger) !important;font-size:14px !important;font-weight:500 !important;display:inline !important;}
 .st-empty{color:var(--soft) !important;font-size:14px !important;text-align:center !important;padding:28px 0 !important;display:block !important;}
-/* ── TERMINE-KARTEN (echte Amelia-Buchungen) — angelehnt an die
-   farbige Randlinie der Karten in Jörgs Buchungs-Dashboard ── */
-.st-card-appt{border-left:4px solid var(--clay) !important;}
-.st-card-appt-title{font-size:14.5px !important;font-weight:500 !important;color:var(--plum) !important;margin-top:2px !important;display:block !important;}
-.st-card-appt-customer{font-size:13.5px !important;color:var(--soft) !important;margin-top:2px !important;display:block !important;}
 /* ── MENÜLEISTE ── */
 .st-menu{
   display:flex !important;gap:8px !important;
@@ -309,9 +304,6 @@
       <button class="st-menu-item soon" onclick="stComingSoon('Gutscheine')">
         <span class="st-menu-ico">🎁</span><span>Gutscheine</span>
       </button>
-      <button class="st-menu-item" onclick="stOpenTermine()">
-        <span class="st-menu-ico">🗓️</span><span>Termine</span>
-      </button>
     </nav>
 
     <span class="st-section">Deine Verfügbarkeiten</span>
@@ -319,52 +311,6 @@
       <div id="st-entries" class="st-entries-scroll"></div>
       <div class="st-entries-fade" id="st-entries-fade"></div>
     </div>
-  </div>
-
-  <!-- SCREEN: TERMINE (echte Amelia-Buchungen) -->
-  <div class="st-screen" id="st-termine">
-    <button class="st-back" onclick="stGo('list')">← Zurück</button>
-    <span class="st-h1" style="font-size:22px !important;margin-bottom:6px !important;">Deine Termine</span>
-    <span class="st-lead" style="margin-bottom:20px !important;">Zum Ändern von Datum, Uhrzeit oder Dauer antippen — die Änderung geht direkt an Amelia.</span>
-
-    <div class="st-entries-wrap">
-      <div id="st-appt-entries" class="st-entries-scroll"></div>
-    </div>
-
-    <div class="st-err" id="st-appt-err" style="margin-top:18px !important;">
-      <span class="st-err-ico">🚫</span>
-      <div class="st-err-txt" id="st-appt-err-txt"></div>
-    </div>
-  </div>
-
-  <!-- SCREEN: TERMIN ÄNDERN -->
-  <div class="st-screen" id="st-appt-form">
-    <button class="st-back" onclick="stGo('termine')">← Zurück</button>
-    <span class="st-h1" style="font-size:22px !important;margin-bottom:6px !important;">Termin ändern</span>
-    <span class="st-lead" id="st-appt-form-sub" style="margin-bottom:22px !important;"></span>
-
-    <div class="st-err" id="st-appt-form-err">
-      <span class="st-err-ico">🚫</span>
-      <div class="st-err-txt" id="st-appt-form-err-txt"></div>
-    </div>
-
-    <div class="st-field">
-      <label>Datum</label>
-      <input type="date" id="st-appt-date" class="st-input">
-    </div>
-    <div class="st-row">
-      <div class="st-field">
-        <label>Von</label>
-        <input type="time" id="st-appt-from" class="st-input" onchange="stCheckApptTimes()">
-      </div>
-      <div class="st-field">
-        <label>Bis</label>
-        <input type="time" id="st-appt-to" class="st-input" onchange="stCheckApptTimes()">
-      </div>
-    </div>
-
-    <button class="st-save" id="st-appt-save" onclick="stSaveAppt()">Speichern</button>
-    <button class="st-cancel" onclick="stGo('termine')">Abbrechen</button>
   </div>
 
   <div class="st-toast" id="st-toast"></div>
@@ -429,8 +375,6 @@
 const ST_API_URL='/wp-json/st/v1/cal';
 let stUser=null,stEditId=null,stDelId=null,stPin='',stTimeErr=false,stLoading=false;
 let stEntries=[];
-let stAppointments=[];
-let stApptEditing=null,stApptTimeErr=false;
 
 // Overlay an <body> hängen: Elementor-Wrapper haben oft ein eigenes
 // "transform", wodurch position:fixed sich nur auf den Wrapper statt den
@@ -568,108 +512,6 @@ function stFmt(iso){
   const d=new Date(iso+'T12:00:00');
   return d.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'long'});
 }
-// ── TERMINE (echte Amelia-Buchungen aus dem Hilfskalender, nur Anzeige) ──
-async function stOpenTermine(){
-  stGo('termine');
-  document.getElementById('st-appt-entries').innerHTML='<div class="st-empty">Lädt …</div>';
-  document.getElementById('st-appt-err').classList.remove('on');
-  const {networkError,data}=await stApi({pin:stPin,action:'appointments'});
-  if(networkError||!data||!data.ok){
-    document.getElementById('st-appt-entries').innerHTML='';
-    document.getElementById('st-appt-err-txt').innerHTML='<b>Verbindungsfehler</b> — bitte nochmal versuchen.';
-    document.getElementById('st-appt-err').classList.add('on');
-    return;
-  }
-  stAppointments=Array.isArray(data.appointments)?data.appointments:[];
-  stRenderAppointments();
-}
-// Karten im selben Stil wie Jörgs Buchungs-Dashboard (farbige Randlinie,
-// Dienstleistung + Kundenname darunter, siehe wordpress/buchungs-dashboard/
-// wpcode-snippet.php). Termine ohne erkannte appointmentId sind sehr alte
-// Auch Termine ohne erkannte Amelia-Termin-ID (sehr alte Buchungen von vor
-// der Vorlagen-Änderung) sind änderbar — das Backend löst sie stattdessen
-// über Mitarbeiter+bisherige Zeit auf, siehe rescheduleAppointment() in
-// "App Script".
-function stRenderAppointments(){
-  const el=document.getElementById('st-appt-entries');
-  el.innerHTML='';
-  if(!stAppointments.length){
-    el.innerHTML='<div class="st-empty">Keine anstehenden Termine</div>';
-    return;
-  }
-  stAppointments.forEach(a=>{
-    const card=document.createElement('div');
-    card.className='st-card st-card-appt';
-    card.innerHTML=`
-      <span class="st-card-date">${stFmt(a.date)}</span>
-      <span class="st-card-time">${a.allDay?'Ganztägig':a.from+' – '+a.to+' Uhr'}</span>
-      <span class="st-card-appt-title">${stEsc(a.title||'')}</span>
-      ${a.customerName?`<span class="st-card-appt-customer">${stEsc(a.customerName)}</span>`:''}`;
-    const act=document.createElement('div');
-    act.className='st-card-act';
-    const editBtn=document.createElement('button');
-    editBtn.className='st-edit';
-    editBtn.textContent='Ändern';
-    editBtn.addEventListener('click',()=>stOpenApptForm(a));
-    act.appendChild(editBtn);
-    card.appendChild(act);
-    el.appendChild(card);
-  });
-}
-function stEsc(s){
-  const d=document.createElement('div');
-  d.textContent=s;
-  return d.innerHTML;
-}
-
-// ── TERMIN ÄNDERN (schreibt direkt nach Amelia zurück) ──
-function stOpenApptForm(a){
-  stApptEditing=a;
-  document.getElementById('st-appt-form-sub').textContent=(a.title||'')+(a.customerName?' — '+a.customerName:'');
-  document.getElementById('st-appt-date').value=a.date;
-  document.getElementById('st-appt-from').value=a.from;
-  document.getElementById('st-appt-to').value=a.to;
-  document.getElementById('st-appt-form-err').classList.remove('on');
-  document.getElementById('st-appt-save').disabled=false;
-  stApptTimeErr=false;
-  stGo('appt-form');
-}
-function stCheckApptTimes(){
-  const f=document.getElementById('st-appt-from').value;
-  const t=document.getElementById('st-appt-to').value;
-  stApptTimeErr=!!(f&&t&&t<=f);
-  document.getElementById('st-appt-form-err-txt').innerHTML='<b>Endzeit liegt vor Startzeit</b> — bitte korrigieren.';
-  document.getElementById('st-appt-form-err').classList.toggle('on',stApptTimeErr);
-  document.getElementById('st-appt-save').disabled=stApptTimeErr;
-}
-async function stSaveAppt(){
-  if(stApptTimeErr||stLoading||!stApptEditing)return;
-  const date=document.getElementById('st-appt-date').value;
-  const from=document.getElementById('st-appt-from').value;
-  const to=document.getElementById('st-appt-to').value;
-  if(!date||!from||!to)return;
-
-  stLoading=true;
-  document.getElementById('st-appt-save').disabled=true;
-  document.getElementById('st-appt-save').textContent='Speichert …';
-  const {networkError,data}=await stApi({pin:stPin,action:'reschedule',appointmentId:stApptEditing.appointmentId,oldDate:stApptEditing.date,oldFrom:stApptEditing.from,oldTo:stApptEditing.to,date,from,to});
-  stLoading=false;
-  document.getElementById('st-appt-save').textContent='Speichern';
-
-  if(networkError||!data||!data.ok){
-    document.getElementById('st-appt-save').disabled=false;
-    document.getElementById('st-appt-form-err-txt').innerHTML='<b>Konnte nicht gespeichert werden</b> — bitte nochmal versuchen oder Jörg Bescheid geben.';
-    document.getElementById('st-appt-form-err').classList.add('on');
-    return;
-  }
-  stToast('✓ Termin geändert');
-  // Amelia braucht einen kurzen Moment, um den Hilfskalender neu zu
-  // schreiben — kurze Pause, bevor die Liste neu geladen wird, damit die
-  // Änderung dort schon sichtbar ist statt noch den alten Stand zu zeigen.
-  await new Promise(r=>setTimeout(r,1500));
-  await stOpenTermine();
-}
-
 function stOpenForm(entry){
   stEditId=entry?entry.id:null;
   document.getElementById('st-warn').classList.remove('on');
