@@ -80,6 +80,15 @@ var ABSENDER_NAME = 'Spiritual Touch';
 var ABSENDER_ALIAS = '';  // optional: Gmail-"Senden als"-Adresse, leer = Standardadresse (nur bei MODUS 'SENDEN')
 var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
 
+// Begleitung als BCC: Die Mail geht zusätzlich an NAME@spiritual-touch.de und
+// landet so im Google-Chat-Raum der Person. Der Kunde sieht die Adresse nicht.
+// Adresse = Vorname aus dem Termintitel, klein geschrieben, Umlaute ausgeschrieben
+// (Jörg → joerg@). Abweichende Adressen hier eintragen, '' = für diese Person
+// kein BCC. Existiert eine Adresse nicht, kommt ein Unzustellbarkeits-Hinweis.
+var BCC_AKTIV = true;
+var BCC_DOMAIN = 'spiritual-touch.de';
+var BCC_ADRESSEN = {};  // Beispiel: { 'Mila': 'mila.k@spiritual-touch.de', 'Eva': '' }
+
 // Nur für das Kurzformat (eigene Termine, Formular 2): dort steht kein Preis
 // in der Beschreibung. Schlüssel = Dauer wie im Titel ("2 Stunden", "2,5 Stunden",
 // "90 Minuten"), Wert = Preis wie in der Mail. Fehlt die Dauer hier, wird NICHT
@@ -180,7 +189,7 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
     throw new Error('Markierung am Termin konnte nicht gespeichert werden – nichts gesendet.');
   }
   try {
-    sende_(termin.email, vorlage.betreff, inhalt);
+    sende_(termin.email, vorlage.betreff, inhalt, bccFuer_(termin.begleitung));
   } catch (err) {
     ev.deleteTag(TAG_KEY);
     throw err;
@@ -493,8 +502,18 @@ function escapeHtml_(s) {
 
 // ---------- VERSAND ----------
 
-function sende_(an, betreff, inhalt) {
+// BCC-Adresse der Begleitung (siehe BCC_AKTIV) oder '' wenn keine.
+function bccFuer_(begleitung) {
+  if (!BCC_AKTIV) return '';
+  if (BCC_ADRESSEN.hasOwnProperty(begleitung)) return BCC_ADRESSEN[begleitung];
+  var lokal = begleitung.toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+  return lokal + '@' + BCC_DOMAIN;
+}
+
+function sende_(an, betreff, inhalt, bcc) {
   var optionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
+  if (bcc) optionen.bcc = bcc;
   if (ANTWORT_AN) optionen.replyTo = ANTWORT_AN;
   if (MODUS === 'SENDEN') {
     if (ABSENDER_ALIAS) optionen.from = ABSENDER_ALIAS;

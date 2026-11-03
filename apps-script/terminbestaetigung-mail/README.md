@@ -89,3 +89,13 @@ Unbekannte Platzhalter → es wird nichts gesendet, Jörg bekommt eine Mail.
   Skript auf einen erkannten Namen im Titel.
 - **Nochmal bestätigen:** Termin neu kopieren, alte Kopie löschen.
 - Fehler gehen als Mail an `ALERT_EMAIL` (max. 1× alle 6 h je Termin).
+
+## Begleitung im BCC (Google-Chat-Raum)
+
+Die Bestätigung geht zusätzlich als BCC an `vorname@spiritual-touch.de` der
+Begleitung (Vorname aus dem Titel, klein, Umlaute ausgeschrieben, z. B.
+`joerg@`). Die Mail landet so im Google-Chat-Raum der Person; der Kunde sieht
+die Adresse nicht. Einstellungen oben in `Code.gs`: `BCC_AKTIV`, `BCC_DOMAIN`
+und `BCC_ADRESSEN` (abweichende Adressen; `''` = kein BCC für diese Person).
+Der Chat-Raum bekommt dieselbe Mail wie der Kunde, also **ohne** Telefon oder
+Mailadresse des Kunden.
