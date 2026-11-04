@@ -26,7 +26,8 @@
  *    angefasst
  *  - die Beschreibung enthält den Block "Gastdaten:" mit "Mail:" – oder, im
  *    Kurzformat, eine Zeile, die nur aus einer Mailadresse besteht
- *  - im Titel steht der Vorname eines Teammitglieds (Liste TEAM unten).
+ *  - im Titel steht der Vorname mindestens eines Teammitglieds (Liste TEAM
+ *    unten); bei mehreren ("Erin & Dominik") werden alle genannt und alle im BCC.
  *    Solange er fehlt (z. B. direkt nach dem Kopieren, wenn noch der
  *    Anfragen-Titel "Tantramassage (Tantric massage)" drinsteht), wartet
  *    das Skript einfach — es rät nie.
@@ -89,16 +90,34 @@ var BCC_AKTIV = true;
 var BCC_DOMAIN = 'spiritual-touch.de';
 var BCC_ADRESSEN = {};  // Beispiel: { 'Mila': 'mila.k@spiritual-touch.de', 'Eva': '' }
 
-// Nur für das Kurzformat (eigene Termine, Formular 2): dort steht kein Preis
-// in der Beschreibung. Schlüssel = Dauer wie im Titel ("2 Stunden", "2,5 Stunden",
-// "90 Minuten"), Wert = Preis wie in der Mail. Fehlt die Dauer hier, wird NICHT
-// gesendet und Jörg bekommt eine Fehlermail. Steht ein Preis mit €-Zeichen in
-// der Beschreibung, hat der Vorrang.
+// Preise, wenn sie nicht im Termin stehen (Kurzformat der eigenen Termine,
+// Workshops, "andere Dauer" …). Schlüssel 1 = Art des Termins (wird aus dem
+// Titel erkannt, siehe ARTEN), Schlüssel 2 = Dauer ("2 Stunden", "2,5 Stunden",
+// "3 Stunden"; 90 Minuten = "1,5 Stunden"), Wert = Preis wie in der Mail,
+// z. B. '290,00 €'. LEER ('') = noch nicht eingetragen: dann wird NICHT
+// gesendet und Jörg bekommt eine Fehlermail. Weitere Dauern einfach als neue
+// Zeile ergänzen. Steht ein Preis mit €-Zeichen in der Dauer-Zeile des Termins
+// (Buchungsformular), hat der Vorrang.
 var PREISLISTE = {
-  '2 Stunden': '290,00 €',
-  '2,5 Stunden': '340,00 €',
-  '3 Stunden': '390,00 €',
+  'Tantramassage':   { '2 Stunden': '290,00 €', '2,5 Stunden': '340,00 €', '3 Stunden': '390,00 €' },
+  'Paarmassage':     { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
+  'Ritual zu Dritt': { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
+  'Körperarbeit':    { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Sexological Bodywork / Intuitive Körperarbeit
+  'Workshop':        { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Workshop/Berührungscoaching
+  'Beratung':        { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Paar- oder Einzelberatung
+  'De-Armouring':    { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
 };
+
+// Art des Termins aus dem Titel. Reihenfolge zählt (die erste passende gilt).
+var ARTEN = [
+  { art: 'Beratung',        muster: /beratung|consult/i },
+  { art: 'Workshop',        muster: /workshop|ber[üu]hrungscoaching|coaching/i },
+  { art: 'De-Armouring',    muster: /armou?ring|sacred spot/i },
+  { art: 'Ritual zu Dritt', muster: /zu dritt|for three/i },
+  { art: 'Paarmassage',     muster: /paarmassage|couple/i },
+  { art: 'Körperarbeit',    muster: /sexolog|k[öo]rperarbeit|bodywork/i },
+  { art: 'Tantramassage',   muster: /tantra/i },
+];
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
@@ -112,7 +131,7 @@ var RAUM_KALENDER = [
 // Vornamen, wie sie im Termintitel stehen dürfen. Neues Teammitglied =
 // hier ergänzen.
 var TEAM = ['Tara', 'Eva', 'Jörg', 'Asmita', 'Amila', 'Sarah', 'Dominik', 'Konstantin',
-            'Alea', 'Stephanie', 'Karen', 'Maxine', 'Mila'];
+            'Alea', 'Stephanie', 'Karen', 'Maxine', 'Mila', 'Erin'];
 
 var SCAN_TAGE_VORAUS = 180;
 var TIMEZONE = 'Europe/Berlin';
@@ -189,7 +208,7 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
     throw new Error('Markierung am Termin konnte nicht gespeichert werden – nichts gesendet.');
   }
   try {
-    sende_(termin.email, vorlage.betreff, inhalt, bccFuer_(termin.begleitung));
+    sende_(termin.email, vorlage.betreff, inhalt, bccFuer_(termin.begleiter));
   } catch (err) {
     ev.deleteTag(TAG_KEY);
     throw err;
@@ -217,19 +236,27 @@ function leseTermin_(ev) {
   var mail = gast.match(/^[ \t]*Mail:[ \t]*([^\s<>]+)/mi);
   if (!mail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail[1])) return null;
 
-  var begleitung = findeBegleitung_(ev.getTitle());
-  if (!begleitung) return null;
+  var titel = ev.getTitle() || '';
+  var begleiter = findeBegleiter_(titel);
+  if (!begleiter.length) return null;
 
   var name = gast.match(/^[ \t]*Name:[ \t]*(.+)$/mi);
   if (!name || !name[1].trim()) throw new Error('Kundenname ("Name:") in der Beschreibung nicht gefunden.');
 
   // "Dauer: 2 Stunden - 290,00 €" – Strich darf auch ein Gedankenstrich sein,
-  // Währung €, "&euro;" (falls nicht entschlüsselt) oder EUR.
-  var dauerPreis = kopf.match(/^[ \t]*Dauer:[ \t]*(.+?)[ \t]+[-–—][ \t]+([\d.,]+)[ \t]*(?:€|&euro;|EUR)/mi);
-  if (!dauerPreis) {
-    var zeile = kopf.match(/^.*Dauer.*$/mi);
-    throw new Error('Zeile "Dauer: … - … €" in der Beschreibung nicht gefunden. Gefunden wurde: ' +
-      (zeile ? JSON.stringify(zeile[0]) : '(keine Zeile mit "Dauer")'));
+  // Währung €, "&euro;" (falls nicht entschlüsselt) oder EUR. Bei Workshops,
+  // "andere Dauer" u. Ä. ist die Zeile leer oder ohne Preis: dann kommt die
+  // Dauer aus Titel bzw. Termin und der Preis aus der PREISLISTE.
+  var dz = kopf.match(/^[ \t]*Dauer:[ \t]*(.*)$/mi);
+  var dauerZeile = dz ? dz[1].trim() : '';
+  var dauerPreis = dauerZeile.match(/^(.+?)[ \t]+[-–—][ \t]+([\d.,]+)[ \t]*(?:€|&euro;|EUR)/i);
+  var dauer, preis;
+  if (dauerPreis) {
+    dauer = dauerPreis[1].trim();
+    preis = dauerPreis[2] + ' €';
+  } else {
+    dauer = ermittleDauer_(ev, titel, dauerZeile);
+    preis = ermittlePreis_(dauerZeile, findeArt_(titel), dauer);
   }
 
   // Zeile "Sprache: English" / "Sprache: Deutsch" (auch "Language:"). Nur der
@@ -242,9 +269,10 @@ function leseTermin_(ev) {
     sprache: sprache,
     name: name[1].trim(),
     vorname: name[1].trim().split(/\s+/)[0],
-    begleitung: begleitung,
-    dauer: dauerPreis[1].trim(),
-    preis: dauerPreis[2] + ' €',
+    begleiter: begleiter,
+    begleitung: begleiter.join(' & '),
+    dauer: dauer,
+    preis: preis,
     start: ev.getStartTime(),
   };
 }
@@ -252,8 +280,8 @@ function leseTermin_(ev) {
 // Kurzformat des zweiten WPForms-Formulars (eigene Termine), ohne
 // Beschriftungen. Beispiel Beschreibung:
 //   Thomas / Deutsch / 393315824625 / thomas@example.com / 1653 (Eintrags-ID)
-// und Titel "Tantramassage 2,5 Stunden Maxine". Die Dauer steht im Titel, die
-// Sprache als eigene Zeile, der Preis nicht (siehe PREISLISTE).
+// und Titel "Tantramassage 2,5 Stunden Maxine". Dauer aus dem Titel (sonst aus
+// der Termindauer), Sprache als eigene Zeile, Preis aus der PREISLISTE.
 // Gibt null zurück, wenn keine eigenständige Mailzeile oder keine Begleitung
 // im Titel vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
 function leseKurzformat_(ev, text) {
@@ -268,8 +296,8 @@ function leseKurzformat_(ev, text) {
   if (mailIdx < 0) return null;
 
   var titel = ev.getTitle() || '';
-  var begleitung = findeBegleitung_(titel);
-  if (!begleitung) return null;
+  var begleiter = findeBegleiter_(titel);
+  if (!begleiter.length) return null;
 
   // Name = erste Zeile, muss vor der Mailzeile stehen und echter Text sein.
   var name = mailIdx > 0 ? zeilen[0] : '';
@@ -277,23 +305,8 @@ function leseKurzformat_(ev, text) {
     throw new Error('Kundenname (erste Zeile der Beschreibung) nicht gefunden.');
   }
 
-  var dauerMatch = titel.match(/(\d+(?:[.,]\d+)?)\s*(Stunden?|Std\.?|h|Minuten?|Min\.?)(?![A-Za-zÀ-ÿ])/i);
-  if (!dauerMatch) {
-    throw new Error('Dauer im Titel nicht gefunden (z. B. "Tantramassage 2,5 Stunden Maxine"). Titel: ' +
-      JSON.stringify(titel));
-  }
-  var zahl = dauerMatch[1].replace('.', ',');
-  var istMinuten = /^min/i.test(dauerMatch[2]);
-  var dauer = zahl + ' ' + (istMinuten ? 'Minuten' : (zahl === '1' ? 'Stunde' : 'Stunden'));
-
-  var preis = null;
-  var preisMatch = text.match(/(\d[\d.,]*)\s*(?:€|&euro;|EUR)/i);
-  if (preisMatch) preis = preisMatch[1] + ' €';
-  else if (PREISLISTE[dauer]) preis = PREISLISTE[dauer];
-  if (!preis) {
-    throw new Error('Kein Preis für "' + dauer + '" bekannt. Bitte in der Beschreibung ergänzen (z. B. "290 €") ' +
-      'oder in PREISLISTE im Skript eintragen.');
-  }
+  var dauer = ermittleDauer_(ev, titel, '');
+  var preis = ermittlePreis_(text, findeArt_(titel), dauer);
 
   var sprache = 'de';
   zeilen.forEach(function (z) { if (/^(english|englisch)$/i.test(z)) sprache = 'en'; });
@@ -303,25 +316,74 @@ function leseKurzformat_(ev, text) {
     sprache: sprache,
     name: name,
     vorname: name.split(/\s+/)[0],
-    begleitung: begleitung,
+    begleiter: begleiter,
+    begleitung: begleiter.join(' & '),
     dauer: dauer,
     preis: preis,
     start: ev.getStartTime(),
   };
 }
 
-// Erster Teammitglied-Vorname im Titel (ganzes Wort, Groß-/Kleinschreibung egal).
-function findeBegleitung_(titel) {
-  var besteStelle = -1;
-  var treffer = null;
+// Dauer in der Reihenfolge: Text der Dauer-Zeile, Titel, Termindauer
+// (Kalender-Start bis -Ende). Immer in der Form "2 Stunden", "2,5 Stunden",
+// "1 Stunde" oder "45 Minuten".
+function ermittleDauer_(ev, titel, dauerZeile) {
+  return dauerAusText_(dauerZeile) || dauerAusText_(titel) ||
+    dauerFormat_(Math.round((ev.getEndTime().getTime() - ev.getStartTime().getTime()) / 60000));
+}
+
+function dauerAusText_(s) {
+  var m = String(s || '').match(/(\d+(?:[.,]\d+)?)\s*(Stunden?|Std\.?|hours?|hrs?|h|Minuten?|Min\.?|minutes?|mins?)(?![A-Za-zÀ-ÿ])/i);
+  if (!m) return null;
+  var zahl = parseFloat(m[1].replace(',', '.'));
+  return dauerFormat_(Math.round(/^min/i.test(m[2]) ? zahl : zahl * 60));
+}
+
+function dauerFormat_(minuten) {
+  if (minuten % 60 === 0) {
+    var h = minuten / 60;
+    return h + ' ' + (h === 1 ? 'Stunde' : 'Stunden');
+  }
+  if (minuten >= 60 && minuten % 30 === 0) return Math.floor(minuten / 60) + ',5 Stunden';
+  return minuten + ' Minuten';
+}
+
+// Art des Termins aus dem Titel (siehe ARTEN) oder null.
+function findeArt_(titel) {
+  for (var i = 0; i < ARTEN.length; i++) {
+    if (ARTEN[i].muster.test(titel || '')) return ARTEN[i].art;
+  }
+  return null;
+}
+
+// Preis in der Reihenfolge: "123 €" im übergebenen Text, sonst PREISLISTE
+// nach Art und Dauer. Wirft, wenn beides fehlt (dann wird nichts gesendet).
+function ermittlePreis_(text, art, dauer) {
+  var m = String(text || '').match(/(\d[\d.,]*)\s*(?:€|&euro;|EUR)/i);
+  if (m) return m[1] + ' €';
+  if (!art) {
+    throw new Error('Art des Termins im Titel nicht erkannt (Tantramassage, Paarmassage, Ritual zu Dritt, ' +
+      'Körperarbeit/Sexological Bodywork, Workshop/Berührungscoaching, Beratung, De-Armouring) und kein Preis ' +
+      'im Termin. Bitte Titel ergänzen oder den Preis (z. B. "290 €") in die Beschreibung schreiben.');
+  }
+  var preis = (PREISLISTE[art] || {})[dauer];
+  if (!preis) {
+    throw new Error('Kein Preis für "' + art + '", ' + dauer + '. Bitte in PREISLISTE im Skript eintragen ' +
+      'oder den Preis (z. B. "290 €") in die Beschreibung schreiben.');
+  }
+  return preis;
+}
+
+// ALLE Teammitglieder im Titel (ganzes Wort, Groß-/Kleinschreibung egal), in
+// der Reihenfolge ihres Auftretens, z. B. "(Erin & Dominik)" → ['Erin', 'Dominik'].
+function findeBegleiter_(titel) {
+  var treffer = [];
   TEAM.forEach(function (vorname) {
     var m = new RegExp('(^|[^A-Za-zÀ-ÿ])' + vorname + '(?![A-Za-zÀ-ÿ])', 'i').exec(titel || '');
-    if (m && (besteStelle < 0 || m.index < besteStelle)) {
-      besteStelle = m.index;
-      treffer = vorname;
-    }
+    if (m) treffer.push({ name: vorname, pos: m.index });
   });
-  return treffer;
+  treffer.sort(function (x, y) { return x.pos - y.pos; });
+  return treffer.map(function (t) { return t.name; });
 }
 
 // Beschreibung kann als HTML gespeichert sein (z. B. Mail-Links) → in Text wandeln.
@@ -502,13 +564,16 @@ function escapeHtml_(s) {
 
 // ---------- VERSAND ----------
 
-// BCC-Adresse der Begleitung (siehe BCC_AKTIV) oder '' wenn keine.
-function bccFuer_(begleitung) {
+// BCC-Adressen aller Begleiter (siehe BCC_AKTIV), kommagetrennt, oder ''.
+function bccFuer_(begleiter) {
   if (!BCC_AKTIV) return '';
-  if (BCC_ADRESSEN.hasOwnProperty(begleitung)) return BCC_ADRESSEN[begleitung];
-  var lokal = begleitung.toLowerCase()
-    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
-  return lokal + '@' + BCC_DOMAIN;
+  var adressen = [];
+  begleiter.forEach(function (b) {
+    var adresse = BCC_ADRESSEN.hasOwnProperty(b) ? BCC_ADRESSEN[b] :
+      b.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss') + '@' + BCC_DOMAIN;
+    if (adresse && adressen.indexOf(adresse) < 0) adressen.push(adresse);
+  });
+  return adressen.join(',');
 }
 
 function sende_(an, betreff, inhalt, bcc) {

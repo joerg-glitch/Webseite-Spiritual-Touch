@@ -25,8 +25,8 @@ dort.
 |---|---|---|
 | Kalender vor dem Kopieren | Anfragen | Verfügbarkeit |
 | Beschreibung | beschriftet (`Gastdaten:` …) | Kurzformat, siehe unten |
-| Dauer | aus `Dauer: …` | aus dem Titel (`2,5 Stunden`) |
-| Preis | aus `Dauer: … - … €` | Preis in der Beschreibung (`290 €`) oder `PREISLISTE` im Skript |
+| Dauer | aus `Dauer: …` | aus dem Titel (`2,5 Stunden`), sonst Termindauer |
+| Preis | aus `Dauer: … - … €`, sonst `PREISLISTE` | `PREISLISTE` im Skript (oder `290 €` in der Beschreibung) |
 
 In beiden Fällen kopierst du den Termin in einen Raumkalender und nennst die
 Begleitung im Titel. Erst dann wird bestätigt.
@@ -41,10 +41,34 @@ thomas@example.com          ← Mail, eigene Zeile
 1653                        ← Eintrags-ID (wird ignoriert)
 ```
 
-Titel: `Tantramassage 2,5 Stunden Maxine` (Dauer + Begleitung). Der Preis steht
-nicht im Termin; er kommt aus `PREISLISTE` im Skript (aktuell 2 Std. 290 €,
-2,5 Std. 340 €, 3 Std. 390 €). Für neue Dauern dort ergänzen. Fehlt die Dauer
-dort, wird **nichts gesendet** und Jörg bekommt eine Fehlermail.
+Titel: `Tantramassage 2,5 Stunden Maxine` (Art + Dauer + Begleitung).
+
+## Art, Dauer, Preis und Begleiter
+
+**Art des Termins** wird aus dem Titel erkannt (die Formularoptionen):
+Tantramassage, Paarmassage, Ritual zu Dritt, Körperarbeit (Sexological
+Bodywork / Intuitive Körperarbeit), Workshop (Workshop/Berührungscoaching),
+Beratung (Paar- oder Einzelberatung), De-Armouring.
+
+**Dauer** in dieser Reihenfolge: Dauer-Zeile der Beschreibung, Dauer im Titel
+(`3h`, `2,5 Stunden`), sonst die Länge des Kalendertermins (Start bis Ende).
+Bei Workshops und „andere Dauer“ ist die Dauer-Zeile leer, dann greifen Titel
+bzw. Termindauer.
+
+**Preis** in dieser Reihenfolge: `… - 290,00 €` in der Dauer-Zeile
+(Buchungsformular), sonst `PREISLISTE` im Skript nach Art und Dauer.
+`PREISLISTE` ist für alle Arten × 2 / 2,5 / 3 Stunden angelegt; nur
+Tantramassage ist gefüllt (290 / 340 / 390 €). Leere Einträge (`''`) trägst du
+selbst nach. **Solange ein Preis fehlt, wird nichts gesendet** und Jörg
+bekommt eine Fehlermail mit Art und Dauer. Andere Dauern (z. B. 4 Stunden)
+ergänzt du als neue Zeile oder schreibst den Preis in die Beschreibung.
+
+**Mehrere Begleiter:** Steht im Titel mehr als ein Teammitglied
+(`(Erin & Dominik)`), erscheinen alle in der Mail (`Begleitung: Erin & Dominik`)
+und alle bekommen das BCC. Erkannt werden nur Namen aus der Liste `TEAM`.
+
+**Hinweis im Titel** wie „noch nicht bestätigt“ wird ignoriert: Sobald
+Daten und Begleitung stimmen, geht die Bestätigung raus.
 
 ## Erwartetes Format der Terminbeschreibung (Buchungsformular)
 
@@ -92,8 +116,8 @@ Unbekannte Platzhalter → es wird nichts gesendet, Jörg bekommt eine Mail.
 
 ## Begleitung im BCC (Google-Chat-Raum)
 
-Die Bestätigung geht zusätzlich als BCC an `vorname@spiritual-touch.de` der
-Begleitung (Vorname aus dem Titel, klein, Umlaute ausgeschrieben, z. B.
+Die Bestätigung geht zusätzlich als BCC an `vorname@spiritual-touch.de` jedes
+Begleiters im Titel (Vorname aus dem Titel, klein, Umlaute ausgeschrieben, z. B.
 `joerg@`). Die Mail landet so im Google-Chat-Raum der Person; der Kunde sieht
 die Adresse nicht. Einstellungen oben in `Code.gs`: `BCC_AKTIV`, `BCC_DOMAIN`
 und `BCC_ADRESSEN` (abweichende Adressen; `''` = kein BCC für diese Person).
