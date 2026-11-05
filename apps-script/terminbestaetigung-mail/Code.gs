@@ -233,15 +233,15 @@ function leseTermin_(ev) {
   var nachrichtPos = gast.search(/^[ \t]*Nachricht:/mi);
   if (nachrichtPos >= 0) gast = gast.substring(0, nachrichtPos);
 
-  var mail = gast.match(/^[ \t]*Mail:[ \t]*([^\s<>]+)/mi);
+  var mail = gast.match(/^[ \t]*(?:e-?mail|mail)[^:\n]*:[ \t]*([^\s<>]+)/mi);
   if (!mail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail[1])) return null;
 
   var titel = ev.getTitle() || '';
   var begleiter = findeBegleiter_(titel);
   if (!begleiter.length) return null;
 
-  var name = gast.match(/^[ \t]*Name:[ \t]*(.+)$/mi);
-  if (!name || !name[1].trim()) throw new Error('Kundenname ("Name:") in der Beschreibung nicht gefunden.');
+  var kundenname = kundenName_(gast);
+  if (!kundenname) throw new Error('Kundenname ("Vorname:" bzw. "Name:") in der Beschreibung nicht gefunden.');
 
   // "Dauer: 2 Stunden - 290,00 €" – Strich darf auch ein Gedankenstrich sein,
   // Währung €, "&euro;" (falls nicht entschlüsselt) oder EUR. Bei Workshops,
@@ -267,14 +267,22 @@ function leseTermin_(ev) {
   return {
     email: mail[1],
     sprache: sprache,
-    name: name[1].trim(),
-    vorname: name[1].trim().split(/\s+/)[0],
+    name: kundenname,
+    vorname: kundenname.split(/\s+/)[0],
     begleiter: begleiter,
     begleitung: begleiter.join(' & '),
     dauer: dauer,
     preis: preis,
     start: ev.getStartTime(),
   };
+}
+
+// "Vorname: X" und/oder "Name: Y" (auch "Nachname:") → "X Y"; '' wenn keins da ist.
+function kundenName_(text) {
+  var vor = text.match(/^[ \t]*Vorname[ \t]*:[ \t]*(.+)$/mi);
+  var nach = text.match(/^[ \t]*(?:Nachname|Name)[ \t]*:[ \t]*(.+)$/mi);
+  return [vor && vor[1].trim(), nach && nach[1].trim()]
+    .filter(function (x) { return x; }).join(' ');
 }
 
 // Kurzformat des zweiten WPForms-Formulars (eigene Termine), ohne Block
@@ -310,10 +318,7 @@ function leseKurzformat_(ev, text) {
   if (!begleiter.length) return null;
 
   // Name: "Vorname:" (+ ggf. "Name:"), sonst die erste Zeile vor der Mailzeile.
-  var vorZeile = text.match(/^[ \t]*Vorname[ \t]*:[ \t]*(.+)$/mi);
-  var nachZeile = text.match(/^[ \t]*(?:Nachname|Name)[ \t]*:[ \t]*(.+)$/mi);
-  var name = [vorZeile && vorZeile[1].trim(), nachZeile && nachZeile[1].trim()]
-    .filter(function (x) { return x; }).join(' ');
+  var name = kundenName_(text);
   if (!name && mailIdx > 0) name = zeilen[0];
   if (!name || /^[\d\s+().\/-]+$/.test(name) || /^(deutsch|german|english|englisch)$/i.test(name) ||
       /^[A-Za-zÀ-ÿ ]+:/.test(name)) {

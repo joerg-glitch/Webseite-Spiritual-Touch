@@ -85,8 +85,8 @@ Daten und Begleitung stimmen, geht die Bestätigung raus.
 Dauer: 2 Stunden - 290,00 €
 …
 Gastdaten:
-Name: Max Mustermann
-Mail: max@example.com
+Name: Max Mustermann    (oder "Vorname: Max", optional zusätzlich "Name: Mustermann")
+Mail: max@example.com   (oder "Email: …")
 Sprache: English        (optional, sonst Deutsch)
 Nachricht: …            (Freitext, wird nie ausgewertet)
 ```
