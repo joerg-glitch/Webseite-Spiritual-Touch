@@ -33,13 +33,22 @@ Begleitung im Titel. Erst dann wird bestätigt.
 
 ### Kurzformat (eigene Termine)
 
+Zwei Varianten, beide werden gelesen. Ab `Nachricht:` wird nichts mehr
+ausgewertet (Freitext des Kunden); die Schlusszahl ist die Eintrags-ID.
+
 ```
-Thomas                      ← Name (erste Zeile)
- Deutsch                    ← Sprache (Deutsch/English), sonst Deutsch
- 393315824625               ← Telefon (wird ignoriert)
-thomas@example.com          ← Mail, eigene Zeile
-1653                        ← Eintrags-ID (wird ignoriert)
+beschriftet                          unbeschriftet
+Vorname: Andrea                      Thomas              ← Name (erste Zeile)
+Sprache: Deutsch                      Deutsch            ← Sprache, sonst Deutsch
+Mobilnummer: 0160…   (ignoriert)      393315824625       ← Telefon (ignoriert)
+Email: andrea@example.com            thomas@example.com  ← Mail
+Nachricht:                            1653               ← Eintrags-ID (ignoriert)
+1810
 ```
+
+Die Mail muss in der Beschreibung stehen (`Email:`, `Mail:` oder als eigene
+Zeile). Ohne Mailadresse (z. B. nur Telefonnummer) wird der Termin ignoriert.
+Außerdem zählen nur Termine, die **nach `einrichten`** angelegt wurden.
 
 Titel: `Tantramassage 2,5 Stunden Maxine` (Art + Dauer + Begleitung).
 

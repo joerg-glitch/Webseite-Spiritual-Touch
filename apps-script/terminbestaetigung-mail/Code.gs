@@ -277,21 +277,31 @@ function leseTermin_(ev) {
   };
 }
 
-// Kurzformat des zweiten WPForms-Formulars (eigene Termine), ohne
-// Beschriftungen. Beispiel Beschreibung:
-//   Thomas / Deutsch / 393315824625 / thomas@example.com / 1653 (Eintrags-ID)
-// und Titel "Tantramassage 2,5 Stunden Maxine". Dauer aus dem Titel (sonst aus
-// der Termindauer), Sprache als eigene Zeile, Preis aus der PREISLISTE.
-// Gibt null zurück, wenn keine eigenständige Mailzeile oder keine Begleitung
-// im Titel vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
+// Kurzformat des zweiten WPForms-Formulars (eigene Termine), ohne Block
+// "Gastdaten:". Zwei Varianten, beide werden gelesen:
+//   a) unbeschriftet:  Thomas / Deutsch / 393315824625 / thomas@example.com / 1653
+//   b) beschriftet:    Vorname: Andrea / Sprache: Deutsch / Mobilnummer: 0160…
+//                      / Email: andrea@example.com / Nachricht: / 1810
+// (die Schlusszahl ist die Eintrags-ID). Dauer aus dem Titel (sonst aus der
+// Termindauer), Preis aus der PREISLISTE. Ab "Nachricht:" wird nichts mehr
+// ausgewertet (Freitext des Kunden).
+// Gibt null zurück, wenn keine Mailadresse oder keine Begleitung im Titel
+// vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
 function leseKurzformat_(ev, text) {
+  var nachrichtPos = text.search(/^[ \t]*Nachricht:/mi);
+  if (nachrichtPos >= 0) text = text.substring(0, nachrichtPos);
+
   var zeilen = text.split(ZEILENUMBRUCH)
     .map(function (z) { return z.trim(); })
     .filter(function (z) { return z; });
 
+  // Mail: eigene Zeile oder "Email:/E-Mail:/Mail: adresse".
   var mailIdx = -1;
+  var email = null;
   zeilen.forEach(function (z, i) {
-    if (mailIdx < 0 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(z)) mailIdx = i;
+    if (mailIdx >= 0) return;
+    var m = z.match(/^(?:(?:e-?mail|mail)[^:\n]*:[ \t]*)?([^\s@<>:]+@[^\s@<>]+\.[^\s@<>]+)$/i);
+    if (m) { mailIdx = i; email = m[1]; }
   });
   if (mailIdx < 0) return null;
 
@@ -299,20 +309,31 @@ function leseKurzformat_(ev, text) {
   var begleiter = findeBegleiter_(titel);
   if (!begleiter.length) return null;
 
-  // Name = erste Zeile, muss vor der Mailzeile stehen und echter Text sein.
-  var name = mailIdx > 0 ? zeilen[0] : '';
-  if (!name || /^[\d\s+().\/-]+$/.test(name) || /^(deutsch|german|english|englisch)$/i.test(name)) {
-    throw new Error('Kundenname (erste Zeile der Beschreibung) nicht gefunden.');
+  // Name: "Vorname:" (+ ggf. "Name:"), sonst die erste Zeile vor der Mailzeile.
+  var vorZeile = text.match(/^[ \t]*Vorname[ \t]*:[ \t]*(.+)$/mi);
+  var nachZeile = text.match(/^[ \t]*(?:Nachname|Name)[ \t]*:[ \t]*(.+)$/mi);
+  var name = [vorZeile && vorZeile[1].trim(), nachZeile && nachZeile[1].trim()]
+    .filter(function (x) { return x; }).join(' ');
+  if (!name && mailIdx > 0) name = zeilen[0];
+  if (!name || /^[\d\s+().\/-]+$/.test(name) || /^(deutsch|german|english|englisch)$/i.test(name) ||
+      /^[A-Za-zÀ-ÿ ]+:/.test(name)) {
+    throw new Error('Kundenname ("Vorname:" bzw. erste Zeile der Beschreibung) nicht gefunden.');
   }
 
   var dauer = ermittleDauer_(ev, titel, '');
   var preis = ermittlePreis_(text, findeArt_(titel), dauer);
 
+  // Sprache: "Sprache: English" oder eigene Zeile "English".
   var sprache = 'de';
-  zeilen.forEach(function (z) { if (/^(english|englisch)$/i.test(z)) sprache = 'en'; });
+  var sprachZeile = text.match(/^[ \t]*(?:Sprache|Language)[^:\n]*:[ \t]*(.+)$/mi);
+  if (sprachZeile) {
+    if (/engl/i.test(sprachZeile[1]) && !/^\s*(deutsch|german)/i.test(sprachZeile[1])) sprache = 'en';
+  } else {
+    zeilen.forEach(function (z) { if (/^(english|englisch)$/i.test(z)) sprache = 'en'; });
+  }
 
   return {
-    email: zeilen[mailIdx],
+    email: email,
     sprache: sprache,
     name: name,
     vorname: name.split(/\s+/)[0],
