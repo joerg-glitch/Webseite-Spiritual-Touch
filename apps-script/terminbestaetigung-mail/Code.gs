@@ -255,7 +255,7 @@ function leseTermin_(ev) {
     dauer = dauerPreis[1].trim();
     preis = dauerPreis[2] + ' €';
   } else {
-    dauer = ermittleDauer_(ev, titel, dauerZeile);
+    dauer = ermittleDauer_(titel, dauerZeile);
     preis = ermittlePreis_(dauerZeile, findeArt_(titel), dauer);
   }
 
@@ -290,8 +290,8 @@ function kundenName_(text) {
 //   a) unbeschriftet:  Thomas / Deutsch / 393315824625 / thomas@example.com / 1653
 //   b) beschriftet:    Vorname: Andrea / Sprache: Deutsch / Mobilnummer: 0160…
 //                      / Email: andrea@example.com / Nachricht: / 1810
-// (die Schlusszahl ist die Eintrags-ID). Dauer aus dem Titel (sonst aus der
-// Termindauer), Preis aus der PREISLISTE. Ab "Nachricht:" wird nichts mehr
+// (die Schlusszahl ist die Eintrags-ID). Dauer aus dem Titel, Preis aus der
+// PREISLISTE. Ab "Nachricht:" wird nichts mehr
 // ausgewertet (Freitext des Kunden).
 // Gibt null zurück, wenn keine Mailadresse oder keine Begleitung im Titel
 // vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
@@ -325,7 +325,7 @@ function leseKurzformat_(ev, text) {
     throw new Error('Kundenname ("Vorname:" bzw. erste Zeile der Beschreibung) nicht gefunden.');
   }
 
-  var dauer = ermittleDauer_(ev, titel, '');
+  var dauer = ermittleDauer_(titel, '');
   var preis = ermittlePreis_(text, findeArt_(titel), dauer);
 
   // Sprache: "Sprache: English" oder eigene Zeile "English".
@@ -350,12 +350,17 @@ function leseKurzformat_(ev, text) {
   };
 }
 
-// Dauer in der Reihenfolge: Text der Dauer-Zeile, Titel, Termindauer
-// (Kalender-Start bis -Ende). Immer in der Form "2 Stunden", "2,5 Stunden",
-// "1 Stunde" oder "45 Minuten".
-function ermittleDauer_(ev, titel, dauerZeile) {
-  return dauerAusText_(dauerZeile) || dauerAusText_(titel) ||
-    dauerFormat_(Math.round((ev.getEndTime().getTime() - ev.getStartTime().getTime()) / 60000));
+// Dauer in der Reihenfolge: Text der Dauer-Zeile, dann Titel. Immer in der Form
+// "2 Stunden", "2,5 Stunden", "1 Stunde" oder "45 Minuten". Die Länge des
+// Kalendertermins zählt bewusst NICHT: Sie enthält Puffer für Vor- und
+// Nachbereitung und sagt nichts über die gebuchte Dauer.
+function ermittleDauer_(titel, dauerZeile) {
+  var dauer = dauerAusText_(dauerZeile) || dauerAusText_(titel);
+  if (!dauer) {
+    throw new Error('Dauer nicht erkennbar. Bitte im Titel angeben, z. B. "Workshop/Berührungscoaching 3h (Erin & Dominik)". ' +
+      'Titel: ' + JSON.stringify(titel));
+  }
+  return dauer;
 }
 
 function dauerAusText_(s) {

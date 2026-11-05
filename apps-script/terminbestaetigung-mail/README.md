@@ -25,7 +25,7 @@ dort.
 |---|---|---|
 | Kalender vor dem Kopieren | Anfragen | Verfügbarkeit |
 | Beschreibung | beschriftet (`Gastdaten:` …) | Kurzformat, siehe unten |
-| Dauer | aus `Dauer: …` | aus dem Titel (`2,5 Stunden`), sonst Termindauer |
+| Dauer | aus `Dauer: …` | aus dem Titel (`2,5 Stunden`) |
 | Preis | aus `Dauer: … - … €`, sonst `PREISLISTE` | `PREISLISTE` im Skript (oder `290 €` in der Beschreibung) |
 
 In beiden Fällen kopierst du den Termin in einen Raumkalender und nennst die
@@ -60,9 +60,10 @@ Bodywork / Intuitive Körperarbeit), Workshop (Workshop/Berührungscoaching),
 Beratung (Paar- oder Einzelberatung), De-Armouring.
 
 **Dauer** in dieser Reihenfolge: Dauer-Zeile der Beschreibung, Dauer im Titel
-(`3h`, `2,5 Stunden`), sonst die Länge des Kalendertermins (Start bis Ende).
-Bei Workshops und „andere Dauer“ ist die Dauer-Zeile leer, dann greifen Titel
-bzw. Termindauer.
+(`3h`, `2,5 Stunden`). Bei Workshops und „andere Dauer“ ist die Dauer-Zeile
+leer, dann muss die Dauer im Titel stehen. Die Länge des Kalendertermins zählt
+**nicht**, weil dort Puffer für Vor- und Nachbereitung enthalten ist (Termine
+sind immer 4 Stunden lang). Ohne erkennbare Dauer wird nichts gesendet.
 
 **Preis** in dieser Reihenfolge: `… - 290,00 €` in der Dauer-Zeile
 (Buchungsformular), sonst `PREISLISTE` im Skript nach Art und Dauer.
