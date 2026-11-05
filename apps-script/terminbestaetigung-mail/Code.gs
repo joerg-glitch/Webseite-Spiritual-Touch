@@ -100,12 +100,12 @@ var BCC_ADRESSEN = {};  // Beispiel: { 'Mila': 'mila.k@spiritual-touch.de', 'Eva
 // (Buchungsformular), hat der Vorrang.
 var PREISLISTE = {
   'Tantramassage':   { '2 Stunden': '290,00 €', '2,5 Stunden': '340,00 €', '3 Stunden': '390,00 €' },
-  'Paarmassage':     { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
-  'Ritual zu Dritt': { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
-  'Körperarbeit':    { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Sexological Bodywork / Intuitive Körperarbeit
-  'Workshop':        { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Workshop/Berührungscoaching
-  'Beratung':        { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' }, // Paar- oder Einzelberatung
-  'De-Armouring':    { '2 Stunden': '', '2,5 Stunden': '', '3 Stunden': '' },
+  'Paarmassage':     { '2 Stunden': '580,00 €', '2,5 Stunden': '680,00 €', '3 Stunden': '780,00 €' },
+  'Ritual zu Dritt': { '2 Stunden': '340,00 €', '2,5 Stunden': '390,00 €', '3 Stunden': '440,00 €' },
+  'Körperarbeit':    { '3 Stunden': '275,00 €' }, // Sexological Bodywork / Intuitive Körperarbeit
+  'Workshop':        { '3 Stunden': '450,00 €' }, // Workshop/Berührungscoaching
+  'Beratung':        { '1,5 Stunden': '125,00 €' }, // Paar- oder Einzelberatung
+  'De-Armouring':    { '2 Stunden': '340,00 €', '2,5 Stunden': '390,00 €', '3 Stunden': '440,00 €' },
 };
 
 // Art des Termins aus dem Titel. Reihenfolge zählt (die erste passende gilt).
@@ -132,6 +132,16 @@ var RAUM_KALENDER = [
 // hier ergänzen.
 var TEAM = ['Tara', 'Eva', 'Jörg', 'Asmita', 'Amila', 'Sarah', 'Dominik', 'Konstantin',
             'Alea', 'Stephanie', 'Karen', 'Maxine', 'Mila', 'Erin'];
+
+// Notfall-Entwurf: Findet das Skript einen Kundentermin, kann ihn aber nicht
+// automatisch bestätigen (Mail, Preis, Dauer, Begleitung … fehlt oder ist
+// nicht lesbar), legt es nach dieser Wartezeit (Minuten seit Anlegen des
+// Termins) trotzdem einen Gmail-ENTWURF mit den vorhandenen Daten an; Fehlendes
+// steht als [... FEHLT] in der Mail. Die Wartezeit gibt dir Zeit, Titel oder
+// Beschreibung nach dem Kopieren zu korrigieren (dann geht die normale
+// Bestätigung raus). 0 = sofort, -1 = ausgeschaltet. Notfall-Entwürfe sind
+// immer nur Entwürfe, auch bei MODUS 'SENDEN'.
+var NOTFALL_ENTWURF_NACH_MIN = 30;
 
 var SCAN_TAGE_VORAUS = 180;
 var TIMEZONE = 'Europe/Berlin';
@@ -195,8 +205,27 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
   if (ev.getTag(TAG_KEY)) return;                       // schon bearbeitet
   if (ev.getDateCreated().getTime() < aktivSeit) return; // Altbestand
 
+  var fehler = null;
+  try {
+    if (bestaetigeTermin_(ev, raumName)) return;
+  } catch (err) {
+    fehler = err;
+  }
+  // Nicht automatisch bestätigt: entweder Fehler (fehler gesetzt) oder der Termin
+  // ist (noch) nicht bestätigungsreif. Ist er ein erkennbarer Kundentermin und
+  // die Wartezeit um, kommt ein Notfall-Entwurf.
+  if (notfallEntwurfFaellig_(ev)) {
+    notfallEntwurf_(ev, raumName, fehler);
+    return;
+  }
+  if (fehler) throw fehler;
+}
+
+// true = Bestätigung gesendet bzw. als Entwurf angelegt; false = Termin (noch)
+// nicht bestätigungsreif. Wirft bei Datenfehlern.
+function bestaetigeTermin_(ev, raumName) {
   var termin = leseTermin_(ev);
-  if (!termin) return; // kein Kundentermin oder Begleitung im Titel fehlt noch
+  if (!termin) return false; // kein Kundentermin oder Begleitung im Titel fehlt noch
 
   var vorlage = VORLAGEN[termin.sprache];
   var werte = werteFuerVorlage_(termin);
@@ -216,6 +245,138 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
   ev.setTag(TAG_KEY, MODUS === 'SENDEN' ? 'gesendet' : 'entwurf');
   Logger.log((MODUS === 'SENDEN' ? 'Gesendet' : 'Entwurf') + ': ' + termin.email +
     ' (' + raumName + ', ' + termin.sprache + ', ' + formatDatum_(termin.start) + ' ' + formatUhrzeit_(termin.start) + ')');
+  return true;
+}
+
+// ---------- NOTFALL-ENTWURF (unvollständige Kundentermine) ----------
+
+// Erkennbarer Kundentermin = Gastdaten-Block oder Mailadresse in der
+// Beschreibung, ODER Begleitung + Art des Termins (Tantramassage, Workshop …)
+// im Titel. Interne Termine (Blocker, Pausen, "Massageaustausch …") haben
+// weder das eine noch das andere und bleiben unberührt.
+function notfallEntwurfFaellig_(ev) {
+  if (NOTFALL_ENTWURF_NACH_MIN < 0) return false;
+  if (Date.now() - ev.getDateCreated().getTime() < NOTFALL_ENTWURF_NACH_MIN * 60 * 1000) return false;
+  var titel = ev.getTitle() || '';
+  var text = ohneNachricht_(beschreibungAlsText_(ev.getDescription()));
+  if (/Gastdaten:/i.test(text) || sucheMail_(text)) return true;
+  return findeBegleiter_(titel).length > 0 && !!findeArt_(titel);
+}
+
+// Legt aus den vorhandenen Daten einen Gmail-Entwurf an (nie ein Versand).
+// Fehlendes steht als [... FEHLT] in der Mail, oben ein roter Hinweis. Fehlt die
+// Kundenmail, geht der Entwurf an ALERT_EMAIL (Empfänger dann eintragen).
+function notfallEntwurf_(ev, raumName, fehler) {
+  var t = leseTerminTeilweise_(ev);
+  var vorlage = VORLAGEN[t.sprache];
+  var grund = t.fehlt.length ? t.fehlt.join(', ') : 'unbekannt';
+  var hinweis = 'ACHTUNG – UNVOLLSTÄNDIGER ENTWURF. Fehlt: ' + grund + '. Stellen in [ECKIGEN KLAMMERN] ' +
+    'ergänzen' + (t.email ? '' : ', Empfänger eintragen') + ' und diesen Hinweis löschen, bevor die Mail gesendet wird.';
+
+  var inhalt;
+  try {
+    inhalt = rendereVorlage_(werteFuerVorlage_(t), vorlage.docId);
+  } catch (err) {
+    inhalt = { // Vorlage nicht lesbar: nackter Entwurf mit den Rohdaten
+      html: '<p>' + escapeHtml_(t.vorname + ', ' + formatDatum_(t.start, t.sprache) + ' ' + formatUhrzeit_(t.start) +
+        ', Begleitung ' + t.begleitung + ', ' + t.dauer + ', ' + t.preis + ' (Vorlage nicht lesbar: ' + err.message + ')') + '</p>',
+      text: t.vorname + ', ' + formatDatum_(t.start, t.sprache) + ' ' + formatUhrzeit_(t.start) +
+        ', Begleitung ' + t.begleitung + ', ' + t.dauer + ', ' + t.preis + ' (Vorlage nicht lesbar: ' + err.message + ')',
+      bilder: {},
+    };
+  }
+  inhalt.html = '<p style="margin:0 0 16px 0;padding:8px;background:#fde8e8;color:#b00020;font-weight:bold">' +
+    escapeHtml_(hinweis) + '</p>' + inhalt.html;
+  inhalt.text = hinweis + '\n\n' + inhalt.text;
+
+  var optionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
+  var bcc = t.begleiter.length ? bccFuer_(t.begleiter) : '';
+  if (bcc) optionen.bcc = bcc;
+  if (ANTWORT_AN) optionen.replyTo = ANTWORT_AN;
+
+  // Wie beim Versand: erst markieren, dann Entwurf anlegen.
+  ev.setTag(TAG_KEY, 'in-arbeit');
+  if (ev.getTag(TAG_KEY) !== 'in-arbeit') {
+    throw new Error('Markierung am Termin konnte nicht gespeichert werden – kein Notfall-Entwurf angelegt.');
+  }
+  try {
+    GmailApp.createDraft(t.email || ALERT_EMAIL, '[UNVOLLSTÄNDIG] ' + vorlage.betreff, inhalt.text, optionen);
+  } catch (err) {
+    ev.deleteTag(TAG_KEY);
+    throw err;
+  }
+  ev.setTag(TAG_KEY, 'notfall-entwurf');
+  Logger.log('Notfall-Entwurf (' + grund + '): ' + (t.email || '(keine Mail)') + ' (' + raumName + ', ' +
+    formatDatum_(t.start) + ' ' + formatUhrzeit_(t.start) + ')');
+  meldeFehler_('notfall-' + ev.getId(), 'Unvollständiger Termin – Entwurf angelegt',
+    raumName + ': "' + ev.getTitle() + '" am ' + formatDatum_(ev.getStartTime()) + ' ' + formatUhrzeit_(ev.getStartTime()) +
+    '\n\nFehlt: ' + grund + (fehler ? '\nFehler: ' + fehler.message : '') +
+    '\n\nIn Gmail unter Entwürfe liegt "[UNVOLLSTÄNDIG] ' + vorlage.betreff + '". Bitte ergänzen und selbst senden.');
+}
+
+// Liest, so viel sich findet, und füllt Lücken mit [... FEHLT]. t.fehlt listet die Lücken.
+function leseTerminTeilweise_(ev) {
+  var titel = ev.getTitle() || '';
+  var text = beschreibungAlsText_(ev.getDescription());
+  var gastPos = text.search(/Gastdaten:/i);
+  var kopf = gastPos >= 0 ? text.substring(0, gastPos) : '';
+  var gast = ohneNachricht_(gastPos >= 0 ? text.substring(gastPos) : text);
+  var fehlt = [];
+
+  var email = sucheMail_(gast) || '';
+  if (!email) fehlt.push('E-Mail-Adresse');
+
+  var begleiter = findeBegleiter_(titel);
+  if (!begleiter.length) fehlt.push('Begleitung (Vorname im Titel)');
+
+  var name = kundenName_(gast);
+  if (!name && gastPos < 0) { // Freitext wie "Marcel, von Eva": erste Zeile
+    var erste = gast.split(ZEILENUMBRUCH).map(function (z) { return z.trim(); }).filter(function (z) { return z; })[0] || '';
+    if (erste && erste.indexOf(':') < 0 && erste.indexOf('@') < 0 && !/^[\d\s+().\/-]+$/.test(erste)) name = erste;
+  }
+  if (!name) fehlt.push('Name');
+
+  var sprache = 'de';
+  var sprachZeile = gast.match(/^[ \t]*(?:Sprache|Language)[^:\n]*:[ \t]*(.+)$/mi);
+  if (sprachZeile ? (/engl/i.test(sprachZeile[1]) && !/^\s*(deutsch|german)/i.test(sprachZeile[1])) :
+      /^[ \t]*(english|englisch)[ \t]*$/mi.test(gast)) sprache = 'en';
+
+  var dz = kopf.match(/^[ \t]*Dauer:[ \t]*(.*)$/mi);
+  var dauerZeile = dz ? dz[1].trim() : '';
+  var dauerPreis = dauerZeile.match(/^(.+?)[ \t]+[-–—][ \t]+([\d.,]+)[ \t]*(?:€|&euro;|EUR)/i);
+  var dauer = dauerPreis ? dauerPreis[1].trim() : (dauerAusText_(dauerZeile) || dauerAusText_(titel) || '');
+  if (!dauer) fehlt.push('Dauer');
+  var preis = dauerPreis ? dauerPreis[2] + ' €' : '';
+  if (!preis) {
+    try { preis = ermittlePreis_(gastPos >= 0 ? dauerZeile : gast, findeArt_(titel), dauer); } catch (err) { preis = ''; }
+  }
+  if (!preis) fehlt.push('Preis' + (dauer ? ' (' + (findeArt_(titel) || 'Art unbekannt') + ', ' + dauer + ')' : ''));
+
+  var fehltText = function (was) { return '[' + was + ' FEHLT]'; };
+  return {
+    fehlt: fehlt,
+    email: email,
+    sprache: sprache,
+    name: name || fehltText('NAME'),
+    vorname: name ? name.split(/[\s,]+/)[0] : fehltText('VORNAME'),
+    begleiter: begleiter,
+    begleitung: begleiter.length ? begleiter.join(' & ') : fehltText('BEGLEITUNG'),
+    dauer: dauer || fehltText('DAUER'),
+    preis: preis || fehltText('PREIS'),
+    start: ev.getStartTime(),
+  };
+}
+
+// Mailadresse als eigene Zeile oder "Email:/E-Mail:/Mail: adresse"; sonst null.
+function sucheMail_(text) {
+  var m = String(text || '').match(/^[ \t]*(?:(?:e-?mail|mail)[^:\n]*:[ \t]*)?([^\s@<>:]+@[^\s@<>]+\.[^\s@<>]+)[ \t]*$/mi);
+  return m ? m[1] : null;
+}
+
+// Freitext des Kunden ("Nachricht: …" und alles danach) nie auswerten.
+function ohneNachricht_(text) {
+  var pos = text.search(/^[ \t]*Nachricht:/mi);
+  return pos >= 0 ? text.substring(0, pos) : text;
 }
 
 // ---------- TERMIN LESEN ----------

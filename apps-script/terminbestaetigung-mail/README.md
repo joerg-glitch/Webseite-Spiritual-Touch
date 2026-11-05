@@ -124,6 +124,29 @@ Unbekannte Platzhalter → es wird nichts gesendet, Jörg bekommt eine Mail.
 - **Nochmal bestätigen:** Termin neu kopieren, alte Kopie löschen.
 - Fehler gehen als Mail an `ALERT_EMAIL` (max. 1× alle 6 h je Termin).
 
+## Notfall-Entwurf bei unvollständigen Terminen
+
+Erkennt das Skript einen Kundentermin, kann ihn aber nicht automatisch
+bestätigen, legt es nach `NOTFALL_ENTWURF_NACH_MIN` (30 Minuten nach Anlegen
+des Termins) trotzdem einen **Gmail-Entwurf** mit den vorhandenen Daten an:
+
+- Fehlendes steht als `[PREIS FEHLT]`, `[BEGLEITUNG FEHLT]` usw. in der Mail,
+  oben ein roter Hinweis, was fehlt. Hinweis löschen und Lücken füllen, dann
+  selbst senden.
+- Fehlt die Kundenmail, geht der Entwurf an `joerg@spiritual-touch.de`
+  (Empfänger dann eintragen). Das BCC an die Begleitung ist gesetzt, soweit
+  bekannt. Betreff: `[UNVOLLSTÄNDIG] Terminbestätigung`.
+- Immer nur Entwurf, nie ein automatischer Versand, auch bei `MODUS = 'SENDEN'`.
+- Zusätzlich kommt eine Hinweismail an `ALERT_EMAIL`. Der Termin wird danach
+  markiert; Änderungen am Termin lösen keine automatische Mail mehr aus.
+- Die Wartezeit lässt dir Zeit, Titel oder Beschreibung nach dem Kopieren zu
+  korrigieren; dann geht die normale Bestätigung raus. `0` = sofort,
+  `-1` = ausgeschaltet.
+
+**Erkennbarer Kundentermin** heißt: `Gastdaten:` oder eine Mailadresse in der
+Beschreibung, oder Begleitung **und** Art des Termins im Titel. Interne Termine
+(Blocker, „Massageaustausch …“) bleiben unberührt.
+
 ## Begleitung im BCC (Google-Chat-Raum)
 
 Die Bestätigung geht zusätzlich als BCC an `vorname@spiritual-touch.de` jedes
