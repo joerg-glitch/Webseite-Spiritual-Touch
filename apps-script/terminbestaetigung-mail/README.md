@@ -142,6 +142,16 @@ dann genauso, mit diesen Unterschieden:
 - Der Termin verschwindet aus dem Anfragenkalender. Prüfe, ob dieser Kalender
   noch irgendwo als Belegung gelesen wird (Anfragen-Verfügbarkeits-Sync).
 
+## Ruhezeit und Datum/Uhrzeit in der Mail
+
+Datum und Uhrzeit der Bestätigung kommen aus dem Termin **zum Zeitpunkt der
+Bestätigung**, nicht aus der Buchung. Verschiebst du einen Termin (z. B. vom
+20.11. 12:00 auf den 21.11. 13:00), steht in der Mail der neue Zeitpunkt. Damit
+keine Mail mit einer Zwischenzeit rausgeht, wartet das Skript, bis der Termin
+`RUHEZEIT_MIN` (5 Minuten) unverändert war. Danach (je nach Lauf bis zu 15
+Minuten nach deiner letzten Änderung) kommt die Bestätigung. Eine spätere
+Änderung von Datum oder Uhrzeit löst **keine** zweite Mail aus.
+
 ## Notfall-Entwurf bei unvollständigen Terminen
 
 Erkennt das Skript einen Kundentermin, kann ihn aber nicht automatisch

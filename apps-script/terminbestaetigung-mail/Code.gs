@@ -143,6 +143,13 @@ var TEAM = ['Tara', 'Eva', 'Jörg', 'Asmita', 'Amila', 'Sarah', 'Dominik', 'Kons
 // immer nur Entwürfe, auch bei MODUS 'SENDEN'.
 var NOTFALL_ENTWURF_NACH_MIN = 30;
 
+// Ruhezeit: Eine Bestätigung wird erst erzeugt, wenn der Termin so viele Minuten
+// unverändert war. Schützt vor einer Mail mit falscher Zeit, wenn du einen Termin
+// erst in den Raumkalender legst und danach noch Datum oder Uhrzeit anpasst
+// (Datum/Uhrzeit der Mail kommen aus dem Termin zum Zeitpunkt der Bestätigung).
+// 0 = ausgeschaltet.
+var RUHEZEIT_MIN = 5;
+
 var SCAN_TAGE_VORAUS = 180;
 var TIMEZONE = 'Europe/Berlin';
 var TAG_KEY = 'bestaetigung';
@@ -204,6 +211,9 @@ function verarbeiteTermin_(ev, raumName, aktivSeit) {
   if (ev.isAllDayEvent()) return;
   if (ev.getTag(TAG_KEY)) return;                       // schon bearbeitet
   if (ev.getDateCreated().getTime() < aktivSeit) return; // Altbestand
+
+  // Noch in Bearbeitung? Dann beim nächsten Lauf wieder.
+  if (Date.now() - ev.getLastUpdated().getTime() < RUHEZEIT_MIN * 60 * 1000) return;
 
   var fehler = null;
   try {
