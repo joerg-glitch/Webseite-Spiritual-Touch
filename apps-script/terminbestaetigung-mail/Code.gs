@@ -135,8 +135,8 @@ var TEAM = ['Tara', 'Eva', 'Jörg', 'Asmita', 'Amila', 'Sarah', 'Dominik', 'Kons
 
 // Notfall-Entwurf: Findet das Skript einen Kundentermin, kann ihn aber nicht
 // automatisch bestätigen (Mail, Preis, Dauer, Begleitung … fehlt oder ist
-// nicht lesbar), legt es nach dieser Wartezeit (Minuten seit Anlegen des
-// Termins) trotzdem einen Gmail-ENTWURF mit den vorhandenen Daten an; Fehlendes
+// nicht lesbar), legt es nach dieser Wartezeit (Minuten seit der letzten
+// Änderung des Termins) trotzdem einen Gmail-ENTWURF mit den vorhandenen Daten an; Fehlendes
 // steht als [... FEHLT] in der Mail. Die Wartezeit gibt dir Zeit, Titel oder
 // Beschreibung nach dem Kopieren zu korrigieren (dann geht die normale
 // Bestätigung raus). 0 = sofort, -1 = ausgeschaltet. Notfall-Entwürfe sind
@@ -256,7 +256,7 @@ function bestaetigeTermin_(ev, raumName) {
 // weder das eine noch das andere und bleiben unberührt.
 function notfallEntwurfFaellig_(ev) {
   if (NOTFALL_ENTWURF_NACH_MIN < 0) return false;
-  if (Date.now() - ev.getDateCreated().getTime() < NOTFALL_ENTWURF_NACH_MIN * 60 * 1000) return false;
+  if (Date.now() - ev.getLastUpdated().getTime() < NOTFALL_ENTWURF_NACH_MIN * 60 * 1000) return false;
   var titel = ev.getTitle() || '';
   var text = ohneNachricht_(beschreibungAlsText_(ev.getDescription()));
   if (/Gastdaten:/i.test(text) || sucheMail_(text)) return true;

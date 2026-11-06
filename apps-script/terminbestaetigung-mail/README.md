@@ -124,11 +124,29 @@ Unbekannte Platzhalter → es wird nichts gesendet, Jörg bekommt eine Mail.
 - **Nochmal bestätigen:** Termin neu kopieren, alte Kopie löschen.
 - Fehler gehen als Mail an `ALERT_EMAIL` (max. 1× alle 6 h je Termin).
 
+## Termin verschieben statt kopieren
+
+Du kannst den Termin auch per „Kalender ändern“ vom Anfragenkalender in einen
+Raumkalender **verschieben**, statt ihn zu kopieren. Das Skript funktioniert
+dann genauso, mit diesen Unterschieden:
+
+- Ein verschobener Termin behält seine ID und seine Anlegezeit (= Buchungszeit).
+  Es zählen nur Termine, die **nach `einrichten`** gebucht wurden; ältere
+  Buchungen, die du erst jetzt verschiebst, gelten als Altbestand und werden
+  nicht bestätigt.
+- Die Wartezeit für den Notfall-Entwurf läuft ab der letzten Änderung, also ab
+  dem Verschieben bzw. Umbenennen.
+- Die Markierung „bestätigt“ bleibt am Termin. Verschiebst du ihn später von
+  Raum 1 nach Raum 2, kommt keine zweite Bestätigung (bei einer neuen Kopie
+  schon).
+- Der Termin verschwindet aus dem Anfragenkalender. Prüfe, ob dieser Kalender
+  noch irgendwo als Belegung gelesen wird (Anfragen-Verfügbarkeits-Sync).
+
 ## Notfall-Entwurf bei unvollständigen Terminen
 
 Erkennt das Skript einen Kundentermin, kann ihn aber nicht automatisch
-bestätigen, legt es nach `NOTFALL_ENTWURF_NACH_MIN` (30 Minuten nach Anlegen
-des Termins) trotzdem einen **Gmail-Entwurf** mit den vorhandenen Daten an:
+bestätigen, legt es nach `NOTFALL_ENTWURF_NACH_MIN` (30 Minuten nach der
+letzten Änderung des Termins) trotzdem einen **Gmail-Entwurf** mit den vorhandenen Daten an:
 
 - Fehlendes steht als `[PREIS FEHLT]`, `[BEGLEITUNG FEHLT]` usw. in der Mail,
   oben ein roter Hinweis, was fehlt. Hinweis löschen und Lücken füllen, dann
