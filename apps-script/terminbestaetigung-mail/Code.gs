@@ -119,6 +119,21 @@ var ARTEN = [
   { art: 'Tantramassage',   muster: /tantra/i },
 ];
 
+// Namen der Begleitung in der Mail mit der Profilseite verlinken.
+// Adresse = PROFIL_URL + Vorname klein geschrieben, Umlaute ausgeschrieben
+// (Jörg → joerg). Abweichende Endungen unter PROFIL_SLUGS eintragen,
+// '' = für diese Person kein Link.
+var PROFIL_LINKS = true;
+var PROFIL_URL = 'https://spiritual-touch.de/praxis/team/';
+var PROFIL_SLUGS = {};  // Beispiel: { 'Mila': 'mila-2', 'Erin': '' }
+
+// Kalenderdatei (.ics) an die Bestätigung anhängen. Der Gast öffnet sie und
+// trägt den Termin mit einem Klick in seinen Kalender ein. Dauer = gebuchte
+// Dauer (nicht der 4-Stunden-Block im Raumkalender). ICS_ORT = Adresse der
+// Praxis für das Feld "Ort", leer = kein Ort in der Datei.
+var ICS_ANHANG = true;
+var ICS_ORT = '';
+
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
 // Raumkalender (IDs aus apps-script/raum-einladung-sync/Code.gs).
@@ -247,7 +262,7 @@ function bestaetigeTermin_(ev, raumName) {
     throw new Error('Markierung am Termin konnte nicht gespeichert werden – nichts gesendet.');
   }
   try {
-    sende_(termin.email, vorlage.betreff, inhalt, bccFuer_(termin.begleiter));
+    sende_(termin.email, vorlage.betreff, inhalt, bccFuer_(termin.begleiter), icsFuer_(termin, ev.getId()));
   } catch (err) {
     ev.deleteTag(TAG_KEY);
     throw err;
@@ -302,6 +317,8 @@ function notfallEntwurf_(ev, raumName, fehler) {
   var optionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
   var bcc = t.begleiter.length ? bccFuer_(t.begleiter) : '';
   if (bcc) optionen.bcc = bcc;
+  var ics = icsFuer_(t, ev.getId());
+  if (ics) optionen.attachments = [ics];
   if (ANTWORT_AN) optionen.replyTo = ANTWORT_AN;
 
   // Wie beim Versand: erst markieren, dann Entwurf anlegen.
@@ -535,10 +552,16 @@ function ermittleDauer_(titel, dauerZeile) {
 }
 
 function dauerAusText_(s) {
+  var minuten = dauerMinuten_(s);
+  return minuten === null ? null : dauerFormat_(minuten);
+}
+
+// "2 Stunden", "2,5h", "90 Minuten" → Minuten, sonst null.
+function dauerMinuten_(s) {
   var m = String(s || '').match(/(\d+(?:[.,]\d+)?)\s*(Stunden?|Std\.?|hours?|hrs?|h|Minuten?|Min\.?|minutes?|mins?)(?![A-Za-zÀ-ÿ])/i);
   if (!m) return null;
   var zahl = parseFloat(m[1].replace(',', '.'));
-  return dauerFormat_(Math.round(/^min/i.test(m[2]) ? zahl : zahl * 60));
+  return Math.round(/^min/i.test(m[2]) ? zahl : zahl * 60);
 }
 
 function dauerFormat_(minuten) {
@@ -610,14 +633,40 @@ function beschreibungAlsText_(roh) {
   return text.replace(/ /g, ' ');
 }
 
+// Kleinschreibung ohne Umlaute, z. B. "Jörg" → "joerg" (Basis für Mail- und Profiladressen).
+function kleinOhneUmlaute_(s) {
+  return String(s).toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss');
+}
+
+// Profilseite eines Teammitglieds oder '' (siehe PROFIL_LINKS).
+function profilUrl_(vorname) {
+  if (!PROFIL_LINKS) return '';
+  var slug = PROFIL_SLUGS.hasOwnProperty(vorname) ? PROFIL_SLUGS[vorname] : kleinOhneUmlaute_(vorname);
+  return slug ? PROFIL_URL + slug : '';
+}
+
 function werteFuerVorlage_(t) {
   var en = t.sprache === 'en';
+  var htmlWerte = {};
+  var begleitungText = t.begleitung;
+  if (t.begleiter && t.begleiter.length && PROFIL_LINKS) {
+    // HTML: jeder Name als Link. Text-Version: "Name (Adresse)".
+    htmlWerte['{{Begleitung}}'] = t.begleiter.map(function (b) {
+      var url = profilUrl_(b);
+      return url ? '<a href="' + escapeHtml_(url) + '" style="color:#1155cc">' + escapeHtml_(b) + '</a>' : escapeHtml_(b);
+    }).join(' &amp; ');
+    begleitungText = t.begleiter.map(function (b) {
+      var url = profilUrl_(b);
+      return url ? b + ' (' + url + ')' : b;
+    }).join(' & ');
+  }
   return {
+    __html: htmlWerte,
     '{{Vorname}}': t.vorname,
     '{{Name}}': t.name,
     '{{Datum}}': formatDatum_(t.start, t.sprache),
     '{{Uhrzeit}}': formatUhrzeit_(t.start),
-    '{{Begleitung}}': t.begleitung,
+    '{{Begleitung}}': begleitungText,
     '{{Dauer}}': en ? dauerEnglisch_(t.dauer) : t.dauer,
     '{{Preis}}': en ? preisEnglisch_(t.preis) : t.preis,
   };
@@ -740,7 +789,8 @@ function textAlsHtml_(text, werte, zaehler) {
     }
     var k = 0;
     idx.forEach(function (v, m) { if (v <= pos) k = m; });
-    var h = escapeHtml_(inhalt).replace(ZEILENUMBRUCH, '<br>');
+    var htmlWerte = werte.__html || {};
+    var h = (t && t.p in htmlWerte) ? htmlWerte[t.p] : escapeHtml_(inhalt).replace(ZEILENUMBRUCH, '<br>');
     if (stile[k].b) h = '<strong>' + h + '</strong>';
     if (stile[k].i) h = '<em>' + h + '</em>';
     if (stile[k].l) h = '<a href="' + escapeHtml_(stile[k].l) + '" style="color:#1155cc">' + h + '</a>';
@@ -764,6 +814,61 @@ function escapeHtml_(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ---------- KALENDERDATEI (.ics) ----------
+
+// Gibt die .ics als Blob zurück oder null (ausgeschaltet bzw. Dauer unbekannt).
+// Start = Beginn des Termins zum Zeitpunkt der Bestätigung, Ende = Start + gebuchte
+// Dauer. Zeiten in UTC, die Kalenderprogramme rechnen in die Ortszeit um.
+function icsFuer_(t, uid) {
+  if (!ICS_ANHANG) return null;
+  var minuten = dauerMinuten_(t.dauer);
+  if (!minuten) return null;
+  var en = t.sprache === 'en';
+  var ende = new Date(t.start.getTime() + minuten * 60 * 1000);
+  var utc = function (d) { return Utilities.formatDate(d, 'UTC', "yyyyMMdd'T'HHmmss'Z'"); };
+  var beschreibung = (en ? 'Companion: ' : 'Begleitung: ') + t.begleitung.replace(/\[.*?\]/g, '').trim();
+  (t.begleiter || []).forEach(function (b) {
+    var url = profilUrl_(b);
+    if (url) beschreibung += '\n' + b + ': ' + url;
+  });
+  beschreibung += '\n' + (en ? 'Duration: ' : 'Dauer: ') + (en ? dauerEnglisch_(t.dauer) : t.dauer);
+
+  var zeilen = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Spiritual Touch//Terminbestaetigung//DE',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:' + uid + '@spiritual-touch.de',
+    'DTSTAMP:' + utc(new Date()),
+    'DTSTART:' + utc(t.start),
+    'DTEND:' + utc(ende),
+    'SUMMARY:' + icsText_(en ? 'Appointment at Spiritual Touch' : 'Termin bei Spiritual Touch'),
+    'DESCRIPTION:' + icsText_(beschreibung),
+  ];
+  if (ICS_ORT) zeilen.push('LOCATION:' + icsText_(ICS_ORT));
+  zeilen.push('STATUS:CONFIRMED', 'END:VEVENT', 'END:VCALENDAR');
+  var inhalt = zeilen.map(icsFalten_).join('\r\n') + '\r\n';
+  return Utilities.newBlob(inhalt, 'text/calendar', en ? 'appointment.ics' : 'Termin.ics');
+}
+
+// Sonderzeichen für iCalendar-Textfelder.
+function icsText_(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+
+// Zeilen über 75 Zeichen werden umgebrochen (Folgezeile beginnt mit Leerzeichen).
+function icsFalten_(zeile) {
+  var teile = [];
+  while (zeile.length > 70) {
+    teile.push(zeile.substring(0, 70));
+    zeile = ' ' + zeile.substring(70);
+  }
+  teile.push(zeile);
+  return teile.join('\r\n');
+}
+
 // ---------- VERSAND ----------
 
 // BCC-Adressen aller Begleiter (siehe BCC_AKTIV), kommagetrennt, oder ''.
@@ -772,15 +877,16 @@ function bccFuer_(begleiter) {
   var adressen = [];
   begleiter.forEach(function (b) {
     var adresse = BCC_ADRESSEN.hasOwnProperty(b) ? BCC_ADRESSEN[b] :
-      b.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss') + '@' + BCC_DOMAIN;
+      kleinOhneUmlaute_(b) + '@' + BCC_DOMAIN;
     if (adresse && adressen.indexOf(adresse) < 0) adressen.push(adresse);
   });
   return adressen.join(',');
 }
 
-function sende_(an, betreff, inhalt, bcc) {
+function sende_(an, betreff, inhalt, bcc, anhang) {
   var optionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
   if (bcc) optionen.bcc = bcc;
+  if (anhang) optionen.attachments = [anhang];
   if (ANTWORT_AN) optionen.replyTo = ANTWORT_AN;
   if (MODUS === 'SENDEN') {
     if (ABSENDER_ALIAS) optionen.from = ABSENDER_ALIAS;
@@ -811,11 +917,14 @@ function einrichten() {
 function vorlageTesten() {
   ['de', 'en'].forEach(function (sprache) {
     var inhalt = rendereVorlage_(werteFuerVorlage_({
-      sprache: sprache, vorname: 'Max', name: 'Max Mustermann', begleitung: 'Asmita',
+      sprache: sprache, vorname: 'Max', name: 'Max Mustermann', begleiter: ['Asmita', 'Jörg'], begleitung: 'Asmita & Jörg',
       dauer: '2 Stunden', preis: '290,00 €', start: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
     }), VORLAGEN[sprache].docId);
-    GmailApp.createDraft(ALERT_EMAIL, '[TEST ' + sprache.toUpperCase() + '] ' + VORLAGEN[sprache].betreff, inhalt.text,
-      { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder });
+    var testOptionen = { htmlBody: inhalt.html, name: ABSENDER_NAME, inlineImages: inhalt.bilder };
+    var testIcs = icsFuer_({ sprache: sprache, begleiter: ['Asmita', 'Jörg'], begleitung: 'Asmita & Jörg', dauer: '2 Stunden',
+      start: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) }, 'test');
+    if (testIcs) testOptionen.attachments = [testIcs];
+    GmailApp.createDraft(ALERT_EMAIL, '[TEST ' + sprache.toUpperCase() + '] ' + VORLAGEN[sprache].betreff, inhalt.text, testOptionen);
   });
   Logger.log('2 Test-Entwürfe (de/en) an ' + ALERT_EMAIL + ' liegen in Gmail unter Entwürfe.');
 }

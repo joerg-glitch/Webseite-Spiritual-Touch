@@ -142,6 +142,28 @@ dann genauso, mit diesen Unterschieden:
 - Der Termin verschwindet aus dem Anfragenkalender. Prüfe, ob dieser Kalender
   noch irgendwo als Belegung gelesen wird (Anfragen-Verfügbarkeits-Sync).
 
+## Profil-Links und Kalenderdatei (.ics)
+
+**Profil-Links:** Der Platzhalter `{{Begleitung}}` wird zu einem Link auf die
+Profilseite: `https://spiritual-touch.de/praxis/team/<vorname>` (klein, Umlaute
+ausgeschrieben, `Jörg` → `joerg`). Bei mehreren Begleitern ist jeder Name ein
+eigener Link (`Erin & Dominik`). In der Textversion der Mail steht die Adresse
+in Klammern hinter dem Namen. Einstellungen oben in `Code.gs`: `PROFIL_LINKS`,
+`PROFIL_URL`, `PROFIL_SLUGS` (abweichende Endungen, `''` = kein Link). Die
+Endungen im WordPress-Dump stimmen mit der Regel überein (alea, amila, asmita,
+dominik, eva, joerg, karen, konstantin, maxine, sarah, stephanie, tara); für
+Mila und Erin ist die Seite im Dump nicht enthalten, bitte einmal prüfen.
+
+**Kalenderdatei:** An jede Bestätigung hängt eine `.ics`-Datei (`Termin.ics`
+bzw. `appointment.ics`). Der Gast öffnet sie und trägt den Termin mit einem Klick
+in seinen Kalender ein. Beginn = Beginn des Termins, Ende = Beginn + **gebuchte**
+Dauer (nicht der 4-Stunden-Block). Der Titel lautet „Termin bei Spiritual Touch“,
+in der Beschreibung stehen Begleitung, Profil-Links und Dauer. Wer keine Dauer
+erkennbar hat (Notfall-Entwurf), bekommt keine Datei. `ICS_ANHANG = false`
+schaltet sie ab, `ICS_ORT` trägt die Praxisadresse als „Ort“ ein (leer = kein
+Ort). Tipp für die Mailvorlage: einen Satz wie „Den Termin findest Du als
+Kalenderdatei im Anhang.“ ergänzen.
+
 ## Ruhezeit und Datum/Uhrzeit in der Mail
 
 Datum und Uhrzeit der Bestätigung kommen aus dem Termin **zum Zeitpunkt der
