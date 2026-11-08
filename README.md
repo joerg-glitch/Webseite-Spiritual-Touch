@@ -10,6 +10,7 @@ Dieses Repository bündelt alle Code-Projekte rund um [spiritual-touch.de](https
 | `team-app/` | PIN-geschützte Web-App fürs Team (Verfügbarkeiten, Amelia-Termine ändern/absagen) | [team-app/README.md](team-app/README.md) |
 | `apps-script/anfragen-verfuegbarkeit-sync/` | Google Apps Script: Anfragen/Verfügbarkeit-Sync fürs Buchungssystem | [README](apps-script/anfragen-verfuegbarkeit-sync/README.md) |
 | `apps-script/raum-einladung-sync/` | Google Apps Script: Raum-Einladungs-Sync (Kalender ↔ Amelia) | [README](apps-script/raum-einladung-sync/README.md) |
+| `apps-script/terminbestaetigung-mail/` | Google Apps Script: Terminbestätigung per Mail (Raumkalender → Kunde, WPForms-Buchungen) | [README](apps-script/terminbestaetigung-mail/README.md) |
 | `wordpress/buchungs-dashboard/` | WPCode-Snippet: Buchungs-Dashboard (Smart-Freigeben) | [README](wordpress/buchungs-dashboard/README.md) |
 | `wordpress/booking-confirmation-link/` | WPCode-Snippet: Buchungsbestätigungs-Link | [README](wordpress/booking-confirmation-link/README.md) |
 | `wordpress/google-buchungslink/` | WPCode-Snippet: Google-Buchungslink | [README](wordpress/google-buchungslink/README.md) |
