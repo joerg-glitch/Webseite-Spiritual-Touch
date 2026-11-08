@@ -857,7 +857,10 @@ function icsFuer_(t, uid) {
   if (ICS_ORT) zeilen.push('LOCATION:' + icsText_(ICS_ORT));
   zeilen.push('STATUS:CONFIRMED', 'END:VEVENT', 'END:VCALENDAR');
   var inhalt = zeilen.map(icsFalten_).join('\r\n') + '\r\n';
-  return Utilities.newBlob(inhalt, 'text/calendar', en ? 'appointment.ics' : 'Termin.ics');
+  // Bewusst "application/ics" und nicht "text/calendar": Gmail zeigt text/calendar-Teile
+  // im Entwurf und beim Bearbeiten nicht als Anhang an (und lässt sie beim Senden aus
+  // dem Editor weg); als application/ics erscheint die Datei als normaler Anhang.
+  return Utilities.newBlob(inhalt, 'application/ics', en ? 'appointment.ics' : 'Termin.ics');
 }
 
 // Sonderzeichen für iCalendar-Textfelder.
