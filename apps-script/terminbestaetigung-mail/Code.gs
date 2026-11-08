@@ -27,7 +27,7 @@
  *  - die Beschreibung enthält den Block "Gastdaten:" mit "Mail:" – oder, im
  *    Kurzformat, eine Zeile, die nur aus einer Mailadresse besteht
  *  - im Titel steht der Vorname mindestens eines Teammitglieds (Liste TEAM
- *    unten); bei mehreren ("Erin & Dominik") werden alle genannt und alle im BCC.
+ *    unten); bei mehreren ("Erin & Dominik") werden alle genannt und alle bekommen die interne Mail.
  *    Solange er fehlt (z. B. direkt nach dem Kopieren, wenn noch der
  *    Anfragen-Titel "Tantramassage (Tantric massage)" drinsteht), wartet
  *    das Skript einfach — es rät nie.
@@ -81,16 +81,24 @@ var ABSENDER_NAME = 'Spiritual Touch';
 var ABSENDER_ALIAS = '';  // optional: Gmail-"Senden als"-Adresse, leer = Standardadresse (nur bei MODUS 'SENDEN')
 var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
 
-// Begleitung als BCC: Die Mail geht zusätzlich an NAME@spiritual-touch.de und
-// landet so im Google-Chat-Raum der Person. Der Kunde sieht die Adresse nicht.
-// Adresse = Vorname aus dem Termintitel, klein geschrieben, Umlaute ausgeschrieben
-// (Jörg → joerg@). Abweichende Adressen hier eintragen, '' = für diese Person
-// kein BCC. Existiert eine Adresse nicht, kommt ein Unzustellbarkeits-Hinweis.
-var BCC_AKTIV = true;
-var BCC_DOMAIN = 'spiritual-touch.de';
-var BCC_ADRESSEN = {   // Abweichungen und Neuzugänge; '' = kein BCC für diese Person
+// Chat-Räume der Begleitung: Jede Person hat einen Google-Chat-Raum mit einer
+// Mailadresse NAME@spiritual-touch.de. Adresse = Vorname aus dem Termintitel, klein
+// geschrieben, Umlaute ausgeschrieben (Jörg → joerg@). Abweichende Adressen unter
+// CHAT_ADRESSEN eintragen, '' = für diese Person keine Mail.
+var CHAT_DOMAIN = 'spiritual-touch.de';
+var CHAT_ADRESSEN = {   // Abweichungen und Neuzugänge; '' = keine Mail für diese Person
   'Selma': 'selma@spiritual-touch.de',
 };
+
+// Interne Mail an die Begleitung (landet im Chat-Raum): Zu jeder Bestätigung legt das
+// Skript einen zweiten Entwurf an mit Kunde, Termin, Handy, Mail und Nachricht des
+// Kunden. So steuerst du selbst, wann sie rausgeht. Bei MODUS 'SENDEN' wird sie
+// direkt gesendet.
+var INTERN_AKTIV = true;
+
+// Die Begleitung zusätzlich als BCC in die KUNDENMAIL setzen? Nur sinnvoll, wenn die
+// interne Mail ausgeschaltet ist (sonst bekommt der Chat-Raum alles doppelt).
+var BCC_AKTIV = false;
 
 // Preise, wenn sie nicht im Termin stehen (Kurzformat der eigenen Termine,
 // Workshops, "andere Dauer" …). Schlüssel 1 = Art des Termins (wird aus dem
@@ -275,6 +283,7 @@ function bestaetigeTermin_(ev, raumName) {
     throw err;
   }
   ev.setTag(TAG_KEY, MODUS === 'SENDEN' ? 'gesendet' : 'entwurf');
+  interneMailAnlegen_(termin, ev, raumName, MODUS !== 'SENDEN');
   Logger.log((MODUS === 'SENDEN' ? 'Gesendet' : 'Entwurf') + ': ' + termin.email +
     ' (' + raumName + ', ' + termin.sprache + ', ' + formatDatum_(termin.start) + ' ' + formatUhrzeit_(termin.start) + ')');
   return true;
@@ -340,6 +349,7 @@ function notfallEntwurf_(ev, raumName, fehler) {
     throw err;
   }
   ev.setTag(TAG_KEY, 'notfall-entwurf');
+  if (t.begleiter.length) interneMailAnlegen_(t, ev, raumName, true);
   Logger.log('Notfall-Entwurf (' + grund + '): ' + (t.email || '(keine Mail)') + ' (' + raumName + ', ' +
     formatDatum_(t.start) + ' ' + formatUhrzeit_(t.start) + ')');
   meldeFehler_('notfall-' + ev.getId(), 'Unvollständiger Termin – Entwurf angelegt',
@@ -397,8 +407,36 @@ function leseTerminTeilweise_(ev) {
     begleitung: begleiter.length ? begleiter.join(' & ') : fehltText('BEGLEITUNG'),
     dauer: dauer || fehltText('DAUER'),
     preis: preis || fehltText('PREIS'),
+    telefon: telefonAus_(gast),
+    nachricht: nachrichtAus_(text),
     start: ev.getStartTime(),
   };
+}
+
+// Handynummer: "Mobilnummer:/Telefon:/Handy: …", sonst eine Zeile nur aus Ziffern (mind. 7)
+// im unbeschrifteten Kurzformat. Erwartet Text OHNE den Freitext des Kunden.
+function telefonAus_(text) {
+  var m = String(text || '').match(/^[ \t]*(?:Mobilnummer|Mobil|Handy|Telefon|Tel|Phone)[^:\n]*:[ \t]*(.+)$/mi);
+  if (m && m[1].trim()) return m[1].trim();
+  var zeilen = String(text || '').split(ZEILENUMBRUCH);
+  for (var i = 0; i < zeilen.length; i++) {
+    var z = zeilen[i].trim();
+    if (/^\+?[\d\s()\/.-]+$/.test(z) && z.replace(/\D/g, '').length >= 7) return z;
+  }
+  return '';
+}
+
+// Freitext des Kunden ("Nachricht: …" bis zum Ende); die Eintrags-ID (eine Zeile nur aus
+// Ziffern am Ende) wird entfernt. Wird nur angezeigt, nie ausgewertet.
+function nachrichtAus_(text) {
+  var m = String(text || '').match(/^[ \t]*Nachricht[ \t]*:[ \t]*([\s\S]*)$/mi);
+  if (!m) return '';
+  var zeilen = m[1].split(ZEILENUMBRUCH).map(function (z) { return z.trim(); });
+  while (zeilen.length && (zeilen[zeilen.length - 1] === '' || /^\d{1,7}$/.test(zeilen[zeilen.length - 1]))) {
+    var letzte = zeilen.pop();
+    if (letzte !== '') break; // nur EINE Zahlenzeile (die ID) entfernen
+  }
+  return zeilen.join('\n').trim();
 }
 
 // Mailadresse als eigene Zeile oder "Email:/E-Mail:/Mail: adresse"; sonst null.
@@ -468,6 +506,8 @@ function leseTermin_(ev) {
     begleitung: begleiter.join(' & '),
     dauer: dauer,
     preis: preis,
+    telefon: telefonAus_(gast),
+    nachricht: nachrichtAus_(text),
     start: ev.getStartTime(),
   };
 }
@@ -491,6 +531,7 @@ function kundenName_(text) {
 // Gibt null zurück, wenn keine Mailadresse oder keine Begleitung im Titel
 // vorhanden ist (dann ist es kein Kundentermin bzw. noch nicht fertig).
 function leseKurzformat_(ev, text) {
+  var volltext = text;
   var nachrichtPos = text.search(/^[ \t]*Nachricht:/mi);
   if (nachrichtPos >= 0) text = text.substring(0, nachrichtPos);
 
@@ -541,6 +582,8 @@ function leseKurzformat_(ev, text) {
     begleitung: begleiter.join(' & '),
     dauer: dauer,
     preis: preis,
+    telefon: telefonAus_(text),
+    nachricht: nachrichtAus_(volltext),
     start: ev.getStartTime(),
   };
 }
@@ -881,16 +924,59 @@ function icsFalten_(zeile) {
 
 // ---------- VERSAND ----------
 
-// BCC-Adressen aller Begleiter (siehe BCC_AKTIV), kommagetrennt, oder ''.
-function bccFuer_(begleiter) {
-  if (!BCC_AKTIV) return '';
+// Chat-Adressen aller Begleiter, kommagetrennt, oder '' (siehe CHAT_ADRESSEN).
+function teamAdressen_(begleiter) {
   var adressen = [];
-  begleiter.forEach(function (b) {
-    var adresse = BCC_ADRESSEN.hasOwnProperty(b) ? BCC_ADRESSEN[b] :
-      kleinOhneUmlaute_(b) + '@' + BCC_DOMAIN;
+  (begleiter || []).forEach(function (b) {
+    var adresse = CHAT_ADRESSEN.hasOwnProperty(b) ? CHAT_ADRESSEN[b] :
+      kleinOhneUmlaute_(b) + '@' + CHAT_DOMAIN;
     if (adresse && adressen.indexOf(adresse) < 0) adressen.push(adresse);
   });
   return adressen.join(',');
+}
+
+// BCC-Adressen für die Kundenmail (nur wenn BCC_AKTIV), sonst ''.
+function bccFuer_(begleiter) {
+  return BCC_AKTIV ? teamAdressen_(begleiter) : '';
+}
+
+// ---------- INTERNE MAIL AN DIE BEGLEITUNG ----------
+
+// Legt die interne Mail an (Entwurf) bzw. sendet sie. Gibt false zurück, wenn keine
+// Chat-Adresse bekannt ist. Der Text ist bewusst schlicht, damit er im Chat gut lesbar ist.
+function sendeInterneMail_(t, alsEntwurf) {
+  var an = teamAdressen_(t.begleiter);
+  if (!an) return false;
+  var mehrere = t.begleiter.length > 1;
+  var datum = formatDatum_(t.start);
+  var uhrzeit = formatUhrzeit_(t.start);
+  var text = 'Hallo ' + t.begleiter.join(' & ') + ',\n\n' +
+    (mehrere ? 'ihr habt' : 'du hast') + ' einen neuen Termin:\n\n' +
+    'Kunde:   ' + t.name + '\n' +
+    'Termin:  ' + datum + ', ' + uhrzeit + ' Uhr' + (t.dauer ? ' (' + t.dauer + ')' : '') + '\n' +
+    'Handy:   ' + (t.telefon || '–') + '\n' +
+    'E-Mail:  ' + (t.email || '–') + '\n\n' +
+    'Nachricht des Kunden:\n' + (t.nachricht || '–') + '\n\n' +
+    'Herzliche Grüße\nJörg';
+  var betreff = 'Neuer Termin: ' + t.name + ' – ' + datum + ', ' + uhrzeit + ' Uhr';
+  if (alsEntwurf) GmailApp.createDraft(an, betreff, text, { name: ABSENDER_NAME });
+  else GmailApp.sendEmail(an, betreff, text, { name: ABSENDER_NAME });
+  return true;
+}
+
+// Ruft sendeInterneMail_ auf, ohne die Kundenmail zu gefährden: Ein Fehler hier kommt
+// als Hinweismail an ALERT_EMAIL, die Bestätigung an den Kunden bleibt unberührt.
+function interneMailAnlegen_(t, ev, raumName, alsEntwurf) {
+  if (!INTERN_AKTIV) return;
+  try {
+    if (!sendeInterneMail_(t, alsEntwurf)) {
+      throw new Error('Keine Chat-Adresse für ' + (t.begleiter.join(' & ') || '(keine Begleitung)') + ' (siehe CHAT_ADRESSEN).');
+    }
+  } catch (err) {
+    meldeFehler_('intern-' + ev.getId(), 'Interne Mail nicht angelegt',
+      raumName + ': "' + ev.getTitle() + '" am ' + formatDatum_(ev.getStartTime()) + ' ' + formatUhrzeit_(ev.getStartTime()) +
+      '\n\n' + err.message + '\n\nDie Kundenmail ist davon nicht betroffen. Bitte die Begleitung selbst informieren.');
+  }
 }
 
 function sende_(an, betreff, inhalt, bcc, anhang) {

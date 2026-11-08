@@ -75,7 +75,7 @@ ergänzt du als neue Zeile oder schreibst den Preis in die Beschreibung.
 
 **Mehrere Begleiter:** Steht im Titel mehr als ein Teammitglied
 (`(Erin & Dominik)`), erscheinen alle in der Mail (`Begleitung: Erin & Dominik`)
-und alle bekommen das BCC. Erkannt werden nur Namen aus der Liste `TEAM`.
+und alle bekommen die interne Mail. Erkannt werden nur Namen aus der Liste `TEAM`.
 
 **Hinweis im Titel** wie „noch nicht bestätigt“ wird ignoriert: Sobald
 Daten und Begleitung stimmen, geht die Bestätigung raus.
@@ -153,7 +153,7 @@ in Klammern hinter dem Namen. Einstellungen oben in `Code.gs`: `PROFIL_LINKS`,
 Endungen im WordPress-Dump stimmen mit der Regel überein (alea, amila, asmita,
 dominik, eva, joerg, karen, konstantin, maxine, sarah, stephanie, tara). Erin
 und Selma sind nach der Regel eingetragen (`erin`, `selma`), Selma zusätzlich
-ausdrücklich in `PROFIL_SLUGS` und `BCC_ADRESSEN`.
+ausdrücklich in `PROFIL_SLUGS` und `CHAT_ADRESSEN`.
 
 **Kalenderdatei:** An jede Bestätigung hängt eine `.ics`-Datei (`Termin.ics`
 bzw. `appointment.ics`). Der Gast öffnet sie und trägt den Termin mit einem Klick
@@ -185,7 +185,7 @@ letzten Änderung des Termins) trotzdem einen **Gmail-Entwurf** mit den vorhande
   oben ein roter Hinweis, was fehlt. Hinweis löschen und Lücken füllen, dann
   selbst senden.
 - Fehlt die Kundenmail, geht der Entwurf an `joerg@spiritual-touch.de`
-  (Empfänger dann eintragen). Das BCC an die Begleitung ist gesetzt, soweit
+  (Empfänger dann eintragen). Die interne Mail an die Begleitung (siehe unten) kommt dazu, soweit
   bekannt. Betreff: `[UNVOLLSTÄNDIG] Terminbestätigung`.
 - Immer nur Entwurf, nie ein automatischer Versand, auch bei `MODUS = 'SENDEN'`.
 - Zusätzlich kommt eine Hinweismail an `ALERT_EMAIL`. Der Termin wird danach
@@ -198,12 +198,30 @@ letzten Änderung des Termins) trotzdem einen **Gmail-Entwurf** mit den vorhande
 Beschreibung, oder Begleitung **und** Art des Termins im Titel. Interne Termine
 (Blocker, „Massageaustausch …“) bleiben unberührt.
 
-## Begleitung im BCC (Google-Chat-Raum)
+## Interne Mail an die Begleitung (Chat-Raum)
 
-Die Bestätigung geht zusätzlich als BCC an `vorname@spiritual-touch.de` jedes
-Begleiters im Titel (Vorname aus dem Titel, klein, Umlaute ausgeschrieben, z. B.
-`joerg@`). Die Mail landet so im Google-Chat-Raum der Person; der Kunde sieht
-die Adresse nicht. Einstellungen oben in `Code.gs`: `BCC_AKTIV`, `BCC_DOMAIN`
-und `BCC_ADRESSEN` (abweichende Adressen; `''` = kein BCC für diese Person).
-Der Chat-Raum bekommt dieselbe Mail wie der Kunde, also **ohne** Telefon oder
-Mailadresse des Kunden.
+Zu **jeder** Bestätigung legt das Skript einen **zweiten Entwurf** an: eine interne
+Mail an `vorname@spiritual-touch.de` jedes Begleiters im Titel (Vorname klein, Umlaute
+ausgeschrieben, z. B. `joerg@`). Sie landet im Google-Chat-Raum der Person. Du
+steuerst selbst, wann du sie abschickst, unabhängig von der Kundenmail. Bei
+`MODUS = 'SENDEN'` wird sie direkt gesendet. Bei mehreren Begleitern geht eine
+Mail an alle Adressen („Hallo Erin & Selma, ihr habt einen neuen Termin“).
+
+Inhalt: Gruß, Kunde (Name), Termin (Datum, Uhrzeit, Dauer), Handynummer,
+E-Mail-Adresse, Nachricht des Kunden und Grußformel. Der Betreff lautet
+`Neuer Termin: <Name> – <Datum>, <Uhrzeit> Uhr`. Fehlende Angaben stehen als „–“.
+Die Handynummer kommt aus `Mobilnummer:`/`Telefon:`/`Handy:` bzw. der Zahlenzeile
+im unbeschrifteten Kurzformat, die Nachricht aus `Nachricht:` (die Eintrags-ID am
+Ende wird entfernt).
+
+Auch die Notfall-Entwürfe (siehe oben) bekommen die interne Mail, sofern eine
+Begleitung bekannt ist.
+
+Die Kundenmail geht **ohne** BCC raus (`BCC_AKTIV = false`); sonst bekäme der
+Chat-Raum alles doppelt. Scheitert die interne Mail (z. B. keine Chat-Adresse für
+die Person), bleibt die Kundenmail unberührt, und du bekommst eine Hinweismail
+an `ALERT_EMAIL`.
+
+Einstellungen oben in `Code.gs`: `INTERN_AKTIV` (interne Mail an/aus),
+`CHAT_DOMAIN`, `CHAT_ADRESSEN` (abweichende Adressen; `''` = keine Mail für diese
+Person), `BCC_AKTIV` (BCC in der Kundenmail, nur ohne interne Mail sinnvoll).
