@@ -88,7 +88,9 @@ var ANTWORT_AN = '';      // optional: Reply-To, leer = Absenderadresse
 // kein BCC. Existiert eine Adresse nicht, kommt ein Unzustellbarkeits-Hinweis.
 var BCC_AKTIV = true;
 var BCC_DOMAIN = 'spiritual-touch.de';
-var BCC_ADRESSEN = {};  // Beispiel: { 'Mila': 'mila.k@spiritual-touch.de', 'Eva': '' }
+var BCC_ADRESSEN = {   // Abweichungen und Neuzugänge; '' = kein BCC für diese Person
+  'Selma': 'selma@spiritual-touch.de',
+};
 
 // Preise, wenn sie nicht im Termin stehen (Kurzformat der eigenen Termine,
 // Workshops, "andere Dauer" …). Schlüssel 1 = Art des Termins (wird aus dem
@@ -125,14 +127,19 @@ var ARTEN = [
 // '' = für diese Person kein Link.
 var PROFIL_LINKS = true;
 var PROFIL_URL = 'https://spiritual-touch.de/praxis/team/';
-var PROFIL_SLUGS = {};  // Beispiel: { 'Mila': 'mila-2', 'Erin': '' }
+var PROFIL_SLUGS = {   // Abweichende Endungen; '' = kein Link für diese Person
+  'Selma': 'selma',
+};
 
 // Kalenderdatei (.ics) an die Bestätigung anhängen. Der Gast öffnet sie und
-// trägt den Termin mit einem Klick in seinen Kalender ein. Dauer = gebuchte
-// Dauer (nicht der 4-Stunden-Block im Raumkalender). ICS_ORT = Adresse der
-// Praxis für das Feld "Ort", leer = kein Ort in der Datei.
+// trägt den Termin mit einem Klick in seinen Kalender ein. Ende = Beginn +
+// gebuchte Dauer (nicht der 4-Stunden-Block im Raumkalender) + ICS_NACHLAUF_MIN. ICS_ORT = Adresse der
+// Praxis für das Feld "Ort", leer = kein Ort in der Datei. ICS_NACHLAUF_MIN =
+// Minuten, die der Eintrag nach der gebuchten Dauer länger dauert (Zeit zum
+// Ankommen/Ausklingen, siehe Hinweis in der Mailvorlage).
 var ICS_ANHANG = true;
-var ICS_ORT = '';
+var ICS_ORT = 'Olschewskibogen 12, 80935 München';
+var ICS_NACHLAUF_MIN = 30;
 
 var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
@@ -146,7 +153,7 @@ var RAUM_KALENDER = [
 // Vornamen, wie sie im Termintitel stehen dürfen. Neues Teammitglied =
 // hier ergänzen.
 var TEAM = ['Tara', 'Eva', 'Jörg', 'Asmita', 'Amila', 'Sarah', 'Dominik', 'Konstantin',
-            'Alea', 'Stephanie', 'Karen', 'Maxine', 'Mila', 'Erin'];
+            'Alea', 'Stephanie', 'Karen', 'Maxine', 'Erin', 'Selma'];
 
 // Notfall-Entwurf: Findet das Skript einen Kundentermin, kann ihn aber nicht
 // automatisch bestätigen (Mail, Preis, Dauer, Begleitung … fehlt oder ist
@@ -818,13 +825,13 @@ function escapeHtml_(s) {
 
 // Gibt die .ics als Blob zurück oder null (ausgeschaltet bzw. Dauer unbekannt).
 // Start = Beginn des Termins zum Zeitpunkt der Bestätigung, Ende = Start + gebuchte
-// Dauer. Zeiten in UTC, die Kalenderprogramme rechnen in die Ortszeit um.
+// Dauer + ICS_NACHLAUF_MIN. Zeiten in UTC, die Kalenderprogramme rechnen in die Ortszeit um.
 function icsFuer_(t, uid) {
   if (!ICS_ANHANG) return null;
   var minuten = dauerMinuten_(t.dauer);
   if (!minuten) return null;
   var en = t.sprache === 'en';
-  var ende = new Date(t.start.getTime() + minuten * 60 * 1000);
+  var ende = new Date(t.start.getTime() + (minuten + ICS_NACHLAUF_MIN) * 60 * 1000);
   var utc = function (d) { return Utilities.formatDate(d, 'UTC', "yyyyMMdd'T'HHmmss'Z'"); };
   var beschreibung = (en ? 'Companion: ' : 'Begleitung: ') + t.begleitung.replace(/\[.*?\]/g, '').trim();
   (t.begleiter || []).forEach(function (b) {

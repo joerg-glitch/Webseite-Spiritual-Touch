@@ -151,18 +151,19 @@ eigener Link (`Erin & Dominik`). In der Textversion der Mail steht die Adresse
 in Klammern hinter dem Namen. Einstellungen oben in `Code.gs`: `PROFIL_LINKS`,
 `PROFIL_URL`, `PROFIL_SLUGS` (abweichende Endungen, `''` = kein Link). Die
 Endungen im WordPress-Dump stimmen mit der Regel überein (alea, amila, asmita,
-dominik, eva, joerg, karen, konstantin, maxine, sarah, stephanie, tara); für
-Mila und Erin ist die Seite im Dump nicht enthalten, bitte einmal prüfen.
+dominik, eva, joerg, karen, konstantin, maxine, sarah, stephanie, tara). Erin
+und Selma sind nach der Regel eingetragen (`erin`, `selma`), Selma zusätzlich
+ausdrücklich in `PROFIL_SLUGS` und `BCC_ADRESSEN`.
 
 **Kalenderdatei:** An jede Bestätigung hängt eine `.ics`-Datei (`Termin.ics`
 bzw. `appointment.ics`). Der Gast öffnet sie und trägt den Termin mit einem Klick
 in seinen Kalender ein. Beginn = Beginn des Termins, Ende = Beginn + **gebuchte**
-Dauer (nicht der 4-Stunden-Block). Der Titel lautet „Termin bei Spiritual Touch“,
+Dauer + 30 Minuten Nachlauf (`ICS_NACHLAUF_MIN`; nicht der 4-Stunden-Block). Der Titel lautet „Termin bei Spiritual Touch“,
 in der Beschreibung stehen Begleitung, Profil-Links und Dauer. Wer keine Dauer
 erkennbar hat (Notfall-Entwurf), bekommt keine Datei. `ICS_ANHANG = false`
-schaltet sie ab, `ICS_ORT` trägt die Praxisadresse als „Ort“ ein (leer = kein
-Ort). Tipp für die Mailvorlage: einen Satz wie „Den Termin findest Du als
-Kalenderdatei im Anhang.“ ergänzen.
+schaltet sie ab, `ICS_ORT` ist der „Ort“ (Olschewskibogen 12, 80935 München;
+leer = kein Ort). In der Mailvorlage steht dazu der Satz „Den Termin findest Du als Kalenderdatei
+im Anhang.“ (zwischen der Hinweisliste und „Sollte etwas Unvorhergesehenes …“).
 
 ## Ruhezeit und Datum/Uhrzeit in der Mail
 
