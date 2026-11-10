@@ -13,9 +13,12 @@ Vormonats an — als Übersicht zur Übergabe an sevdesk.
    Die **Art** wird aus dem Titel erkannt, Abkürzungen werden aufgelöst
    (z. B. „TM“ → „Tantramassage“, siehe `ART_RULES`).
 3. Entwurf an `joerg@spiritual-touch.de` mit
+   - Kontrollzeile „N gelesen = X berücksichtigt + Y nicht berücksichtigt“,
    - Summe je Teammitglied (Anzahl, Dauer, Stunden dezimal),
-   - Tabelle aller Termine,
-   - **CSV-Anhang** (`;`-getrennt, UTF-8) für sevdesk/Excel.
+   - Tabelle aller berücksichtigten Termine,
+   - **Aufstellung der nicht berücksichtigten Termine** mit Grund,
+   - zwei **CSV-Anhänge** (`;`-getrennt, UTF-8): `Monatsabrechnung_…` für
+     sevdesk/Excel und `Nicht_beruecksichtigt_…`.
 4. Aufgabe in Todoist: **„Monatsabrechnungsliste erstellt“** (wiederkehrend
    am 1.) — abhaken, sobald der Entwurf geprüft und übergeben ist.
 
@@ -35,6 +38,33 @@ die Liste (gelb markiert, Hinweis „Bitte prüfen“).
 > Graul ist laut Beispiel eine externe Person.
 > Jörg ist nicht in der Teamliste: Ein Termin ohne Teammitglied-Namen im
 > Titel, den Jörg angelegt hat, erscheint als „unbekannt“.
+
+## Nicht berücksichtigte Termine (nichts geht unbemerkt durch)
+
+Jeder gelesene Kalendereintrag ist entweder in der Abrechnung oder steht mit
+Grund in der Aufstellung. Gründe:
+
+| Grund | Bedeutung |
+|---|---|
+| Termin von Jörg | Name „Jörg“ im Titel, kein Teammitglied (nicht abrechnungsrelevant) |
+| Von Jörg angelegt, kein Teammitglied im Titel | Seminare, Kreise, Eigenes — oder eine Buchung ohne Namen → bitte prüfen |
+| Hinweis auf Absage | „abgesagt/storniert/ausgefallen“ in Titel oder Beschreibung → prüfen, ob stattgefunden |
+| Doublette | derselbe Termin steht in zwei Räumen (gleiche Termin-ID bzw. gleiches Teammitglied + Titel + Zeit) |
+| Automatischer Blocker | „Blockiert (…)“ aus den Sync-Skripten |
+| Von dir abgelehnt / abgesagt | Status im Kalender |
+| Beginn im Nachbarmonat | Termin über Monatsgrenze zählt nur im Startmonat |
+| Ganztägig / Dauer 0 | keine berechenbare Dauer |
+
+**Dauer:** Die Hauptspalte ist die im Kalender belegte Zeit. Daneben steht
+„Dauer laut Titel“ (z. B. „2h 30min“), weil der Kalendereintrag oft länger
+ist (Puffer für Vor-/Nachgespräch, Dusche). Welcher Wert für sevdesk gilt,
+entscheidest du — beide stehen in Mail und CSV. Bei Terminen mit mehreren
+Teammitgliedern („Stephanie & Amila“) zählt die Dauer in der Personensumme
+für jede Person, in der Gesamtdauer nur einmal.
+
+**Art nicht erkannt:** Passt keine Regel aus `ART_RULES` (z. B. Titel nur
+aus Gastnamen wie „17:00 Elena 1h“), steht „(nicht erkannt)“ gelb markiert
+in der Liste, der Original-Titel daneben.
 
 ## Robustheit
 
@@ -61,9 +91,10 @@ die Liste (gelb markiert, Hinweis „Bitte prüfen“).
    anzeigen“ aktivieren und `appsscript.json` übernehmen (aktiviert den
    erweiterten Dienst **Calendar API** — alternativ links *Dienste → + →
    Google Calendar API*, Kennung `Calendar`).
-3. `testLetzterMonat` ausführen → Berechtigungen bestätigen → Entwurf in
-   Gmail prüfen. Danach den Test-Entwurf löschen und `merkerZuruecksetzen`
-   ausführen (sonst gilt der Monat als erledigt).
+3. `testlaufOktober` ausführen → Berechtigungen bestätigen → Entwurf in
+   Gmail prüfen („TESTLAUF – Monatsabrechnungsliste Oktober 2026“) und
+   anschließend löschen. Der Testlauf berührt den Merker nicht. (`testLetzterMonat`
+   erzeugt dagegen einen echten Entwurf für den Vormonat.)
 4. `installTrigger` einmal ausführen (richtet den täglichen Trigger ein).
 
 Nachholen für einen bestimmten Monat: in `entwurfFuerMonatManuell` Jahr/Monat
@@ -77,7 +108,7 @@ anpassen und ausführen.
 - `ART_RULES`: Titel → Art des Termins, erster Treffer gewinnt, z. B.
   `{ match: /\bTM\b/i, art: 'Tantramassage' }`. Vorbelegt mit den Amelia-
   Angeboten (Tantramassage, Intimmassage Workshop, Bodyflow, Coaching,
-  Ritual …). Ohne Treffer wird der Titel ohne Mitarbeitername verwendet.
+  Ritual …). Ohne Treffer steht „(nicht erkannt)“ in der Liste.
 - `GIVE_UP_AFTER_DAY`: ab wann bei fehlendem Kalender trotzdem ein Entwurf
   mit Warnung entsteht (Standard 5).
 

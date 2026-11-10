@@ -48,8 +48,13 @@
  *     (singleEvents), abgesagte und von Jörg abgelehnte Termine entfallen,
  *     Sync-Blocker ("Blockiert (…)"/autoBlock) und Doubletten
  *     (gleiche Termin-ID oder gleicher Raum+Titel+Zeit) ebenfalls.
- *   - Ganztägige Termine haben keine echte Dauer → eigener Abschnitt
- *     "Bitte prüfen", nicht in der Summe.
+ *   - NICHTS GEHT UNBEMERKT VERLOREN: Jeder gelesene Kalendereintrag ist
+ *     entweder berücksichtigt oder steht mit Grund in der Aufstellung
+ *     "Nicht berücksichtigte Termine" (Mail + zweite CSV). Gründe: abgesagt,
+ *     automatischer Blocker, Absage-Hinweis im Text, abgelehnt, Doublette,
+ *     Termin von Jörg, von Jörg ohne Teammitglied angelegt, Beginn im
+ *     Nachbarmonat, ganztägig (keine Dauer), Dauer 0. Die Mail zeigt eine Kontrollzeile
+ *     "N gelesen = X berücksichtigt + Y nicht berücksichtigt".
  *
  * DEPLOYMENT: siehe README.md in diesem Ordner.
  */
@@ -97,20 +102,34 @@ var TEAM_MEMBERS = [
 // Art des Termins aus dem Titel. Der ERSTE passende Eintrag gewinnt — daher
 // spezielle Regeln vor allgemeinen. Basis: Dienstleistungsliste in Amelia
 // (wordpress/buchungs-dashboard/README.md) plus gängige Abkürzungen im Team.
-// Passt keine Regel, wird der Titel ohne Teammitglied-Name verwendet.
+// Passt keine Regel, steht "(nicht erkannt)" in der Spalte (gelb markiert) —
+// der Original-Titel steht daneben. Lieber sichtbar offen als geraten.
 // "TM" wird nur als eigenes Wort erkannt (nicht in "Termin" o. Ä.).
 var ART_RULES = [
   { match: /massage\s+lernen/i,                                 art: 'Tantramassage lernen (Paare)' },
   { match: /intim\s*-?\s*massage/i,                            art: 'Intimmassage Workshop' },
+  { match: /tantra\s*-?\s*massage.*paare|paare.*tantra/i,       art: 'Tantramassage für Paare' },
   { match: /tantra\s*-?\s*massage|\bTM\b/i,                    art: 'Tantramassage' },
   { match: /bodyflow/i,                                         art: 'Bodyflow-Massage' },
   { match: /heilmassage/i,                                      art: 'Frauen-Heilmassage' },
   { match: /sexological|körperarbeit|koerperarbeit|bodywork/i,  art: 'Körperarbeit (Sexological Bodywork)' },
   { match: /somatic|\bSE\b/i,                                   art: 'Somatic Experiencing' },
+  { match: /ritual\s+zu\s+dritt/i,                              art: 'Ritual zu Dritt' },
   { match: /ritual/i,                                           art: 'Ritual' },
   { match: /kennenlern/i,                                       art: 'Kennenlern-Gespräch' },
   { match: /coaching/i,                                         art: 'Coaching' },
 ];
+
+// Jörg (Inhaber) wird nicht abgerechnet. Termine mit seinem Namen im Titel
+// (ohne Teammitglied) und Termine, die er selbst angelegt hat, ohne dass ein
+// Teammitglied im Titel steht (Seminare, Kreise, Eigenes), landen in der
+// Aufstellung "nicht berücksichtigt" — damit nichts unbemerkt verschwindet.
+var OWNER_NAMES = ['Jörg', 'Joerg'];
+var OWNER_EMAILS = ['joerg@spiritual-touch.de'];
+
+// Hinweis auf Absage in Titel oder Beschreibung → nicht abrechnen, aber
+// in der Aufstellung zeigen (z. B. "Abgesagt wegen Erkältung").
+var CANCEL_REGEX = /abgesagt|storniert|ausgefallen|\bcancel(?:l?ed)?\b/i;
 
 // Alles, was wie ein automatischer Blocker aussieht, wird ignoriert.
 var IGNORE_TITLE_REGEX = /^blockiert\b/i;
@@ -120,6 +139,7 @@ var IGNORE_DESCRIPTION_MARKERS = ['autoBlock:true', 'kind:anfragen-sync'];
 // (täglicher Neuversuch), bevor trotzdem ein Entwurf mit Warnung entsteht.
 var GIVE_UP_AFTER_DAY = 5;
 
+var ART_UNKNOWN = '(nicht erkannt)';
 var API_RETRIES = 4;
 var PROP_LAST_DONE = 'lastDraftMonth'; // z. B. "2026-10"
 
@@ -164,8 +184,17 @@ function testLetzterMonat() {
 }
 
 /**
- * Manuell für einen beliebigen Monat, z. B. zum Nachholen:
- * Zeile unten anpassen (Monat 1–12) und ▶ drücken.
+ * TESTLAUF Oktober 2026: legt den Entwurf mit Betreff "TESTLAUF – …" an,
+ * unabhängig vom Merker und von bestehenden Entwürfen. Der Test-Entwurf kann
+ * danach einfach gelöscht werden; der echte Ablauf bleibt unberührt.
+ */
+function testlaufOktober() {
+  buildDraftForMonth_(2026, 10, true, true);
+}
+
+/**
+ * Manuell für einen beliebigen Monat, z. B. zum Nachholen (echter Entwurf,
+ * ohne TESTLAUF-Betreff): Zeile unten anpassen (Monat 1–12) und ▶ drücken.
  */
 function entwurfFuerMonatManuell() {
   buildDraftForMonth_(2026, 10, true);
@@ -187,17 +216,19 @@ function merkerZuruecksetzen() {
 
 // ---------- HAUPTLOGIK ----------
 
-function buildDraftForMonth_(year, month, allowPartial) {
+function buildDraftForMonth_(year, month, allowPartial, testRun) {
   var range = monthRange_(year, month);
-  var subject = subjectFor_(year, month);
+  var subject = (testRun ? 'TESTLAUF – ' : '') + subjectFor_(year, month);
 
-  if (draftExists_(subject)) {
+  if (!testRun && draftExists_(subject)) {
     Logger.log('Entwurf "' + subject + '" existiert bereits – kein zweiter.');
     return { created: false, alreadyExists: true };
   }
 
   var warnings = [];
-  var rows = [];
+  var candidates = [];
+  var skipped = [];
+  var readCount = 0;
   var failedCalendars = [];
 
   ROOM_CALENDARS.forEach(function (room) {
@@ -205,8 +236,10 @@ function buildDraftForMonth_(year, month, allowPartial) {
       var calId = resolveCalendarId_(room);
       if (!calId) throw new Error('Kalender nicht gefunden/kein Zugriff');
       listEvents_(calId, range.start, range.end).forEach(function (ev) {
-        var row = eventToRow_(ev, room.label);
-        if (row) rows.push(row);
+        readCount++;
+        var res = classifyEvent_(ev, room.label, range);
+        if (res.skipped) skipped.push(res.skipped);
+        else candidates.push(res.row);
       });
     } catch (err) {
       failedCalendars.push(room.label);
@@ -225,18 +258,22 @@ function buildDraftForMonth_(year, month, allowPartial) {
     return { created: false, alreadyExists: false };
   }
 
-  rows = dedupe_(rows);
+  var dd = dedupe_(candidates);
+  var rows = dd.kept;
+  skipped = skipped.concat(dd.dupes);
   rows.sort(function (a, b) { return a.start - b.start; });
+  skipped.sort(function (a, b) { return a.start - b.start; });
 
-  var regular = rows.filter(function (r) { return !r.allDay; });
-  var allDay = rows.filter(function (r) { return r.allDay; });
+  var html = renderHtml_(year, month, rows, skipped, warnings, readCount);
+  var plain = renderPlain_(year, month, rows, skipped, warnings, readCount);
+  var prefix = '\uFEFF'; // BOM, damit Excel die Umlaute richtig liest
+  var attachments = [
+    Utilities.newBlob(prefix + renderCsv_(rows), 'text/csv', 'Monatsabrechnung_' + monthKey_(year, month) + '.csv'),
+    Utilities.newBlob(prefix + renderSkippedCsv_(skipped), 'text/csv', 'Nicht_beruecksichtigt_' + monthKey_(year, month) + '.csv'),
+  ];
 
-  var html = renderHtml_(year, month, regular, allDay, warnings);
-  var plain = renderPlain_(year, month, regular, allDay, warnings);
-  var csv = Utilities.newBlob('﻿' + renderCsv_(regular, allDay), 'text/csv', 'Monatsabrechnung_' + monthKey_(year, month) + '.csv');
-
-  GmailApp.createDraft(DRAFT_TO, subject, plain, { htmlBody: html, attachments: [csv] });
-  Logger.log('Entwurf erstellt: ' + subject + ' (' + regular.length + ' Termine, ' + allDay.length + ' ganztägig zu prüfen).');
+  GmailApp.createDraft(DRAFT_TO, subject, plain, { htmlBody: html, attachments: attachments });
+  Logger.log('Entwurf erstellt: ' + subject + ' (' + rows.length + ' berücksichtigt, ' + skipped.length + ' nicht berücksichtigt, ' + readCount + ' gelesen).');
   return { created: true, alreadyExists: false };
 }
 
@@ -298,41 +335,92 @@ function retry_(fn) {
 
 // ---------- TERMIN → ZEILE ----------
 
-function eventToRow_(ev, roomLabel) {
-  if (ev.status === 'cancelled') return null;
+/**
+ * Entscheidet für JEDEN gelesenen Kalendereintrag: abrechenbare Zeile oder
+ * "nicht berücksichtigt" (mit Grund) — nichts fällt unbemerkt weg.
+ * @return {{row:Object}|{skipped:Object}}
+ */
+function classifyEvent_(ev, roomLabel, range) {
   var title = (ev.summary || '').trim();
   var desc = ev.description || '';
-  if (IGNORE_TITLE_REGEX.test(title)) return null;
-  for (var i = 0; i < IGNORE_DESCRIPTION_MARKERS.length; i++) {
-    if (desc.indexOf(IGNORE_DESCRIPTION_MARKERS[i]) !== -1) return null;
-  }
-  // Von Jörg (dem Kalenderkonto) abgelehnte Einladungen zählen nicht.
-  var declinedBySelf = (ev.attendees || []).some(function (a) { return a.self && a.responseStatus === 'declined'; });
-  if (declinedBySelf) return null;
-
+  var creatorLabel = creatorLabel_(ev.creator);
   var allDay = !!(ev.start && ev.start.date && !ev.start.dateTime);
   var start = parseEventTime_(ev.start);
   var end = parseEventTime_(ev.end);
-  if (!start || !end) return null;
-  var minutes = allDay ? 0 : Math.round((end - start) / 60000);
 
+  function skip(reason) {
+    return { skipped: {
+      start: start || new Date(0), end: end || start || new Date(0), allDay: allDay,
+      room: roomLabel, title: title || '(ohne Titel)', creator: creatorLabel, reason: reason,
+    } };
+  }
+
+  if (ev.status === 'cancelled') return skip('Abgesagt/gelöscht');
+  if (!start || !end) return skip('Ohne gültige Start-/Endzeit');
+  if (IGNORE_TITLE_REGEX.test(title)) return skip('Automatischer Blocker, kein echter Termin');
+  for (var i = 0; i < IGNORE_DESCRIPTION_MARKERS.length; i++) {
+    if (desc.indexOf(IGNORE_DESCRIPTION_MARKERS[i]) !== -1) return skip('Automatischer Blocker, kein echter Termin');
+  }
+  if (CANCEL_REGEX.test(title) || CANCEL_REGEX.test(desc)) {
+    return skip('Hinweis auf Absage in Titel/Beschreibung – bitte prüfen, ob stattgefunden');
+  }
+  // Von Jörg (dem Kalenderkonto) abgelehnte Einladungen zählen nicht.
+  var declinedBySelf = (ev.attendees || []).some(function (a) { return a.self && a.responseStatus === 'declined'; });
+  if (declinedBySelf) return skip('Von dir abgelehnt');
+  // Beginn im Nachbarmonat (Termin über Monatsgrenze): zählt dort, nicht doppelt.
+  if (start < range.start || start >= range.end) return skip('Beginn außerhalb des Monats (zählt im Nachbarmonat)');
+  if (allDay) return skip('Ganztägig – keine Dauer, bitte manuell prüfen');
+
+  var minutes = Math.round((end - start) / 60000);
+  if (minutes <= 0) return skip('Dauer 0 – bitte prüfen');
+
+  var inTitle = membersIn_(title);
+  if (!inTitle.members.length && OWNER_NAMES.some(function (n) { return wordRegex_(n).test(title); })) {
+    return skip('Termin von Jörg – nicht abrechnungsrelevant');
+  }
   var who = identifyMember_(title, ev.creator);
-  var art = artFor_(title, who.matchedNames);
+  if (who.source === 'unbekannt' && isOwnerCreator_(ev.creator)) {
+    return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)');
+  }
   var idMatch = desc.match(/Termin-ID:\s*(\d+)/i);
 
-  return {
+  return { row: {
     start: start,
     end: end,
-    allDay: allDay,
     minutes: minutes,
-    art: art,
+    titleMinutes: titleMinutes_(title),
+    art: artFor_(title),
     member: who.label,
+    members: who.members,
     isTeam: who.isTeam,
     source: who.source,
     room: roomLabel,
     title: title,
+    creator: creatorLabel,
     appointmentId: idMatch ? idMatch[1] : null,
-  };
+  } };
+}
+
+/**
+ * Dauer, die im Titel steht ("2h  30min", "2,5h", "3 h", "1h") — null, wenn
+ * keine erkennbar ist. Die Kalender-Dauer ist oft länger (Puffer für Vor-/
+ * Nachgespräch, Dusche …), deshalb werden beide Werte angezeigt.
+ */
+function titleMinutes_(title) {
+  var m = title.match(/(?<![\d-])(\d+(?:[.,]\d+)?)\s*(?:h|std\.?|stunden?)\b(?:\s*(\d+)\s*min)?/i);
+  if (m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60 + (m[2] ? Number(m[2]) : 0));
+  var n = title.match(/(?<![\d-])(\d+)\s*min\b/i);
+  return n ? Number(n[1]) : null;
+}
+
+function isOwnerCreator_(creator) {
+  return !!creator && !!creator.email && OWNER_EMAILS.indexOf(creator.email.toLowerCase()) !== -1;
+}
+
+function creatorLabel_(creator) {
+  if (!creator) return 'unbekannt';
+  if (creator.displayName && creator.email) return creator.displayName + ' <' + creator.email + '>';
+  return creator.displayName || creator.email || 'unbekannt';
 }
 
 function parseEventTime_(t) {
@@ -344,24 +432,23 @@ function parseEventTime_(t) {
 
 /**
  * Ermittelt das Teammitglied: Titel → Anleger → unbekannt (Beschreibung bewusst nicht).
- * @return {{label:string, isTeam:boolean, source:string, matchedNames:string[]}}
+ * @return {{label:string, members:string[], isTeam:boolean, source:string}}
  */
 function identifyMember_(title, creator) {
   var inTitle = membersIn_(title);
   if (inTitle.members.length) {
-    return { label: joinNames_(inTitle.members), isTeam: true, source: 'Titel', matchedNames: inTitle.matched };
+    return { label: joinNames_(inTitle.members), members: inTitle.members, isTeam: true, source: 'Titel' };
   }
   var byCreator = memberByCreator_(creator);
   if (byCreator) {
-    return { label: byCreator.name, isTeam: true, source: 'Anleger', matchedNames: [] };
+    return { label: byCreator.name, members: [byCreator.name], isTeam: true, source: 'Anleger' };
   }
-  var who = creator ? (creator.displayName || creator.email || '') : '';
-  if (creator && creator.displayName && creator.email) who = creator.displayName + ' <' + creator.email + '>';
+  var who = creator ? creatorLabel_(creator) : '';
   return {
     label: 'Extern/Raumvermietung: ' + (who || 'Anleger unbekannt'),
+    members: [],
     isTeam: false,
     source: 'unbekannt',
-    matchedNames: [],
   };
 }
 
@@ -402,16 +489,11 @@ function memberByCreator_(creator) {
   return null;
 }
 
-function artFor_(title, matchedNames) {
+function artFor_(title) {
   for (var i = 0; i < ART_RULES.length; i++) {
     if (ART_RULES[i].match.test(title)) return ART_RULES[i].art;
   }
-  var cleaned = title;
-  matchedNames.forEach(function (n) {
-    cleaned = cleaned.replace(wordRegex_(n), ' ');
-  });
-  cleaned = cleaned.replace(/\s+/g, ' ').replace(/^[\s,;:|\-–—/]+|[\s,;:|\-–—/]+$/g, '').trim();
-  return cleaned || title || '(ohne Titel)';
+  return ART_UNKNOWN;
 }
 
 function wordRegex_(word) {
@@ -421,17 +503,29 @@ function wordRegex_(word) {
 
 function joinNames_(list) { return list.join(' / '); }
 
-/** Entfernt Doppelungen (gleiche Termin-ID, oder gleicher Raum+Titel+Zeit). */
+/**
+ * Doubletten (gleiche Termin-ID + Beginn, oder gleiches Teammitglied+Titel+Zeit, auch über Räume hinweg)
+ * werden nur einmal gezählt; die Dublette erscheint unter "nicht berücksichtigt".
+ */
 function dedupe_(rows) {
   var seen = {};
-  return rows.filter(function (r) {
+  var kept = [];
+  var dupes = [];
+  rows.forEach(function (r) {
     var key = r.appointmentId
       ? 'id:' + r.appointmentId + '|' + r.start.getTime()
-      : 'k:' + r.room + '|' + r.title + '|' + r.start.getTime() + '|' + r.end.getTime();
-    if (seen[key]) return false;
-    seen[key] = true;
-    return true;
+      : 'k:' + r.member + '|' + r.title + '|' + r.start.getTime() + '|' + r.end.getTime(); // bewusst ohne Raum: dieselbe Buchung steht oft in zwei Räumen
+    if (seen[key]) {
+      dupes.push({
+        start: r.start, end: r.end, allDay: false, room: r.room, title: r.title, creator: r.creator,
+        reason: 'Doublette – bereits gezählt (' + seen[key].room + ')',
+      });
+    } else {
+      seen[key] = r;
+      kept.push(r);
+    }
   });
+  return { kept: kept, dupes: dupes };
 }
 
 // ---------- AUSGABE ----------
@@ -462,10 +556,13 @@ function escHtml_(s) {
 function totalsByMember_(rows) {
   var map = {};
   rows.forEach(function (r) {
-    var k = r.isTeam ? r.member : 'Extern/Raumvermietung';
-    if (!map[k]) map[k] = { name: k, count: 0, minutes: 0, isTeam: r.isTeam };
-    map[k].count++;
-    map[k].minutes += r.minutes;
+    // Bei mehreren Teammitgliedern (Paare-Termine) bekommt jede Person die volle Dauer.
+    var names = r.isTeam ? r.members : ['Extern/Raumvermietung'];
+    names.forEach(function (k) {
+      if (!map[k]) map[k] = { name: k, count: 0, minutes: 0, isTeam: r.isTeam };
+      map[k].count++;
+      map[k].minutes += r.minutes;
+    });
   });
   return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) {
     if (a.isTeam !== b.isTeam) return a.isTeam ? -1 : 1;
@@ -474,10 +571,14 @@ function totalsByMember_(rows) {
 }
 
 function hintFor_(r) {
-  return r.source === 'unbekannt' ? 'Unbekannt – Raumvermietung? Bitte prüfen' : '';
+  var h = [];
+  if (r.source === 'unbekannt') h.push('Unbekannt – Raumvermietung? Bitte prüfen');
+  if (r.art === ART_UNKNOWN) h.push('Art nicht erkannt – siehe Titel');
+  if (r.members && r.members.length > 1) h.push('Mehrere Teammitglieder – Dauer zählt je Person');
+  return h.join('; ');
 }
 
-function renderHtml_(year, month, rows, allDay, warnings) {
+function renderHtml_(year, month, rows, skipped, warnings, readCount) {
   var th = 'style="text-align:left;padding:6px 10px;border-bottom:2px solid #888;background:#f3f3f3"';
   var td = 'style="padding:5px 10px;border-bottom:1px solid #ddd;vertical-align:top"';
   var out = [];
@@ -485,7 +586,9 @@ function renderHtml_(year, month, rows, allDay, warnings) {
   out.push('<h2 style="margin:0 0 6px">Monatsabrechnungsliste ' + MONTH_NAMES[month - 1] + ' ' + year + '</h2>');
   var totalMin = rows.reduce(function (s, r) { return s + r.minutes; }, 0);
   out.push('<p>' + rows.length + ' Termine, gesamt ' + fmtDuration_(totalMin) + ' (' + fmtDecimalHours_(totalMin) + ' Std.). ' +
-    'Quelle: Raum 1–3 und Raum extern. CSV zur Übergabe an sevdesk im Anhang.</p>');
+    'Quelle: Raum 1–3 und Raum extern. CSV zur Übergabe an sevdesk im Anhang. Dauer = im Kalender belegte Zeit; \"Dauer laut Titel\" ist die im Titel genannte Sitzungsdauer (kann kürzer sein, z. B. wegen Puffer). Bei Terminen mit mehreren Teammitgliedern zählt die Dauer je Person in der Summe unten, in der Gesamtdauer nur einmal.</p>');
+  out.push('<p style="margin-top:0;color:#555"><b>Kontrolle:</b> ' + readCount + ' Kalendereinträge gelesen = ' +
+    rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt (siehe unten).</p>');
 
   if (warnings.length) {
     out.push('<p style="background:#fff3cd;border:1px solid #e0c36a;padding:8px 10px"><b>⚠️ Achtung, Liste evtl. unvollständig:</b><br>' +
@@ -500,19 +603,20 @@ function renderHtml_(year, month, rows, allDay, warnings) {
   });
   out.push('</table>');
 
-  out.push('<h3>Alle Termine</h3>');
+  out.push('<h3>Alle berücksichtigten Termine</h3>');
   out.push('<table style="border-collapse:collapse"><tr>' +
-    ['Datum', 'Uhrzeit', 'Art des Termins', 'Dauer', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
+    ['Datum', 'Uhrzeit', 'Art des Termins', 'Dauer im Kalender', 'Dauer laut Titel', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
   if (!rows.length) {
-    out.push('<tr><td ' + td + ' colspan="8">Keine stattgefundenen Termine gefunden.</td></tr>');
+    out.push('<tr><td ' + td + ' colspan="9">Keine stattgefundenen Termine gefunden.</td></tr>');
   }
   rows.forEach(function (r) {
-    var flag = r.isTeam ? '' : ' style="background:#fff8e1"';
+    var flag = (r.isTeam && r.art !== ART_UNKNOWN) ? '' : ' style="background:#fff8e1"';
     out.push('<tr' + flag + '>' +
       '<td ' + td + '>' + fmtDate_(r.start) + '</td>' +
       '<td ' + td + '>' + fmtTime_(r.start) + '–' + fmtTime_(r.end) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.art) + '</td>' +
       '<td ' + td + '>' + fmtDuration_(r.minutes) + '</td>' +
+      '<td ' + td + '>' + (r.titleMinutes ? fmtDuration_(r.titleMinutes) : '–') + '</td>' +
       '<td ' + td + '>' + escHtml_(r.member) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.room) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.title) + '</td>' +
@@ -520,47 +624,66 @@ function renderHtml_(year, month, rows, allDay, warnings) {
   });
   out.push('</table>');
 
-  if (allDay.length) {
-    out.push('<h3>Bitte prüfen: ganztägige Termine (keine Dauer, nicht in der Summe)</h3><ul>');
-    allDay.forEach(function (r) {
-      out.push('<li>' + fmtDate_(r.start) + ' – ' + escHtml_(r.art) + ' – ' + escHtml_(r.member) + ' (' + escHtml_(r.room) + ')</li>');
+  out.push('<h3>Nicht berücksichtigte Termine (' + skipped.length + ')</h3>');
+  out.push('<p style="margin-top:0;color:#555">Alles, was gelesen, aber nicht in die Abrechnung übernommen wurde — mit Grund. ' +
+    'Bitte kurz überfliegen, damit kein abrechenbarer Termin durchrutscht.</p>');
+  if (!skipped.length) {
+    out.push('<p>Keine.</p>');
+  } else {
+    out.push('<table style="border-collapse:collapse"><tr>' +
+      ['Datum', 'Uhrzeit', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
+    skipped.forEach(function (r) {
+      out.push('<tr>' +
+        '<td ' + td + '>' + fmtDate_(r.start) + '</td>' +
+        '<td ' + td + '>' + (r.allDay ? 'ganztägig' : fmtTime_(r.start) + '–' + fmtTime_(r.end)) + '</td>' +
+        '<td ' + td + '>' + escHtml_(r.title) + '</td>' +
+        '<td ' + td + '>' + escHtml_(r.room) + '</td>' +
+        '<td ' + td + '>' + escHtml_(r.creator) + '</td>' +
+        '<td ' + td + '>' + escHtml_(r.reason) + '</td></tr>');
     });
-    out.push('</ul>');
+    out.push('</table>');
   }
-  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Teammitglied unbekannt.</p>');
+  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Teammitglied oder Art unklar.</p>');
   out.push('</div>');
   return out.join('\n');
 }
 
-function renderPlain_(year, month, rows, allDay, warnings) {
+function renderPlain_(year, month, rows, skipped, warnings, readCount) {
   var lines = ['Monatsabrechnungsliste ' + MONTH_NAMES[month - 1] + ' ' + year, ''];
   if (warnings.length) lines.push('ACHTUNG, evtl. unvollständig:', warnings.join('\n'), '');
+  lines.push('Kontrolle: ' + readCount + ' gelesen = ' + rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt', '');
   rows.forEach(function (r) {
-    lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + fmtDuration_(r.minutes) + ' | ' + r.member + ' | ' + r.room);
+    lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + fmtDuration_(r.minutes) + (r.titleMinutes ? ' (Titel: ' + fmtDuration_(r.titleMinutes) + ')' : '') + ' | ' + r.member + ' | ' + r.room);
   });
-  if (allDay.length) {
-    lines.push('', 'Bitte prüfen (ganztägig):');
-    allDay.forEach(function (r) { lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + r.member + ' | ' + r.room); });
-  }
+  lines.push('', 'Nicht berücksichtigt (' + skipped.length + '):');
+  skipped.forEach(function (r) {
+    lines.push(fmtDate_(r.start) + ' | ' + r.title + ' | ' + r.room + ' | ' + r.reason);
+  });
   return lines.join('\n');
 }
 
-function renderCsv_(rows, allDay) {
-  function q(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
-  var lines = [['Datum', 'Beginn', 'Ende', 'Art des Termins', 'Dauer (hh:mm)', 'Dauer (Std. dezimal)', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(q).join(';')];
-  rows.concat(allDay).forEach(function (r) {
+function csvQuote_(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
+
+function renderCsv_(rows) {
+  var lines = [['Datum', 'Beginn', 'Ende', 'Art des Termins', 'Dauer im Kalender (hh:mm)', 'Dauer im Kalender (Std. dezimal)', 'Dauer laut Titel (hh:mm)', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(csvQuote_).join(';')];
+  rows.forEach(function (r) {
     lines.push([
-      fmtDate_(r.start),
-      r.allDay ? '' : fmtTime_(r.start),
-      r.allDay ? '' : fmtTime_(r.end),
-      r.art,
-      r.allDay ? 'ganztägig' : fmtDuration_(r.minutes).replace(' h', ''),
-      r.allDay ? '' : fmtDecimalHours_(r.minutes),
-      r.member,
-      r.room,
-      r.title,
-      hintFor_(r) || (r.allDay ? 'Ganztägig – Dauer prüfen' : ''),
-    ].map(q).join(';'));
+      fmtDate_(r.start), fmtTime_(r.start), fmtTime_(r.end), r.art,
+      fmtDuration_(r.minutes).replace(' h', ''), fmtDecimalHours_(r.minutes),
+      r.titleMinutes ? fmtDuration_(r.titleMinutes).replace(' h', '') : '',
+      r.member, r.room, r.title, hintFor_(r),
+    ].map(csvQuote_).join(';'));
+  });
+  return lines.join('\r\n');
+}
+
+function renderSkippedCsv_(skipped) {
+  var lines = [['Datum', 'Beginn', 'Ende', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(csvQuote_).join(';')];
+  skipped.forEach(function (r) {
+    lines.push([
+      fmtDate_(r.start), r.allDay ? '' : fmtTime_(r.start), r.allDay ? '' : fmtTime_(r.end),
+      r.title, r.room, r.creator, r.reason,
+    ].map(csvQuote_).join(';'));
   });
   return lines.join('\r\n');
 }
