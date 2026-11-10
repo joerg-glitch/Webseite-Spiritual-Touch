@@ -16,16 +16,20 @@
  *
  * WIE DAS TEAMMITGLIED ERMITTELT WIRD (in dieser Reihenfolge)
  *   1. Name eines Teammitglieds im TITEL des Termins.
- *   2. Name eines Teammitglieds in der BESCHREIBUNG.
- *   3. Anleger des Termins ("Erstellt von: …"): Mailadresse bzw. Anzeigename
+ *   2. Anleger des Termins ("Erstellt von: …"): Mailadresse bzw. Anzeigename
  *      wird dem Teammitglied zugeordnet (TEAM_MEMBERS: Vorname im
  *      Mail-Vorderteil / Anzeigename, oder explizit in `emails`).
- *   4. Sonst: UNBEKANNT / Raumvermietung — der Termin kommt trotzdem in die
+ *   3. Sonst: UNBEKANNT / Raumvermietung — der Termin kommt trotzdem in die
  *      Liste, mit dem Namen des Anlegers ("Extern: Stefanie Graul"), damit
  *      auch Fremd-/Mietermine abgerechnet werden können.
- *   Die Spalte "Zuordnung" nennt, woher der Name kommt (Titel / Beschreibung
- *   / Anleger / unbekannt) — so lässt sich beim Prüfen schnell erkennen,
- *   welche Zeilen auf einer Annahme beruhen.
+ *   Die BESCHREIBUNG wird dafür bewusst NICHT ausgewertet: Dort stehen nur
+ *   Gastnamen, nie das Teammitglied.
+ *
+ * ART DES TERMINS
+ *   Wird aus dem Titel bestimmt (ART_RULES). Abkürzungen werden aufgelöst,
+ *   z. B. "TM" → "Tantramassage". Passt keine Regel, steht der Titel ohne
+ *   Teammitglied-Name in der Spalte. Der Original-Titel steht zusätzlich in
+ *   einer eigenen Spalte.
  *
  * ROBUSTHEIT
  *   - Täglicher Trigger mit "Nachholen": Die Funktion merkt sich, für welchen
@@ -58,14 +62,11 @@ var ALERT_EMAIL = 'joerg@spiritual-touch.de';
 
 // Raumkalender. id = Kalender-ID; nameMatch = Ersatz, falls id null/ungültig
 // ist (sucht in allen Kalendern, die Jörgs Konto sieht, nach dem Namen).
-// ⚠️ "Raum extern": ID noch nicht bekannt → Suche über den Namen. Sobald die
-// ID bekannt ist (Google Calendar → Einstellungen des Kalenders →
-// "Kalender-ID"), hier eintragen.
 var ROOM_CALENDARS = [
   { label: 'Raum 1', id: 'c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18261794671a5@group.calendar.google.com', nameMatch: /^raum\s*1\b/i },
   { label: 'Raum 2', id: 'c_9b8f2fdac6c5649a399ef26ac1dc80569fe4d8a78111b4db0d59391336f32761@group.calendar.google.com', nameMatch: /^raum\s*2\b/i },
   { label: 'Raum 3', id: 'c_2eecd9c94fe4ebbabbc0997ef1aa97620bea9d17515070014d206c6409f2c897@group.calendar.google.com', nameMatch: /^raum\s*3\b/i },
-  { label: 'Raum extern', id: null, nameMatch: /^raum\s*extern/i },
+  { label: 'Raum extern', id: 'c_611a7a193e4556c4ea970563ad4febea97e040fbd357211c24111b8fdbfb6966@group.calendar.google.com', nameMatch: /^raum\s*extern/i },
 ];
 
 // Teammitglieder.
@@ -74,6 +75,9 @@ var ROOM_CALENDARS = [
 //   emails = optional: genaue Mailadressen für die Anleger-Zuordnung. Ohne
 //            Eintrag wird der Vorname im Mail-Vorderteil bzw. Anzeigenamen
 //            des Anlegers verglichen ("stephanie@…" oder "Stephanie Müller").
+// Jörg ist bewusst nicht in der Liste (wird nicht abgerechnet). Ein Termin
+// ohne Teammitglied-Namen, den Jörg angelegt hat, erscheint deshalb als
+// "unbekannt" und muss kurz geprüft werden.
 // ⚠️ Bewusst KEIN Alias "Stefanie": Das ist laut Beispiel-Termin
 // "Coaching S.graul ST" eine externe Person (Raumvermietung), nicht Stephanie.
 var TEAM_MEMBERS = [
@@ -88,15 +92,25 @@ var TEAM_MEMBERS = [
   { name: 'Stephanie',  names: ['Stephanie'],       emails: [] },
   { name: 'Karen',      names: ['Karen'],           emails: [] },
   { name: 'Maxine',     names: ['Maxine'],          emails: [] },
-  { name: 'Mila',       names: ['Mila'],            emails: [] },
-  { name: 'Jörg',       names: ['Jörg', 'Joerg'],   emails: ['joerg@spiritual-touch.de'] },
 ];
 
-// Optionale Kurzbezeichnung für die Spalte "Art des Termins".
-// Der erste passende Eintrag gewinnt und ersetzt den bereinigten Titel
-// (Titel ohne Teammitglied-Namen). Leer lassen = bereinigter Titel wird
-// verwendet. Beispiel:  { match: /coaching/i, art: 'Coaching' }
-var ART_RULES = [];
+// Art des Termins aus dem Titel. Der ERSTE passende Eintrag gewinnt — daher
+// spezielle Regeln vor allgemeinen. Basis: Dienstleistungsliste in Amelia
+// (wordpress/buchungs-dashboard/README.md) plus gängige Abkürzungen im Team.
+// Passt keine Regel, wird der Titel ohne Teammitglied-Name verwendet.
+// "TM" wird nur als eigenes Wort erkannt (nicht in "Termin" o. Ä.).
+var ART_RULES = [
+  { match: /massage\s+lernen/i,                                 art: 'Tantramassage lernen (Paare)' },
+  { match: /intim\s*-?\s*massage/i,                            art: 'Intimmassage Workshop' },
+  { match: /tantra\s*-?\s*massage|\bTM\b/i,                    art: 'Tantramassage' },
+  { match: /bodyflow/i,                                         art: 'Bodyflow-Massage' },
+  { match: /heilmassage/i,                                      art: 'Frauen-Heilmassage' },
+  { match: /sexological|körperarbeit|koerperarbeit|bodywork/i,  art: 'Körperarbeit (Sexological Bodywork)' },
+  { match: /somatic|\bSE\b/i,                                   art: 'Somatic Experiencing' },
+  { match: /ritual/i,                                           art: 'Ritual' },
+  { match: /kennenlern/i,                                       art: 'Kennenlern-Gespräch' },
+  { match: /coaching/i,                                         art: 'Coaching' },
+];
 
 // Alles, was wie ein automatischer Blocker aussieht, wird ignoriert.
 var IGNORE_TITLE_REGEX = /^blockiert\b/i;
@@ -302,7 +316,7 @@ function eventToRow_(ev, roomLabel) {
   if (!start || !end) return null;
   var minutes = allDay ? 0 : Math.round((end - start) / 60000);
 
-  var who = identifyMember_(title, desc, ev.creator);
+  var who = identifyMember_(title, ev.creator);
   var art = artFor_(title, who.matchedNames);
   var idMatch = desc.match(/Termin-ID:\s*(\d+)/i);
 
@@ -329,17 +343,13 @@ function parseEventTime_(t) {
 }
 
 /**
- * Ermittelt das Teammitglied: Titel → Beschreibung → Anleger → unbekannt.
+ * Ermittelt das Teammitglied: Titel → Anleger → unbekannt (Beschreibung bewusst nicht).
  * @return {{label:string, isTeam:boolean, source:string, matchedNames:string[]}}
  */
-function identifyMember_(title, desc, creator) {
+function identifyMember_(title, creator) {
   var inTitle = membersIn_(title);
   if (inTitle.members.length) {
     return { label: joinNames_(inTitle.members), isTeam: true, source: 'Titel', matchedNames: inTitle.matched };
-  }
-  var inDesc = membersIn_(desc);
-  if (inDesc.members.length) {
-    return { label: joinNames_(inDesc.members), isTeam: true, source: 'Beschreibung', matchedNames: [] };
   }
   var byCreator = memberByCreator_(creator);
   if (byCreator) {
@@ -464,9 +474,7 @@ function totalsByMember_(rows) {
 }
 
 function hintFor_(r) {
-  if (r.source === 'Anleger') return 'Name aus Anleger abgeleitet';
-  if (r.source === 'unbekannt') return 'Unbekannt – Raumvermietung? Bitte prüfen';
-  return '';
+  return r.source === 'unbekannt' ? 'Unbekannt – Raumvermietung? Bitte prüfen' : '';
 }
 
 function renderHtml_(year, month, rows, allDay, warnings) {
@@ -494,9 +502,9 @@ function renderHtml_(year, month, rows, allDay, warnings) {
 
   out.push('<h3>Alle Termine</h3>');
   out.push('<table style="border-collapse:collapse"><tr>' +
-    ['Datum', 'Uhrzeit', 'Art des Termins', 'Dauer', 'Teammitglied', 'Raum', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
+    ['Datum', 'Uhrzeit', 'Art des Termins', 'Dauer', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
   if (!rows.length) {
-    out.push('<tr><td ' + td + ' colspan="7">Keine stattgefundenen Termine gefunden.</td></tr>');
+    out.push('<tr><td ' + td + ' colspan="8">Keine stattgefundenen Termine gefunden.</td></tr>');
   }
   rows.forEach(function (r) {
     var flag = r.isTeam ? '' : ' style="background:#fff8e1"';
@@ -507,6 +515,7 @@ function renderHtml_(year, month, rows, allDay, warnings) {
       '<td ' + td + '>' + fmtDuration_(r.minutes) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.member) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.room) + '</td>' +
+      '<td ' + td + '>' + escHtml_(r.title) + '</td>' +
       '<td ' + td + '>' + escHtml_(hintFor_(r)) + '</td></tr>');
   });
   out.push('</table>');
@@ -518,7 +527,7 @@ function renderHtml_(year, month, rows, allDay, warnings) {
     });
     out.push('</ul>');
   }
-  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Zuordnung unsicher.</p>');
+  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Teammitglied unbekannt.</p>');
   out.push('</div>');
   return out.join('\n');
 }
@@ -538,7 +547,7 @@ function renderPlain_(year, month, rows, allDay, warnings) {
 
 function renderCsv_(rows, allDay) {
   function q(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
-  var lines = [['Datum', 'Beginn', 'Ende', 'Art des Termins', 'Dauer (hh:mm)', 'Dauer (Std. dezimal)', 'Teammitglied', 'Raum', 'Zuordnung', 'Hinweis'].map(q).join(';')];
+  var lines = [['Datum', 'Beginn', 'Ende', 'Art des Termins', 'Dauer (hh:mm)', 'Dauer (Std. dezimal)', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(q).join(';')];
   rows.concat(allDay).forEach(function (r) {
     lines.push([
       fmtDate_(r.start),
@@ -549,7 +558,7 @@ function renderCsv_(rows, allDay) {
       r.allDay ? '' : fmtDecimalHours_(r.minutes),
       r.member,
       r.room,
-      r.source,
+      r.title,
       hintFor_(r) || (r.allDay ? 'Ganztägig – Dauer prüfen' : ''),
     ].map(q).join(';'));
   });

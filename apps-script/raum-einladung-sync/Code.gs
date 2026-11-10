@@ -125,7 +125,6 @@ var HILFSKALENDER = {
   'Stephanie':  'c_360bace4072d8f2356127d9b6dd12b2c45c63be5dd791f86fbc0018e00d06714@group.calendar.google.com',
   'Karen':      'c_1caea88007e19c7154765e9a9a3370c8f912f40a46c32145486b862d8770c0c7@group.calendar.google.com',
   'Maxine':     'c_b3600e5f62821b31ef76a82e9c9078070a0c8e9e29641463b7ae270e6871f33d@group.calendar.google.com',
-  'Mila':       null, // noch keine Hilfskalender-ID bekannt, siehe README
 };
 
 // Raumkalender, in die das Team bestätigte Termine selbst verschiebt.

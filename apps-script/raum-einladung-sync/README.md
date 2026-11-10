@@ -199,11 +199,6 @@ Kalender-ID dort ergänzen — sonst erkennt das Skript eine Verlegung
 dorthin nicht (der Termin taucht dann in keinem der gelisteten Kalender
 mehr auf, bis er wieder in einen bekannten Kalender verschoben wird).
 
-✅ **Mila** ist neu im Team und hat noch keinen Hilfskalender —
-absichtlich mit `null` in `HILFSKALENDER` außen vor gelassen, bis das
-analog zu den anderen (siehe `team-app`-README) eingerichtet ist. Dann
-dort ergänzen.
-
 ✅ **Mitarbeiter-Wechsel und Terminverlegung durch Amelia/Jörg** betreffen
 dieses Skript nicht mehr direkt — es interessiert sich nur noch dafür, ob
 die Kalender-Zeit von der Amelia-Zeit abweicht, unabhängig davon, wer/was
@@ -231,7 +226,6 @@ der Team-App, siehe dort). Betrifft nur Alt-Termine; alles ab dem
 | Stephanie | stephanie@primal-living.de |
 | Karen | karenzeiler24@gmail.com |
 | Maxine | parampampas@yahoo.com |
-| Mila | annamilena369@gmail.com (noch nicht in `HILFSKALENDER`, siehe "Offene Punkte") |
 
 ## Sicherheit
 

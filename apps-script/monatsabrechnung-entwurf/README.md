@@ -9,7 +9,9 @@ Vormonats an — als Übersicht zur Übergabe an sevdesk.
 1. Liest die Kalender **Raum 1, Raum 2, Raum 3** und **Raum extern
    (z.B. GdT)** für den kompletten Vormonat.
 2. Pro Termin eine Zeile: **Art des Termins · Dauer · Datum (+ Uhrzeit) ·
-   Teammitglied** (zusätzlich Raum und ein Hinweis).
+   Teammitglied** (zusätzlich Raum, Original-Titel und ein Hinweis).
+   Die **Art** wird aus dem Titel erkannt, Abkürzungen werden aufgelöst
+   (z. B. „TM“ → „Tantramassage“, siehe `ART_RULES`).
 3. Entwurf an `joerg@spiritual-touch.de` mit
    - Summe je Teammitglied (Anzahl, Dauer, Stunden dezimal),
    - Tabelle aller Termine,
@@ -22,19 +24,17 @@ Vormonats an — als Übersicht zur Übergabe an sevdesk.
 | Reihenfolge | Quelle | Beispiel |
 |---|---|---|
 | 1 | Name im **Titel** | „Massage Tara“ → Tara |
-| 2 | Name in der **Beschreibung** | |
-| 3 | **Anleger** des Termins („Erstellt von …“): Mailadresse/Anzeigename | „2h TM dusche länger belegt,“ erstellt von Stephanie → Stephanie |
-| 4 | sonst **unbekannt** → „Extern/Raumvermietung: Name <Mail>“ | „Coaching S.graul ST“ erstellt von Stefanie Graul |
+| 2 | **Anleger** des Termins („Erstellt von …“): Mailadresse/Anzeigename | „2h TM dusche länger belegt,“ erstellt von Stephanie → Stephanie |
+| 3 | sonst **unbekannt** → „Extern/Raumvermietung: Name <Mail>“ | „Coaching S.graul ST“ erstellt von Stefanie Graul |
 
+Die **Beschreibung** wird nicht ausgewertet (dort stehen nur Gastnamen).
 Termine unbekannter Personen bzw. der Raumvermietung kommen **immer** mit in
-die Liste (gelb markiert, Hinweis „Bitte prüfen“). Die Spalte *Zuordnung* im
-CSV zeigt, woher der Name stammt.
+die Liste (gelb markiert, Hinweis „Bitte prüfen“).
 
 > ⚠️ Bewusst **kein** Alias „Stefanie“ bei Stephanie hinterlegt: Stefanie
 > Graul ist laut Beispiel eine externe Person.
-> Hinweis: Steht in einem Titel zufällig der Vorname einer Kundin, die so
-> heißt wie ein Teammitglied (z. B. „Massage Sarah“), wird sie diesem
-> zugeordnet — dann in der Zeile „Zuordnung = Titel“ gegenprüfen.
+> Jörg ist nicht in der Teamliste: Ein Termin ohne Teammitglied-Namen im
+> Titel, den Jörg angelegt hat, erscheint als „unbekannt“.
 
 ## Robustheit
 
@@ -61,15 +61,10 @@ CSV zeigt, woher der Name stammt.
    anzeigen“ aktivieren und `appsscript.json` übernehmen (aktiviert den
    erweiterten Dienst **Calendar API** — alternativ links *Dienste → + →
    Google Calendar API*, Kennung `Calendar`).
-3. **Raum extern:** Die Kalender-ID ist noch nicht hinterlegt. Das Skript
-   findet den Kalender über den Namen („Raum extern …“), solange er in
-   Jörgs Kalenderliste sichtbar ist. Robuster: ID (Google Calendar →
-   Einstellungen des Kalenders → *Kalender-ID*) in `ROOM_CALENDARS` bei
-   „Raum extern“ eintragen.
-4. `testLetzterMonat` ausführen → Berechtigungen bestätigen → Entwurf in
+3. `testLetzterMonat` ausführen → Berechtigungen bestätigen → Entwurf in
    Gmail prüfen. Danach den Test-Entwurf löschen und `merkerZuruecksetzen`
    ausführen (sonst gilt der Monat als erledigt).
-5. `installTrigger` einmal ausführen (richtet den täglichen Trigger ein).
+4. `installTrigger` einmal ausführen (richtet den täglichen Trigger ein).
 
 Nachholen für einen bestimmten Monat: in `entwurfFuerMonatManuell` Jahr/Monat
 anpassen und ausführen.
@@ -77,11 +72,12 @@ anpassen und ausführen.
 ## Anpassen
 
 - `TEAM_MEMBERS`: Namen/Schreibweisen und optional genaue Mailadressen für
-  die Anleger-Zuordnung (bisher nur Eva und Jörg bekannt; sonst wird der
+  die Anleger-Zuordnung (bisher nur Eva hinterlegt; sonst wird der
   Vorname im Mail-Vorderteil/Anzeigenamen verglichen).
-- `ART_RULES`: optionale Kurzbezeichnungen für „Art des Termins“, z. B.
-  `{ match: /coaching/i, art: 'Coaching' }`. Ohne Regel wird der Titel ohne
-  Mitarbeitername verwendet.
+- `ART_RULES`: Titel → Art des Termins, erster Treffer gewinnt, z. B.
+  `{ match: /\bTM\b/i, art: 'Tantramassage' }`. Vorbelegt mit den Amelia-
+  Angeboten (Tantramassage, Intimmassage Workshop, Bodyflow, Coaching,
+  Ritual …). Ohne Treffer wird der Titel ohne Mitarbeitername verwendet.
 - `GIVE_UP_AFTER_DAY`: ab wann bei fehlendem Kalender trotzdem ein Entwurf
   mit Warnung entsteht (Standard 5).
 
@@ -92,4 +88,4 @@ anpassen und ausführen.
 | Raum 1 | `c_f25a3e235e34401a8393190730178ce8a79865f54cac5f814cc18261794671a5@group.calendar.google.com` |
 | Raum 2 | `c_9b8f2fdac6c5649a399ef26ac1dc80569fe4d8a78111b4db0d59391336f32761@group.calendar.google.com` |
 | Raum 3 | `c_2eecd9c94fe4ebbabbc0997ef1aa97620bea9d17515070014d206c6409f2c897@group.calendar.google.com` |
-| Raum extern (z.B. GdT) | noch offen (Suche über Namen) |
+| Raum extern (z.B. GdT) | `c_611a7a193e4556c4ea970563ad4febea97e040fbd357211c24111b8fdbfb6966@group.calendar.google.com` |
