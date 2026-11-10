@@ -6,7 +6,7 @@
  * Entwurf in Jörgs Gmail — verändert keinen Termin, keinen anderen Sync.
  *
  * WAS ES TUT
- *   Am 1. eines Monats (genauer: beim ersten Lauf ab dem 1.) werden die
+ *   Am 1. eines Monats (genauer: beim ersten erfolgreichen Lauf ab dem 1.) werden die
  *   Raumkalender "Raum 1", "Raum 2", "Raum 3" und "Raum extern (z.B. GdT)"
  *   für den komplett abgelaufenen Vormonat ausgelesen. Jeder stattgefundene
  *   Termin wird eine Zeile mit:
@@ -42,10 +42,11 @@
  * ROBUSTHEIT
  *   - Nutzt nur den eingebauten CalendarApp (keine Zusatzdienste, keine
  *     manuelle Aktivierung nötig).
- *   - Täglicher Trigger mit "Nachholen": Die Funktion merkt sich, für welchen
- *     Monat schon ein Entwurf erstellt wurde. Fällt der Lauf am 1. aus
- *     (Google-Störung, Berechtigung abgelaufen …), wird er am nächsten Tag
- *     automatisch wiederholt — nie doppelt, nie vergessen.
+ *   - Monatstrigger (am 1.) mit Selbstheilung: Die Funktion merkt sich, für
+ *     welchen Monat schon ein Entwurf erstellt wurde. Schlägt der Lauf am 1.
+ *     fehl (Google-Störung, Raumkalender nicht lesbar, Berechtigung …), legt
+ *     sie selbst einen einmaligen Trigger für den nächsten Tag an (bis zu 10
+ *     Versuche) — nie doppelt, nie vergessen. Bei Fehlern kommt eine Mail.
  *   - Kalender-Aufrufe mit Wiederholung + Wartezeit (Rate-Limits,
  *     kurze Ausfälle).
  *   - Sperre gegen parallele Läufe (LockService).
@@ -155,6 +156,13 @@ var IGNORE_DESCRIPTION_MARKERS = ['autoBlock:true', 'kind:anfragen-sync'];
 // (täglicher Neuversuch), bevor trotzdem ein Entwurf mit Warnung entsteht.
 var GIVE_UP_AFTER_DAY = 5;
 
+// Selbstheilung beim Monatstrigger: Schlägt der Lauf am 1. fehl, legt das
+// Skript selbst einen einmaligen Trigger für den nächsten Versuch an
+// (nach RETRY_HOURS Stunden, höchstens MAX_RETRIES-mal pro Monat).
+var RETRY_HOURS = 24;
+var MAX_RETRIES = 10;
+var RETRY_HANDLER = 'monatsabrechnungNachholen';
+
 var ART_UNKNOWN = '(nicht erkannt)';
 var API_RETRIES = 4;
 var PROP_LAST_DONE = 'lastDraftMonth'; // z. B. "2026-10"
@@ -162,35 +170,84 @@ var PROP_LAST_DONE = 'lastDraftMonth'; // z. B. "2026-10"
 // ---------- EINSTIEGSPUNKTE ----------
 
 /**
- * TRIGGER-FUNKTION (täglich, siehe installTrigger). Erstellt den Entwurf für
- * den Vormonat, falls das noch nicht geschehen ist.
+ * TRIGGER-FUNKTION (monatlich am 1., siehe installTrigger). Erstellt den
+ * Entwurf für den Vormonat, falls das noch nicht geschehen ist.
+ * (Der Funktionsname stammt aus der ersten Fassung mit Tages-Trigger und
+ * bleibt, damit ein bestehender Trigger weiter funktioniert.)
  */
 function monatsabrechnungTaeglich() {
+  runMonthly_();
+}
+
+/**
+ * Wiederholungsversuch: wird nur von dem einmaligen Trigger aufgerufen, den
+ * ein fehlgeschlagener Lauf selbst anlegt. Räumt zuerst alte Wiederholungs-
+ * Trigger weg, damit sich keine ansammeln.
+ */
+function monatsabrechnungNachholen() {
+  removeRetryTriggers_();
+  runMonthly_();
+}
+
+function runMonthly_() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     Logger.log('Anderer Lauf aktiv – übersprungen.');
     return;
   }
+  var key = null;
   try {
     var now = new Date();
     var prev = previousMonth_(now);
-    var key = monthKey_(prev.year, prev.month);
+    key = monthKey_(prev.year, prev.month);
     var props = PropertiesService.getScriptProperties();
     if (props.getProperty(PROP_LAST_DONE) === key) {
       Logger.log('Entwurf für ' + key + ' bereits erstellt – nichts zu tun.');
+      removeRetryTriggers_();
       return;
     }
     var dayOfMonth = Number(Utilities.formatDate(now, TIMEZONE, 'd'));
     var result = buildDraftForMonth_(prev.year, prev.month, dayOfMonth >= GIVE_UP_AFTER_DAY);
     if (result.created || result.alreadyExists) {
       props.setProperty(PROP_LAST_DONE, key);
+      props.deleteProperty('retries:' + key);
+      removeRetryTriggers_();
+    } else {
+      scheduleRetry_(key); // z. B. Raumkalender nicht lesbar
     }
   } catch (err) {
     sendAlert_('Fehler beim Erstellen der Monatsabrechnungsliste', err.message + '\n\n' + (err.stack || ''));
+    if (key) scheduleRetry_(key);
     throw err; // damit der Fehler auch in der Ausführungsliste rot erscheint
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Legt einen einmaligen Trigger für den nächsten Versuch an (mit Obergrenze). */
+function scheduleRetry_(key) {
+  var props = PropertiesService.getScriptProperties();
+  var attempts = Number(props.getProperty('retries:' + key)) || 0;
+  if (attempts >= MAX_RETRIES) {
+    sendAlert_('Monatsabrechnungsliste ' + key + ' – aufgegeben',
+      'Nach ' + MAX_RETRIES + ' Wiederholungen wurde kein Entwurf erstellt. Bitte im Apps-Script-Editor ' +
+      '"entwurfFuerMonatManuell" ausführen und das Ausführungsprotokoll prüfen.');
+    return;
+  }
+  props.setProperty('retries:' + key, String(attempts + 1));
+  removeRetryTriggers_();
+  try {
+    ScriptApp.newTrigger(RETRY_HANDLER).timeBased().after(RETRY_HOURS * 3600 * 1000).create();
+    Logger.log('Neuer Versuch in ' + RETRY_HOURS + ' Std. eingeplant (Versuch ' + (attempts + 1) + '/' + MAX_RETRIES + ').');
+  } catch (e) {
+    sendAlert_('Wiederholung konnte nicht eingeplant werden', e.message);
+  }
+}
+
+function removeRetryTriggers_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === RETRY_HANDLER) ScriptApp.deleteTrigger(t);
+  });
 }
 
 /** Manueller Test: Entwurf für den letzten abgelaufenen Monat (ignoriert den Merker). */
@@ -216,13 +273,18 @@ function entwurfFuerMonatManuell() {
   buildDraftForMonth_(2026, 10, true);
 }
 
-/** Einmalig ausführen: richtet den täglichen Trigger (ca. 06:00 Uhr) ein. */
+/**
+ * Einmalig ausführen: richtet den Trigger "monatlich am 1., ca. 06:00 Uhr"
+ * ein und entfernt dabei alte (z. B. tägliche) Trigger dieser Funktion.
+ * Bereits von Hand angelegte Monats-Trigger bleiben so nicht doppelt.
+ */
 function installTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'monatsabrechnungTaeglich') ScriptApp.deleteTrigger(t);
+    var h = t.getHandlerFunction();
+    if (h === 'monatsabrechnungTaeglich' || h === RETRY_HANDLER) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('monatsabrechnungTaeglich').timeBased().everyDays(1).atHour(6).create();
-  Logger.log('Täglicher Trigger für monatsabrechnungTaeglich eingerichtet.');
+  ScriptApp.newTrigger('monatsabrechnungTaeglich').timeBased().onMonthDay(1).atHour(6).create();
+  Logger.log('Monatlicher Trigger (am 1., ca. 06:00 Uhr) für monatsabrechnungTaeglich eingerichtet.');
 }
 
 /** Setzt den Merker zurück (nur falls ein Entwurf bewusst neu erstellt werden soll). */

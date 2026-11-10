@@ -88,10 +88,13 @@ in der Liste, der Original-Titel daneben.
 
 ## Robustheit
 
-- **Täglicher Trigger mit Nachholen:** Läuft täglich ca. 06:00. Das Skript
-  merkt sich den zuletzt erledigten Monat. Fällt der Lauf am 1. aus, wird er
-  am Folgetag wiederholt — nie doppelt (zusätzlich Prüfung, ob der Entwurf
-  schon existiert).
+- **Monatstrigger am 1. mit Selbstheilung:** Das Skript merkt sich den
+  zuletzt erledigten Monat. Schlägt der Lauf am 1. fehl (Google-Störung,
+  Raumkalender nicht lesbar, Berechtigung abgelaufen …), legt es **selbst
+  einen einmaligen Trigger für den nächsten Tag** an (bis zu 10 Versuche) und
+  schickt eine Warnmail. Läuft es danach durch, räumt es den Wiederholungs-
+  Trigger wieder weg. Nie doppelt (zusätzlich Prüfung, ob der Entwurf schon
+  existiert), nie vergessen.
 - Nur der eingebaute `CalendarApp` — keine Zusatzdienste, keine manuelle Aktivierung. Kalender-Aufrufe mit Wiederholung/Wartezeit.
 - Sperre gegen parallele Läufe; Fehler → Warnmail an Jörg.
 - Ist ein Raumkalender nicht lesbar: **kein stiller Teil-Bericht**, sondern
@@ -112,7 +115,14 @@ in der Liste, der Original-Titel daneben.
    Gmail prüfen („TESTLAUF – Monatsabrechnungsliste Oktober 2026“) und
    anschließend löschen. Der Testlauf berührt den Merker nicht. (`testLetzterMonat`
    erzeugt dagegen einen echten Entwurf für den Vormonat.)
-4. `installTrigger` einmal ausführen (richtet den täglichen Trigger ein).
+4. Trigger: `installTrigger` einmal ausführen — es legt **einen monatlichen
+   Trigger am 1. (ca. 06:00 Uhr)** für `monatsabrechnungTaeglich` an und
+   entfernt dabei alte, z. B. tägliche Trigger dieser Funktion. Ein von Hand
+   angelegter Monats-Trigger auf `monatsabrechnungTaeglich` (Zeitgesteuert →
+   Monatstimer → 1.) ist gleichwertig. (Der Funktionsname stammt noch aus der
+   Tages-Version und bleibt, damit bestehende Trigger weiterlaufen.)
+   Die Wiederholungs-Trigger (`monatsabrechnungNachholen`) legt das Skript
+   bei Bedarf selbst an und löscht sie wieder — nicht von Hand anfassen.
 
 Nachholen für einen bestimmten Monat: in `entwurfFuerMonatManuell` Jahr/Monat
 anpassen und ausführen.
