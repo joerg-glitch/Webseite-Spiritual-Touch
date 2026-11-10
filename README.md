@@ -13,7 +13,7 @@ Dieses Repository bündelt alle Code-Projekte rund um [spiritual-touch.de](https
 | `wordpress/buchungs-dashboard/` | WPCode-Snippet: Buchungs-Dashboard (Smart-Freigeben) | [README](wordpress/buchungs-dashboard/README.md) |
 | `wordpress/booking-confirmation-link/` | WPCode-Snippet: Buchungsbestätigungs-Link | [README](wordpress/booking-confirmation-link/README.md) |
 | `wordpress/google-buchungslink/` | WPCode-Snippet: Google-Buchungslink | [README](wordpress/google-buchungslink/README.md) |
-| `routinen/feedback-mail/` | Tägliche Claude-Routine: Feedback-Mail-Entwürfe 3 Tage nach dem Termin (Kalender → Gmail-Entwurf) | [README](routinen/feedback-mail/README.md) |
+| `routinen/feedback-mail/` | Tägliche Claude-Routine: Feedback-Mail-Entwürfe 3 Tage nach dem Termin (Kalender → Gmail-Entwurf + Todoist-Aufgabe) | [README](routinen/feedback-mail/README.md) |
 | `elementor-widgets/coverflow-card-slider/` | Nachgebautes Elementor-HTML-Widget (Coverflow-Card-Slider) | [README](elementor-widgets/coverflow-card-slider/README.md) |
 | `whatsapp-vorschaltseite/` | WhatsApp-Look Vorschaltseite zur Lead-Filterung (DE/EN) | — |
 | `PLAN.md`, `TASKS.md`, `TEAM-APP-ROADMAP.md` | Planungs-/Aufgaben-Dokus zur Team-App | — |
