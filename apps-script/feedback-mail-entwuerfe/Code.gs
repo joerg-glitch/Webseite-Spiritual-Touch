@@ -51,10 +51,17 @@ var IGNORED_ADDRESSES = ['wpforms-calender-dummy@tutamail.com'];
 
 // Todoist: Token liegt NICHT im Code, sondern unter Projekteinstellungen →
 // Skripteigenschaften → TODOIST_TOKEN (Todoist → Einstellungen → Integrationen
-// → Entwickler → API-Token). Fehlt er, entstehen nur die Entwürfe.
+// → Entwickler → API-Token). Fehlt er, entstehen nur die Entwürfe und Jörg
+// bekommt eine Fehlermail.
 var TODOIST_API_URL = 'https://api.todoist.com/api/v1/tasks';
 
-// Fallback, falls die Gmail-Signatur nicht geladen werden kann.
+// Signatur: Quelle 1 ist ein Entwurf mit genau diesem Betreff, in den Jörg die
+// gewünschte Gmail-Signatur ("Jörg ST.") eingefügt hat (siehe README). Quelle 2
+// ist die Standard-Signatur aus den Gmail-Einstellungen (Gmail-API). Quelle 3
+// der Text-Fallback unten.
+var SIGNATURE_TEMPLATE_SUBJECT = 'Signatur-Vorlage';
+
+// Fallback, falls keine Signatur geladen werden kann.
 var SIGNATURE_FALLBACK_HTML =
   '<b>Institutsleitung</b><br><i>Spiritual Touch</i><br>' +
   '<a href="https://spiritual-touch.de">spiritual-touch.de</a>';
@@ -296,10 +303,13 @@ function runFeedback_(isDryRun) {
           created.push({ guest: g, url: '(Probelauf)' });
           return;
         }
-        if (signature === null) signature = loadSignatureHtml_();
-        var draft = GmailApp.createDraft(g.email, mail.subject, toPlain_(mail.paragraphs), {
-          htmlBody: toHtml_(mail.paragraphs, signature),
-        });
+        if (signature === null) {
+          signature = loadSignature_();
+          Logger.log('Signatur-Quelle: ' + signature.source);
+        }
+        var options = { htmlBody: toHtml_(mail.paragraphs, signature.html) };
+        if (signature.inlineImages) options.inlineImages = signature.inlineImages;
+        var draft = GmailApp.createDraft(g.email, mail.subject, toPlain_(mail.paragraphs), options);
         existingDraftTo.push(g.email);
         created.push({
           guest: g,
@@ -347,23 +357,68 @@ function hasSentFeedback_(email) {
   return GmailApp.search(q, 0, 1).length > 0;
 }
 
-/** Standard-Signatur aus Gmail (Einstellungen → Signatur); sonst Fallback. */
-function loadSignatureHtml_() {
+/**
+ * Liefert {html, inlineImages, source}.
+ * 1. Entwurf "Signatur-Vorlage": exakt die dort eingefügte Gmail-Signatur
+ *    (so kann gezielt "Jörg ST." gewählt werden – die Gmail-API kennt nur die
+ *    Standard-Signatur).
+ * 2. Standard-Signatur aus den Gmail-Einstellungen (Gmail-API, Dienst nötig).
+ * 3. Text-Fallback.
+ */
+function loadSignature_() {
+  try {
+    var fromTemplate = loadSignatureFromTemplateDraft_();
+    if (fromTemplate) return fromTemplate;
+  } catch (e) {
+    Logger.log('Signatur-Vorlage nicht lesbar: ' + e.message);
+  }
   try {
     var list = Gmail.Users.Settings.SendAs.list('me').sendAs || [];
-    var def = list.filter(function (s) { return s.isDefault; })[0] || list[0];
-    if (def && def.signature) return def.signature;
+    var def = list.filter(function (x) { return x.isDefault; })[0] || list[0];
+    if (def && def.signature) return { html: def.signature, inlineImages: null, source: 'Gmail-Standard-Signatur' };
   } catch (e) {
-    Logger.log('Signatur konnte nicht geladen werden, Fallback: ' + e.message);
+    Logger.log('Gmail-API-Signatur nicht verfügbar: ' + e.message);
   }
-  return SIGNATURE_FALLBACK_HTML;
+  return { html: SIGNATURE_FALLBACK_HTML, inlineImages: null, source: 'Text-Fallback' };
+}
+
+function loadSignatureFromTemplateDraft_() {
+  var drafts = GmailApp.getDrafts().filter(function (d) {
+    return d.getMessage().getSubject() === SIGNATURE_TEMPLATE_SUBJECT;
+  });
+  if (!drafts.length) return null;
+  var msg = drafts[0].getMessage();
+  var html = msg.getBody();
+  // Ab dem Signatur-Block; sonst ganzer Entwurfstext.
+  var m = html.match(/<div[^>]*(?:class="gmail_signature"|data-smartmail="gmail_signature")[^>]*>/i);
+  if (m) html = html.substring(html.indexOf(m[0]));
+
+  // Eingebettete Bilder (z. B. Logo) übernehmen: der i-te nicht-externe <img>
+  // bekommt das i-te eingebettete Bild des Entwurfs.
+  var blobs = msg.getAttachments({ includeInlineImages: true, includeAttachments: false });
+  var inline = {};
+  var idx = 0;
+  html = html.replace(/<img\b[^>]*>/gi, function (tag) {
+    var src = (tag.match(/\bsrc="([^"]*)"/i) || [])[1] || '';
+    if (/^https?:\/\//i.test(src) && !/mail\.google\.com/i.test(src)) return tag; // extern gehostet
+    var blob = blobs[idx++];
+    if (!blob) return tag;
+    var key = 'sigimg' + idx;
+    inline[key] = blob;
+    return tag.replace(/\bsrc="[^"]*"/i, 'src="cid:' + key + '"');
+  });
+  return {
+    html: html,
+    inlineImages: idx ? inline : null,
+    source: 'Entwurf "' + SIGNATURE_TEMPLATE_SUBJECT + '"' + (idx ? ' (' + idx + ' Bild/er)' : ''),
+  };
 }
 
 // ---------- TODOIST ----------
 
 function createTodoistTask_(created) {
   var token = PropertiesService.getScriptProperties().getProperty('TODOIST_TOKEN');
-  if (!token) { Logger.log('TODOIST_TOKEN fehlt – Aufgabe übersprungen.'); return; }
+  if (!token) throw new Error('Skripteigenschaft TODOIST_TOKEN fehlt – Aufgabe nicht erstellt (siehe README, Einrichtung Schritt 3).');
 
   var tz = Session.getScriptTimeZone();
   var todayStr = Utilities.formatDate(new Date(), tz, 'dd.MM.yyyy');

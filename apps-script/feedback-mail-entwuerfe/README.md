@@ -27,19 +27,26 @@ können (wie `raum-einladung-sync`). Die Alternative als Claude-Routine steht in
 ## Einrichtung (einmalig, ca. 10 Minuten)
 
 1. [script.google.com](https://script.google.com) → neues Projekt, **als `joerg@spiritual-touch.de`**.
-2. `Code.gs` einfügen. Unter Projekteinstellungen „appsscript.json im Editor anzeigen"
-   aktivieren und den Inhalt von `appsscript.json` übernehmen (aktiviert den
-   Gmail-Dienst für die Signatur).
-3. **Todoist-Token** (optional, ohne ihn entstehen nur die Entwürfe): Todoist →
-   Einstellungen → Integrationen → Entwickler → API-Token kopieren → im Apps-Script-Projekt
-   Projekteinstellungen → Skripteigenschaften → `TODOIST_TOKEN` = Token.
-   *(Der Token gehört nur dorthin, nie in den Code oder ins Repo.)*
-4. Funktion **`dryRun`** ausführen → Berechtigungen (Kalender, Gmail, Extern, Mail)
+2. `Code.gs` einfügen. Links bei **Dienste → +** den Dienst **Gmail API** hinzufügen
+   (Kennung `Gmail`). Ohne ihn erscheint im Protokoll „Gmail is not defined".
+   Alternativ „appsscript.json im Editor anzeigen" aktivieren und `appsscript.json` übernehmen.
+3. **Signatur „Jörg ST."** – Gmail-Entwurf anlegen, **Betreff genau `Signatur-Vorlage`**,
+   Empfänger leer, im Text über das Stift-Symbol (Signatur einfügen) **Jörg ST.** wählen,
+   sonst nichts schreiben. Entwurf liegen lassen (nicht senden, nicht löschen). Das Skript
+   übernimmt genau diese Signatur samt Logo. Fehlt der Entwurf, nimmt es die
+   Standard-Signatur aus den Gmail-Einstellungen, danach einen Text-Fallback.
+   Im Protokoll steht jeweils `Signatur-Quelle: …`.
+4. **Todoist-Token** (ohne ihn entstehen nur die Entwürfe und du bekommst eine Fehlermail):
+   Todoist → Einstellungen → Integrationen → Entwickler → API-Token kopieren → im
+   Apps-Script-Projekt **Projekteinstellungen → Skripteigenschaften → Skripteigenschaft
+   hinzufügen**: Name `TODOIST_TOKEN`, Wert = Token. *(Der Token gehört nur dorthin, nie in
+   den Code oder ins Repo.)*
+5. Funktion **`dryRun`** ausführen → Berechtigungen (Kalender, Gmail, Extern, Mail)
    bestätigen → im Ausführungsprotokoll steht, welche Entwürfe entstehen würden.
-5. Funktion **`createFeedbackDrafts`** einmal ausführen → Entwürfe prüfen
+6. Funktion **`createFeedbackDrafts`** einmal ausführen → Entwürfe prüfen
    (Empfänger, Anrede, Signatur/Logo, Todoist-Aufgabe). Direkt nochmal ausführen →
    es darf **nichts Neues** entstehen.
-6. Funktion **`setupDailyTrigger`** einmal ausführen → tägliche Ausführung um 08:00.
+7. Funktion **`setupDailyTrigger`** einmal ausführen → tägliche Ausführung um 08:00.
 
 ## Bewusste Unterschiede zur Claude-Routine
 
@@ -51,10 +58,13 @@ können (wie `raum-einladung-sync`). Die Alternative als Claude-Routine steht in
 
 ## Zu prüfen beim ersten Lauf
 
-- **Signatur mit Logo:** Sie wird per Gmail-API geladen. Ist das Logo in Gmail als
-  eingebettetes Bild gespeichert, kann es im Entwurf fehlen – dann Logo im Signatur-Editor
-  per Bild-URL einbinden. Fehlt die Signatur ganz, greift ein Text-Fallback
-  (`SIGNATURE_FALLBACK_HTML`).
+- **Signatur mit Logo:** Quelle steht im Protokoll (`Signatur-Quelle: …`). Das Logo wird
+  aus der Signatur-Vorlage übernommen (extern gehostet oder eingebettet). Fehlt es im
+  Entwurf, melde dich mit dem Protokoll – dann gibt es noch die Möglichkeit, die Signatur
+  fest im Skript zu hinterlegen.
+- **Entwürfe mit falscher Signatur neu erzeugen:** Die Entwürfe löschen, dann
+  `createFeedbackDrafts` erneut ausführen. (Solange sie existieren, überspringt der
+  Doppelschutz diese Gäste.)
 - **Todoist-API:** nutzt `https://api.todoist.com/api/v1/tasks`. Klappt es nicht,
   steht der Grund in der Alert-Mail.
 - **Gelöschter Entwurf** wird innerhalb des Fensters (max. 2 Tage) neu angelegt –
