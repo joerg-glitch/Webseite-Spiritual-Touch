@@ -78,9 +78,9 @@ Hinweis, die zweite Person zu ergänzen.
 
 **Von dir angelegte Termine:** Steht ein Teammitglied im Titel, zählt der
 Termin ganz normal (auch wenn du ihn angelegt hast). In „nicht
-berücksichtigt“ landen nur deine Termine **ohne** Teammitglied im Titel. Steht
-dort ein Name in Klammern, der nicht in `TEAM_MEMBERS` steht (neue Person?),
-nennt der Grund ihn ausdrücklich — dann dort ergänzen.
+berücksichtigt“ landen nur deine Termine **ohne** Teammitglied im Titel.
+Namen in Klammern, die nicht in `TEAM_MEMBERS` stehen, gelten als Gastnamen.
+Neue Teammitglieder werden in `TEAM_MEMBERS` von Hand ergänzt.
 
 **Art nicht erkannt:** Passt keine Regel aus `ART_RULES` (z. B. Titel nur
 aus Gastnamen wie „17:00 Elena 1h“), steht „(nicht erkannt)“ gelb markiert

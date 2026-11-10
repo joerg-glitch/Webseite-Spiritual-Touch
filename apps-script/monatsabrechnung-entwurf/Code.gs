@@ -112,6 +112,7 @@ var TEAM_MEMBERS = [
   { name: 'Karen',      names: ['Karen'],           emails: [] },
   { name: 'Maxine',     names: ['Maxine'],          emails: [] },
   { name: 'Erin',       names: ['Erin'],            emails: [] },
+  { name: 'Selma',      names: ['Selma'],           emails: [] },
 ];
 
 // Art des Termins aus dem Titel. Der ERSTE passende Eintrag gewinnt — daher
@@ -396,9 +397,7 @@ function classifyEvent_(ev, roomLabel, range) {
   }
   var who = identifyMember_(title, ev.creator);
   if (who.source === 'unbekannt' && isOwnerCreator_(ev.creator)) {
-    var paren = title.match(/\(([^()]+)\)\s*$/);
-    return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)' +
-      (paren ? ' Name in Klammern „' + paren[1].replace(/\s+/g, ' ').trim() + '“ steht nicht in der Teamliste – neue Person? Dann in TEAM_MEMBERS ergänzen.' : ''));
+    return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)');
   }
   var idMatch = desc.match(/Termin-ID:\s*(\d+)/i);
   var dur = durationFor_(title, desc);
