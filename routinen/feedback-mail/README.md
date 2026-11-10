@@ -7,6 +7,10 @@ Jörg prüft und sendet.
 
 Der komplette Prompt der Routine steht in [`routine-prompt.md`](routine-prompt.md).
 
+> **Alternative ohne Claude:** Dieselben Regeln als Google Apps Script –
+> [`apps-script/feedback-mail-entwuerfe/`](../../apps-script/feedback-mail-entwuerfe/README.md).
+> Läuft bei Google selbst, keine Verbindung kann ablaufen. Unterschied: Anrede immer „Hallo Vorname".
+
 ## Warum so (einfach & robust)
 
 | Entscheidung | Grund |
