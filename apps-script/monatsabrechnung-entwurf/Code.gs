@@ -10,7 +10,7 @@
  *   Raumkalender "Raum 1", "Raum 2", "Raum 3" und "Raum extern (z.B. GdT)"
  *   für den komplett abgelaufenen Vormonat ausgelesen. Jeder stattgefundene
  *   Termin wird eine Zeile mit:
- *       Art des Termins | Dauer | Datum (+ Uhrzeit) | Teammitglied
+ *       Art des Termins | Dauer | Datum (+ Beginn) | Teammitglied
  *   Die Liste landet als HTML-Tabelle im Gmail-ENTWURF (nicht versendet!)
  *   plus als CSV-Anhang (Semikolon, UTF-8, Excel/sevdesk-tauglich).
  *
@@ -31,13 +31,23 @@
  *   Teammitglied-Name in der Spalte. Der Original-Titel steht zusätzlich in
  *   einer eigenen Spalte.
  *
+ * DAUER
+ *   Zählt NUR, was im TITEL ("2h 30min", "2,5h", "3 h") oder in der
+ *   BESCHREIBUNG ("Dauer: 2,5 Stunden - 340,00 €") steht. Die im Kalender
+ *   blockierte Zeit ist bewusst KEINE Grundlage: sie enthält Puffer für
+ *   Aufräumen, Essen usw. (meist 1–1,5 Std. zusätzlich). Steht nirgends eine
+ *   Dauer, bleibt das Feld leer (gelb markiert, "bitte ergänzen") und der
+ *   Termin zählt in der Stundensumme 0 — er geht aber nicht verloren.
+ *
  * ROBUSTHEIT
+ *   - Nutzt nur den eingebauten CalendarApp (keine Zusatzdienste, keine
+ *     manuelle Aktivierung nötig).
  *   - Täglicher Trigger mit "Nachholen": Die Funktion merkt sich, für welchen
  *     Monat schon ein Entwurf erstellt wurde. Fällt der Lauf am 1. aus
  *     (Google-Störung, Berechtigung abgelaufen …), wird er am nächsten Tag
  *     automatisch wiederholt — nie doppelt, nie vergessen.
- *   - Calendar-API-Aufrufe mit Wiederholung + Wartezeit (Rate-Limits,
- *     kurze Ausfälle). Seiten werden komplett durchgeblättert.
+ *   - Kalender-Aufrufe mit Wiederholung + Wartezeit (Rate-Limits,
+ *     kurze Ausfälle).
  *   - Sperre gegen parallele Läufe (LockService).
  *   - Ein nicht lesbarer Raumkalender bricht den Lauf ab (kein stiller
  *     Teil-Bericht) und löst eine Warnmail aus; ab dem 5. des Monats wird
@@ -45,15 +55,16 @@
  *     Abrechnung nicht ewig blockiert.
  *   - Bereits vorhandener Entwurf mit demselben Betreff → kein zweiter.
  *   - Recurring-Termine werden als Einzeltermine ausgewertet
- *     (singleEvents), abgesagte und von Jörg abgelehnte Termine entfallen,
- *     Sync-Blocker ("Blockiert (…)"/autoBlock) und Doubletten
- *     (gleiche Termin-ID oder gleicher Raum+Titel+Zeit) ebenfalls.
+ *     (CalendarApp expandiert Serien), abgesagte und von Jörg abgelehnte
+ *     Termine entfallen, Sync-Blocker ("Blockiert (…)"/autoBlock) und
+ *     Doubletten (gleiche Termin-ID oder gleiches Teammitglied+Titel+Beginn,
+ *     auch über Räume hinweg) ebenfalls.
  *   - NICHTS GEHT UNBEMERKT VERLOREN: Jeder gelesene Kalendereintrag ist
  *     entweder berücksichtigt oder steht mit Grund in der Aufstellung
  *     "Nicht berücksichtigte Termine" (Mail + zweite CSV). Gründe: abgesagt,
  *     automatischer Blocker, Absage-Hinweis im Text, abgelehnt, Doublette,
  *     Termin von Jörg, von Jörg ohne Teammitglied angelegt, Beginn im
- *     Nachbarmonat, ganztägig (keine Dauer), Dauer 0. Die Mail zeigt eine Kontrollzeile
+ *     Nachbarmonat, ganztägig. Die Mail zeigt eine Kontrollzeile
  *     "N gelesen = X berücksichtigt + Y nicht berücksichtigt".
  *
  * DEPLOYMENT: siehe README.md in diesem Ordner.
@@ -233,9 +244,9 @@ function buildDraftForMonth_(year, month, allowPartial, testRun) {
 
   ROOM_CALENDARS.forEach(function (room) {
     try {
-      var calId = resolveCalendarId_(room);
-      if (!calId) throw new Error('Kalender nicht gefunden/kein Zugriff');
-      listEvents_(calId, range.start, range.end).forEach(function (ev) {
+      var cal = getCalendar_(room);
+      if (!cal) throw new Error('Kalender nicht gefunden/kein Zugriff');
+      listEvents_(cal, range.start, range.end).forEach(function (ev) {
         readCount++;
         var res = classifyEvent_(ev, room.label, range);
         if (res.skipped) skipped.push(res.skipped);
@@ -279,18 +290,22 @@ function buildDraftForMonth_(year, month, allowPartial, testRun) {
 
 // ---------- KALENDER LESEN ----------
 
-function resolveCalendarId_(room) {
+/** Raumkalender über ID, ersatzweise über den Namen. */
+function getCalendar_(room) {
+  var cal = null;
   if (room.id) {
     try {
-      retry_(function () { return Calendar.Calendars.get(room.id); });
-      return room.id;
+      cal = retry_(function () { return CalendarApp.getCalendarById(room.id); });
     } catch (e) {
-      Logger.log(room.label + ': ID ' + room.id + ' nicht nutzbar (' + e.message + '), versuche Namenssuche.');
+      Logger.log(room.label + ': Zugriff über ID fehlgeschlagen (' + e.message + '), versuche Namenssuche.');
     }
+    if (cal) return cal;
+    Logger.log(room.label + ': ID ' + room.id + ' nicht gefunden, versuche Namenssuche.');
   }
   if (room.nameMatch) {
-    var cals = CalendarApp.getAllCalendars().filter(function (c) { return room.nameMatch.test(c.getName()); });
-    if (cals.length === 1) return cals[0].getId();
+    var cals = retry_(function () { return CalendarApp.getAllCalendars(); })
+      .filter(function (c) { return room.nameMatch.test(c.getName()); });
+    if (cals.length === 1) return cals[0];
     if (cals.length > 1) {
       throw new Error('Namenssuche mehrdeutig (' + cals.map(function (c) { return c.getName(); }).join(' | ') +
         ') – bitte die Kalender-ID in ROOM_CALENDARS eintragen.');
@@ -299,24 +314,25 @@ function resolveCalendarId_(room) {
   return null;
 }
 
-function listEvents_(calendarId, start, end) {
-  var items = [];
-  var pageToken = null;
-  do {
-    var resp = retry_(function () {
-      return Calendar.Events.list(calendarId, {
-        timeMin: start.toISOString(),
-        timeMax: end.toISOString(),
-        singleEvents: true,
-        showDeleted: false,
-        maxResults: 2500,
-        pageToken: pageToken,
-      });
-    });
-    (resp.items || []).forEach(function (e) { items.push(e); });
-    pageToken = resp.nextPageToken;
-  } while (pageToken);
-  return items;
+/** Liest alle Termine im Zeitraum und bringt sie in eine einheitliche Form. */
+function listEvents_(cal, start, end) {
+  return retry_(function () { return cal.getEvents(start, end); }).map(normalizeEvent_);
+}
+
+function normalizeEvent_(e) {
+  var creators = [];
+  try { creators = e.getCreators(); } catch (x) { /* ohne Ersteller weiter */ }
+  var declined = false;
+  try { declined = e.getMyStatus() === CalendarApp.GuestStatus.NO; } catch (x) { /* ohne Status weiter */ }
+  return {
+    summary: e.getTitle(),
+    description: e.getDescription(),
+    allDay: e.isAllDayEvent(),
+    startDate: e.getStartTime(),
+    endDate: e.getEndTime(),
+    creator: creators && creators.length ? { email: creators[0] } : null,
+    declinedBySelf: declined,
+  };
 }
 
 /** Wiederholt einen API-Aufruf mit steigender Wartezeit (1s, 2s, 4s …). */
@@ -344,19 +360,18 @@ function classifyEvent_(ev, roomLabel, range) {
   var title = (ev.summary || '').trim();
   var desc = ev.description || '';
   var creatorLabel = creatorLabel_(ev.creator);
-  var allDay = !!(ev.start && ev.start.date && !ev.start.dateTime);
-  var start = parseEventTime_(ev.start);
-  var end = parseEventTime_(ev.end);
+  var allDay = !!ev.allDay;
+  var start = ev.startDate;
+  var end = ev.endDate;
 
   function skip(reason) {
     return { skipped: {
-      start: start || new Date(0), end: end || start || new Date(0), allDay: allDay,
+      start: start || new Date(0), allDay: allDay,
       room: roomLabel, title: title || '(ohne Titel)', creator: creatorLabel, reason: reason,
     } };
   }
 
-  if (ev.status === 'cancelled') return skip('Abgesagt/gelöscht');
-  if (!start || !end) return skip('Ohne gültige Start-/Endzeit');
+  if (!start) return skip('Ohne gültige Startzeit');
   if (IGNORE_TITLE_REGEX.test(title)) return skip('Automatischer Blocker, kein echter Termin');
   for (var i = 0; i < IGNORE_DESCRIPTION_MARKERS.length; i++) {
     if (desc.indexOf(IGNORE_DESCRIPTION_MARKERS[i]) !== -1) return skip('Automatischer Blocker, kein echter Termin');
@@ -365,14 +380,10 @@ function classifyEvent_(ev, roomLabel, range) {
     return skip('Hinweis auf Absage in Titel/Beschreibung – bitte prüfen, ob stattgefunden');
   }
   // Von Jörg (dem Kalenderkonto) abgelehnte Einladungen zählen nicht.
-  var declinedBySelf = (ev.attendees || []).some(function (a) { return a.self && a.responseStatus === 'declined'; });
-  if (declinedBySelf) return skip('Von dir abgelehnt');
+  if (ev.declinedBySelf) return skip('Von dir abgelehnt');
   // Beginn im Nachbarmonat (Termin über Monatsgrenze): zählt dort, nicht doppelt.
   if (start < range.start || start >= range.end) return skip('Beginn außerhalb des Monats (zählt im Nachbarmonat)');
   if (allDay) return skip('Ganztägig – keine Dauer, bitte manuell prüfen');
-
-  var minutes = Math.round((end - start) / 60000);
-  if (minutes <= 0) return skip('Dauer 0 – bitte prüfen');
 
   var inTitle = membersIn_(title);
   if (!inTitle.members.length && OWNER_NAMES.some(function (n) { return wordRegex_(n).test(title); })) {
@@ -383,12 +394,14 @@ function classifyEvent_(ev, roomLabel, range) {
     return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)');
   }
   var idMatch = desc.match(/Termin-ID:\s*(\d+)/i);
+  var dur = durationFor_(title, desc);
+  var blockMin = end ? Math.round((end - start) / 60000) : 0;
 
   return { row: {
     start: start,
-    end: end,
-    minutes: minutes,
-    titleMinutes: titleMinutes_(title),
+    minutes: dur ? dur.minutes : null, // null = nirgends eine Dauer gefunden
+    durSource: dur ? dur.source : null,
+    blockMinutes: blockMin, // nur zur Info im Hinweis, nie Abrechnungsgrundlage
     art: artFor_(title),
     member: who.label,
     members: who.members,
@@ -402,14 +415,37 @@ function classifyEvent_(ev, roomLabel, range) {
 }
 
 /**
- * Dauer, die im Titel steht ("2h  30min", "2,5h", "3 h", "1h") — null, wenn
- * keine erkennbar ist. Die Kalender-Dauer ist oft länger (Puffer für Vor-/
- * Nachgespräch, Dusche …), deshalb werden beide Werte angezeigt.
+ * Dauer in Minuten aus Titel, ersatzweise aus der Beschreibung — nie aus der
+ * Kalender-Blockzeit (enthält Puffer).
+ * @return {{minutes:number, source:string}|null}
  */
+function durationFor_(title, desc) {
+  var t = titleMinutes_(title);
+  if (t !== null) return { minutes: t, source: 'Titel' };
+  var d = descMinutes_(desc);
+  if (d !== null) return { minutes: d, source: 'Beschreibung' };
+  return null;
+}
+
+/** Dauer im Titel ("2h  30min", "2,5h", "3 h", "1h", "45min") oder null. */
 function titleMinutes_(title) {
   var m = title.match(/(?<![\d-])(\d+(?:[.,]\d+)?)\s*(?:h|std\.?|stunden?)\b(?:\s*(\d+)\s*min)?/i);
   if (m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60 + (m[2] ? Number(m[2]) : 0));
   var n = title.match(/(?<![\d-])(\d+)\s*min\b/i);
+  return n ? Number(n[1]) : null;
+}
+
+/**
+ * Dauer aus der Beschreibung — bewusst nur hinter dem Stichwort "Dauer:"
+ * ("Dauer: 2,5 Stunden - 340,00 €"), damit Zahlen aus Gästenachrichten
+ * ("… für 2 Std. Termin …") nicht fälschlich zählen.
+ */
+function descMinutes_(desc) {
+  if (!desc) return null;
+  var text = String(desc).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ');
+  var m = text.match(/Dauer:\s*(\d+(?:[.,]\d+)?)\s*(?:h|std\.?|stunden?)\b(?:\s*(\d+)\s*min)?/i);
+  if (m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60 + (m[2] ? Number(m[2]) : 0));
+  var n = text.match(/Dauer:\s*(\d+)\s*min\b/i);
   return n ? Number(n[1]) : null;
 }
 
@@ -421,13 +457,6 @@ function creatorLabel_(creator) {
   if (!creator) return 'unbekannt';
   if (creator.displayName && creator.email) return creator.displayName + ' <' + creator.email + '>';
   return creator.displayName || creator.email || 'unbekannt';
-}
-
-function parseEventTime_(t) {
-  if (!t) return null;
-  if (t.dateTime) return new Date(t.dateTime);
-  if (t.date) return Utilities.parseDate(t.date + ' 00:00:00', TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-  return null;
 }
 
 /**
@@ -504,7 +533,7 @@ function wordRegex_(word) {
 function joinNames_(list) { return list.join(' / '); }
 
 /**
- * Doubletten (gleiche Termin-ID + Beginn, oder gleiches Teammitglied+Titel+Zeit, auch über Räume hinweg)
+ * Doubletten (gleiche Termin-ID + Beginn, oder gleiches Teammitglied+Titel+Beginn, auch über Räume hinweg)
  * werden nur einmal gezählt; die Dublette erscheint unter "nicht berücksichtigt".
  */
 function dedupe_(rows) {
@@ -514,10 +543,10 @@ function dedupe_(rows) {
   rows.forEach(function (r) {
     var key = r.appointmentId
       ? 'id:' + r.appointmentId + '|' + r.start.getTime()
-      : 'k:' + r.member + '|' + r.title + '|' + r.start.getTime() + '|' + r.end.getTime(); // bewusst ohne Raum: dieselbe Buchung steht oft in zwei Räumen
+      : 'k:' + r.member + '|' + r.title + '|' + r.start.getTime(); // bewusst ohne Raum: dieselbe Buchung steht oft in zwei Räumen
     if (seen[key]) {
       dupes.push({
-        start: r.start, end: r.end, allDay: false, room: r.room, title: r.title, creator: r.creator,
+        start: r.start, allDay: false, room: r.room, title: r.title, creator: r.creator,
         reason: 'Doublette – bereits gezählt (' + seen[key].room + ')',
       });
     } else {
@@ -561,7 +590,7 @@ function totalsByMember_(rows) {
     names.forEach(function (k) {
       if (!map[k]) map[k] = { name: k, count: 0, minutes: 0, isTeam: r.isTeam };
       map[k].count++;
-      map[k].minutes += r.minutes;
+      map[k].minutes += r.minutes || 0;
     });
   });
   return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) {
@@ -570,12 +599,23 @@ function totalsByMember_(rows) {
   });
 }
 
+function fmtDur_(min) { return min === null || min === undefined ? '–' : fmtDuration_(min); }
+
 function hintFor_(r) {
   var h = [];
   if (r.source === 'unbekannt') h.push('Unbekannt – Raumvermietung? Bitte prüfen');
   if (r.art === ART_UNKNOWN) h.push('Art nicht erkannt – siehe Titel');
+  if (r.minutes === null) {
+    h.push('Dauer nicht in Titel/Beschreibung gefunden – bitte ergänzen (Kalender blockiert ' + fmtDuration_(r.blockMinutes) + ', nur zur Info)');
+  } else if (r.durSource === 'Beschreibung') {
+    h.push('Dauer aus Beschreibung');
+  }
   if (r.members && r.members.length > 1) h.push('Mehrere Teammitglieder – Dauer zählt je Person');
   return h.join('; ');
+}
+
+function isFlagged_(r) {
+  return !r.isTeam || r.art === ART_UNKNOWN || r.minutes === null;
 }
 
 function renderHtml_(year, month, rows, skipped, warnings, readCount) {
@@ -584,15 +624,20 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
   var out = [];
   out.push('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">');
   out.push('<h2 style="margin:0 0 6px">Monatsabrechnungsliste ' + MONTH_NAMES[month - 1] + ' ' + year + '</h2>');
-  var totalMin = rows.reduce(function (s, r) { return s + r.minutes; }, 0);
+  var totalMin = rows.reduce(function (s, r) { return s + (r.minutes || 0); }, 0);
+  var noDur = rows.filter(function (r) { return r.minutes === null; }).length;
   out.push('<p>' + rows.length + ' Termine, gesamt ' + fmtDuration_(totalMin) + ' (' + fmtDecimalHours_(totalMin) + ' Std.). ' +
-    'Quelle: Raum 1–3 und Raum extern. CSV zur Übergabe an sevdesk im Anhang. Dauer = im Kalender belegte Zeit; \"Dauer laut Titel\" ist die im Titel genannte Sitzungsdauer (kann kürzer sein, z. B. wegen Puffer). Bei Terminen mit mehreren Teammitgliedern zählt die Dauer je Person in der Summe unten, in der Gesamtdauer nur einmal.</p>');
+    'Quelle: Raum 1–3 und Raum extern. CSV zur Übergabe an sevdesk im Anhang. ' +
+    'Dauer = laut Titel bzw. Beschreibung (nicht die Kalender-Blockzeit mit Puffer). ' +
+    'Bei Terminen mit mehreren Teammitgliedern zählt die Dauer je Person in der Summe unten, in der Gesamtdauer nur einmal.</p>');
   out.push('<p style="margin-top:0;color:#555"><b>Kontrolle:</b> ' + readCount + ' Kalendereinträge gelesen = ' +
     rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt (siehe unten).</p>');
 
-  if (warnings.length) {
-    out.push('<p style="background:#fff3cd;border:1px solid #e0c36a;padding:8px 10px"><b>⚠️ Achtung, Liste evtl. unvollständig:</b><br>' +
-      warnings.map(escHtml_).join('<br>') + '</p>');
+  var notes = warnings.slice();
+  if (noDur) notes.push(noDur + ' Termin(e) ohne erkennbare Dauer in Titel/Beschreibung – in der Liste gelb markiert, zählen in der Summe 0.');
+  if (notes.length) {
+    out.push('<p style="background:#fff3cd;border:1px solid #e0c36a;padding:8px 10px"><b>⚠️ Bitte beachten:</b><br>' +
+      notes.map(escHtml_).join('<br>') + '</p>');
   }
 
   out.push('<h3>Summe je Teammitglied</h3>');
@@ -605,18 +650,17 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
 
   out.push('<h3>Alle berücksichtigten Termine</h3>');
   out.push('<table style="border-collapse:collapse"><tr>' +
-    ['Datum', 'Uhrzeit', 'Art des Termins', 'Dauer im Kalender', 'Dauer laut Titel', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
+    ['Datum', 'Beginn', 'Art des Termins', 'Dauer', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
   if (!rows.length) {
-    out.push('<tr><td ' + td + ' colspan="9">Keine stattgefundenen Termine gefunden.</td></tr>');
+    out.push('<tr><td ' + td + ' colspan="8">Keine stattgefundenen Termine gefunden.</td></tr>');
   }
   rows.forEach(function (r) {
-    var flag = (r.isTeam && r.art !== ART_UNKNOWN) ? '' : ' style="background:#fff8e1"';
+    var flag = isFlagged_(r) ? ' style="background:#fff8e1"' : '';
     out.push('<tr' + flag + '>' +
       '<td ' + td + '>' + fmtDate_(r.start) + '</td>' +
-      '<td ' + td + '>' + fmtTime_(r.start) + '–' + fmtTime_(r.end) + '</td>' +
+      '<td ' + td + '>' + fmtTime_(r.start) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.art) + '</td>' +
-      '<td ' + td + '>' + fmtDuration_(r.minutes) + '</td>' +
-      '<td ' + td + '>' + (r.titleMinutes ? fmtDuration_(r.titleMinutes) : '–') + '</td>' +
+      '<td ' + td + '>' + fmtDur_(r.minutes) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.member) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.room) + '</td>' +
       '<td ' + td + '>' + escHtml_(r.title) + '</td>' +
@@ -631,11 +675,11 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
     out.push('<p>Keine.</p>');
   } else {
     out.push('<table style="border-collapse:collapse"><tr>' +
-      ['Datum', 'Uhrzeit', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
+      ['Datum', 'Beginn', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(function (h) { return '<th ' + th + '>' + h + '</th>'; }).join('') + '</tr>');
     skipped.forEach(function (r) {
       out.push('<tr>' +
         '<td ' + td + '>' + fmtDate_(r.start) + '</td>' +
-        '<td ' + td + '>' + (r.allDay ? 'ganztägig' : fmtTime_(r.start) + '–' + fmtTime_(r.end)) + '</td>' +
+        '<td ' + td + '>' + (r.allDay ? 'ganztägig' : fmtTime_(r.start)) + '</td>' +
         '<td ' + td + '>' + escHtml_(r.title) + '</td>' +
         '<td ' + td + '>' + escHtml_(r.room) + '</td>' +
         '<td ' + td + '>' + escHtml_(r.creator) + '</td>' +
@@ -643,7 +687,7 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
     });
     out.push('</table>');
   }
-  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Teammitglied oder Art unklar.</p>');
+  out.push('<p style="color:#777;font-size:12px">Automatisch erstellt per Apps Script (Monatsabrechnung). Gelb hinterlegt = Teammitglied, Art oder Dauer unklar.</p>');
   out.push('</div>');
   return out.join('\n');
 }
@@ -653,7 +697,7 @@ function renderPlain_(year, month, rows, skipped, warnings, readCount) {
   if (warnings.length) lines.push('ACHTUNG, evtl. unvollständig:', warnings.join('\n'), '');
   lines.push('Kontrolle: ' + readCount + ' gelesen = ' + rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt', '');
   rows.forEach(function (r) {
-    lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + fmtDuration_(r.minutes) + (r.titleMinutes ? ' (Titel: ' + fmtDuration_(r.titleMinutes) + ')' : '') + ' | ' + r.member + ' | ' + r.room);
+    lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + fmtDur_(r.minutes) + ' | ' + r.member + ' | ' + r.room);
   });
   lines.push('', 'Nicht berücksichtigt (' + skipped.length + '):');
   skipped.forEach(function (r) {
@@ -665,12 +709,12 @@ function renderPlain_(year, month, rows, skipped, warnings, readCount) {
 function csvQuote_(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
 
 function renderCsv_(rows) {
-  var lines = [['Datum', 'Beginn', 'Ende', 'Art des Termins', 'Dauer im Kalender (hh:mm)', 'Dauer im Kalender (Std. dezimal)', 'Dauer laut Titel (hh:mm)', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(csvQuote_).join(';')];
+  var lines = [['Datum', 'Beginn', 'Art des Termins', 'Dauer (hh:mm)', 'Dauer (Std. dezimal)', 'Teammitglied', 'Raum', 'Titel im Kalender', 'Hinweis'].map(csvQuote_).join(';')];
   rows.forEach(function (r) {
     lines.push([
-      fmtDate_(r.start), fmtTime_(r.start), fmtTime_(r.end), r.art,
-      fmtDuration_(r.minutes).replace(' h', ''), fmtDecimalHours_(r.minutes),
-      r.titleMinutes ? fmtDuration_(r.titleMinutes).replace(' h', '') : '',
+      fmtDate_(r.start), fmtTime_(r.start), r.art,
+      r.minutes === null ? '' : fmtDuration_(r.minutes).replace(' h', ''),
+      r.minutes === null ? '' : fmtDecimalHours_(r.minutes),
       r.member, r.room, r.title, hintFor_(r),
     ].map(csvQuote_).join(';'));
   });
@@ -678,10 +722,10 @@ function renderCsv_(rows) {
 }
 
 function renderSkippedCsv_(skipped) {
-  var lines = [['Datum', 'Beginn', 'Ende', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(csvQuote_).join(';')];
+  var lines = [['Datum', 'Beginn', 'Titel im Kalender', 'Raum', 'Angelegt von', 'Grund'].map(csvQuote_).join(';')];
   skipped.forEach(function (r) {
     lines.push([
-      fmtDate_(r.start), r.allDay ? '' : fmtTime_(r.start), r.allDay ? '' : fmtTime_(r.end),
+      fmtDate_(r.start), r.allDay ? 'ganztägig' : fmtTime_(r.start),
       r.title, r.room, r.creator, r.reason,
     ].map(csvQuote_).join(';'));
   });

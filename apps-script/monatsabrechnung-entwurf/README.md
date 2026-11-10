@@ -8,7 +8,7 @@ Vormonats an — als Übersicht zur Übergabe an sevdesk.
 
 1. Liest die Kalender **Raum 1, Raum 2, Raum 3** und **Raum extern
    (z.B. GdT)** für den kompletten Vormonat.
-2. Pro Termin eine Zeile: **Art des Termins · Dauer · Datum (+ Uhrzeit) ·
+2. Pro Termin eine Zeile: **Art des Termins · Dauer · Datum (+ Beginn) ·
    Teammitglied** (zusätzlich Raum, Original-Titel und ein Hinweis).
    Die **Art** wird aus dem Titel erkannt, Abkürzungen werden aufgelöst
    (z. B. „TM“ → „Tantramassage“, siehe `ART_RULES`).
@@ -53,14 +53,22 @@ Grund in der Aufstellung. Gründe:
 | Automatischer Blocker | „Blockiert (…)“ aus den Sync-Skripten |
 | Von dir abgelehnt / abgesagt | Status im Kalender |
 | Beginn im Nachbarmonat | Termin über Monatsgrenze zählt nur im Startmonat |
-| Ganztägig / Dauer 0 | keine berechenbare Dauer |
+| Ganztägig | keine berechenbare Dauer |
 
-**Dauer:** Die Hauptspalte ist die im Kalender belegte Zeit. Daneben steht
-„Dauer laut Titel“ (z. B. „2h 30min“), weil der Kalendereintrag oft länger
-ist (Puffer für Vor-/Nachgespräch, Dusche). Welcher Wert für sevdesk gilt,
-entscheidest du — beide stehen in Mail und CSV. Bei Terminen mit mehreren
-Teammitgliedern („Stephanie & Amila“) zählt die Dauer in der Personensumme
-für jede Person, in der Gesamtdauer nur einmal.
+**Dauer:** Maßgeblich ist **nur, was im Titel oder in der Beschreibung
+steht** — nie die im Kalender blockierte Zeit (die enthält Puffer für
+Aufräumen und Essen, meist 1–1,5 Std. mehr).
+
+- Titel: „2h 30min“, „2,5h“, „3 h“, „45min“.
+- Beschreibung: nur hinter dem Stichwort `Dauer:` (z. B.
+  „Dauer: 2,5 Stunden - 340,00 €“ aus den Anfragen). Zahlen aus
+  Gästenachrichten („… 2 Std. Termin …“) zählen bewusst nicht.
+- Steht nirgends eine Dauer: Feld leer, Zeile gelb, Hinweis „bitte
+  ergänzen“ (mit der Kalender-Blockzeit nur zur Info). Der Termin zählt in
+  der Stundensumme 0 und die Mail nennt, wie viele Termine betroffen sind.
+
+Bei Terminen mit mehreren Teammitgliedern („Stephanie & Amila“) zählt die
+Dauer in der Personensumme für jede Person, in der Gesamtdauer nur einmal.
 
 **Art nicht erkannt:** Passt keine Regel aus `ART_RULES` (z. B. Titel nur
 aus Gastnamen wie „17:00 Elena 1h“), steht „(nicht erkannt)“ gelb markiert
@@ -72,25 +80,22 @@ in der Liste, der Original-Titel daneben.
   merkt sich den zuletzt erledigten Monat. Fällt der Lauf am 1. aus, wird er
   am Folgetag wiederholt — nie doppelt (zusätzlich Prüfung, ob der Entwurf
   schon existiert).
-- Calendar-API-Aufrufe mit Wiederholung/Wartezeit, vollständiges Blättern.
+- Nur der eingebaute `CalendarApp` — keine Zusatzdienste, keine manuelle Aktivierung. Kalender-Aufrufe mit Wiederholung/Wartezeit.
 - Sperre gegen parallele Läufe; Fehler → Warnmail an Jörg.
 - Ist ein Raumkalender nicht lesbar: **kein stiller Teil-Bericht**, sondern
   Warnmail + Neuversuch am nächsten Tag. Ab dem 5. des Monats entsteht der
   Entwurf trotzdem, mit deutlichem Warnhinweis.
 - Wiederkehrende Termine werden einzeln gezählt; abgesagte, abgelehnte,
-  „Blockiert (…)“-Blocker und Doubletten (gleiche Termin-ID bzw. Raum +
-  Titel + Zeit) werden ignoriert.
-- Ganztägige Termine haben keine Dauer → eigener Abschnitt „Bitte prüfen“,
-  nicht in der Summe.
+  „Blockiert (…)“-Blocker und Doubletten (gleiche Termin-ID bzw.
+  Teammitglied + Titel + Beginn, auch über Räume hinweg) werden nicht
+  gezählt, stehen aber in der Aufstellung der nicht berücksichtigten Termine.
 
 ## Deployment
 
 1. Neues Projekt auf [script.google.com](https://script.google.com) mit dem
    Konto `joerg@spiritual-touch.de`.
-2. `Code.gs` einfügen; unter Projekteinstellungen „appsscript.json im Editor
-   anzeigen“ aktivieren und `appsscript.json` übernehmen (aktiviert den
-   erweiterten Dienst **Calendar API** — alternativ links *Dienste → + →
-   Google Calendar API*, Kennung `Calendar`).
+2. `Code.gs` einfügen (die Datei `appsscript.json` ist optional; es werden
+   keine Zusatzdienste gebraucht).
 3. `testlaufOktober` ausführen → Berechtigungen bestätigen → Entwurf in
    Gmail prüfen („TESTLAUF – Monatsabrechnungsliste Oktober 2026“) und
    anschließend löschen. Der Testlauf berührt den Merker nicht. (`testLetzterMonat`
