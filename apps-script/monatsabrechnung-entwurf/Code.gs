@@ -59,6 +59,9 @@
  *     Termine entfallen, Sync-Blocker ("Blockiert (…)"/autoBlock) und
  *     Doubletten (gleiche Termin-ID oder gleiches Teammitglied+Titel+Beginn,
  *     auch über Räume hinweg) ebenfalls.
+ *   - PAARE-TERMINE: Stehen im Titel mehrere Teammitglieder ("Stephanie &
+ *     Amila"), bekommt jede Person eine eigene Zeile (eigene Abrechnung). Die
+ *     Einträge in den zwei Räumen sind dann keine Doubletten.
  *   - NICHTS GEHT UNBEMERKT VERLOREN: Jeder gelesene Kalendereintrag ist
  *     entweder berücksichtigt oder steht mit Grund in der Aufstellung
  *     "Nicht berücksichtigte Termine" (Mail + zweite CSV). Gründe: abgesagt,
@@ -108,6 +111,7 @@ var TEAM_MEMBERS = [
   { name: 'Stephanie',  names: ['Stephanie'],       emails: [] },
   { name: 'Karen',      names: ['Karen'],           emails: [] },
   { name: 'Maxine',     names: ['Maxine'],          emails: [] },
+  { name: 'Erin',       names: ['Erin'],            emails: [] },
 ];
 
 // Art des Termins aus dem Titel. Der ERSTE passende Eintrag gewinnt — daher
@@ -269,14 +273,15 @@ function buildDraftForMonth_(year, month, allowPartial, testRun) {
     return { created: false, alreadyExists: false };
   }
 
-  var dd = dedupe_(candidates);
-  var rows = dd.kept;
+  var dd = groupAndExpand_(candidates);
+  var rows = dd.rows;
   skipped = skipped.concat(dd.dupes);
-  rows.sort(function (a, b) { return a.start - b.start; });
+  rows.sort(function (a, b) { return (a.start - b.start) || a.member.localeCompare(b.member, 'de'); });
   skipped.sort(function (a, b) { return a.start - b.start; });
+  var counts = { read: readCount, consumed: dd.consumed };
 
-  var html = renderHtml_(year, month, rows, skipped, warnings, readCount);
-  var plain = renderPlain_(year, month, rows, skipped, warnings, readCount);
+  var html = renderHtml_(year, month, rows, skipped, warnings, counts);
+  var plain = renderPlain_(year, month, rows, skipped, warnings, counts);
   var prefix = '\uFEFF'; // BOM, damit Excel die Umlaute richtig liest
   var attachments = [
     Utilities.newBlob(prefix + renderCsv_(rows), 'text/csv', 'Monatsabrechnung_' + monthKey_(year, month) + '.csv'),
@@ -284,7 +289,7 @@ function buildDraftForMonth_(year, month, allowPartial, testRun) {
   ];
 
   GmailApp.createDraft(DRAFT_TO, subject, plain, { htmlBody: html, attachments: attachments });
-  Logger.log('Entwurf erstellt: ' + subject + ' (' + rows.length + ' berücksichtigt, ' + skipped.length + ' nicht berücksichtigt, ' + readCount + ' gelesen).');
+  Logger.log('Entwurf erstellt: ' + subject + ' (' + rows.length + ' Abrechnungszeilen, ' + skipped.length + ' nicht berücksichtigt, ' + readCount + ' Einträge gelesen).');
   return { created: true, alreadyExists: false };
 }
 
@@ -391,7 +396,9 @@ function classifyEvent_(ev, roomLabel, range) {
   }
   var who = identifyMember_(title, ev.creator);
   if (who.source === 'unbekannt' && isOwnerCreator_(ev.creator)) {
-    return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)');
+    var paren = title.match(/\(([^()]+)\)\s*$/);
+    return skip('Von Jörg angelegt, kein Teammitglied im Titel – bitte prüfen (Eigenes/Seminar oder Buchung ohne Namen?)' +
+      (paren ? ' Name in Klammern „' + paren[1].replace(/\s+/g, ' ').trim() + '“ steht nicht in der Teamliste – neue Person? Dann in TEAM_MEMBERS ergänzen.' : ''));
   }
   var idMatch = desc.match(/Termin-ID:\s*(\d+)/i);
   var dur = durationFor_(title, desc);
@@ -533,28 +540,66 @@ function wordRegex_(word) {
 function joinNames_(list) { return list.join(' / '); }
 
 /**
- * Doubletten (gleiche Termin-ID + Beginn, oder gleiches Teammitglied+Titel+Beginn, auch über Räume hinweg)
- * werden nur einmal gezählt; die Dublette erscheint unter "nicht berücksichtigt".
+ * Fasst Einträge desselben Termins zusammen (gleiche Termin-ID + Beginn,
+ * oder gleiches Teammitglied + Titel + Beginn — auch über Räume hinweg).
+ *
+ * - Normaler Termin (ein Teammitglied): der erste Eintrag zählt, weitere
+ *   Einträge sind Doubletten und stehen unter "nicht berücksichtigt".
+ * - Paare-Termin (mehrere Teammitglieder im Titel, z. B. "Stephanie & Amila"):
+ *   Jede Person bekommt eine eigene Abrechnung → EINE Zeile je Teammitglied.
+ *   Die Einträge in den beiden Räumen sind keine Doubletten.
+ *
+ * @return {{rows:Object[], dupes:Object[], consumed:number}} consumed = Zahl der
+ *   Kalendereinträge, die in Abrechnungszeilen aufgegangen sind.
  */
-function dedupe_(rows) {
-  var seen = {};
-  var kept = [];
-  var dupes = [];
-  rows.forEach(function (r) {
+function groupAndExpand_(entries) {
+  var groups = {};
+  var order = [];
+  entries.forEach(function (r) {
     var key = r.appointmentId
       ? 'id:' + r.appointmentId + '|' + r.start.getTime()
-      : 'k:' + r.member + '|' + r.title + '|' + r.start.getTime(); // bewusst ohne Raum: dieselbe Buchung steht oft in zwei Räumen
-    if (seen[key]) {
+      : 'k:' + r.member + '|' + r.title + '|' + r.start.getTime(); // bewusst ohne Raum
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(r);
+  });
+
+  var rows = [];
+  var dupes = [];
+  var consumed = 0;
+  order.forEach(function (key) {
+    var list = groups[key];
+    var base = list[0];
+    var multi = base.isTeam && base.members.length > 1;
+    var take = multi ? Math.min(list.length, base.members.length) : 1;
+    consumed += take;
+
+    list.slice(take).forEach(function (r) {
       dupes.push({
         start: r.start, allDay: false, room: r.room, title: r.title, creator: r.creator,
-        reason: 'Doublette – bereits gezählt (' + seen[key].room + ')',
+        reason: 'Doublette – bereits gezählt (' + base.room + ')' +
+          (/paar/i.test(r.title) && !multi ? ' – Paare-Termin, aber nur ein Teammitglied im Titel: bitte zweite Person ergänzen' : ''),
+      });
+    });
+
+    if (multi) {
+      var rooms = [];
+      list.slice(0, take).forEach(function (r) { if (rooms.indexOf(r.room) === -1) rooms.push(r.room); });
+      base.members.forEach(function (m) {
+        var copy = {};
+        Object.keys(base).forEach(function (k) { copy[k] = base[k]; });
+        copy.member = m;
+        copy.members = [m];
+        copy.room = rooms.join(' + ');
+        copy.paar = true;
+        copy.partners = base.members.join(' & ');
+        copy.onlyOneEntry = list.length < base.members.length;
+        rows.push(copy);
       });
     } else {
-      seen[key] = r;
-      kept.push(r);
+      rows.push(base);
     }
   });
-  return { kept: kept, dupes: dupes };
+  return { rows: rows, dupes: dupes, consumed: consumed };
 }
 
 // ---------- AUSGABE ----------
@@ -585,7 +630,6 @@ function escHtml_(s) {
 function totalsByMember_(rows) {
   var map = {};
   rows.forEach(function (r) {
-    // Bei mehreren Teammitgliedern (Paare-Termine) bekommt jede Person die volle Dauer.
     var names = r.isTeam ? r.members : ['Extern/Raumvermietung'];
     names.forEach(function (k) {
       if (!map[k]) map[k] = { name: k, count: 0, minutes: 0, isTeam: r.isTeam };
@@ -610,7 +654,10 @@ function hintFor_(r) {
   } else if (r.durSource === 'Beschreibung') {
     h.push('Dauer aus Beschreibung');
   }
-  if (r.members && r.members.length > 1) h.push('Mehrere Teammitglieder – Dauer zählt je Person');
+  if (r.paar) {
+    h.push('Paare-Termin (' + r.partners + '): eigener Termin je Teammitglied' +
+      (r.onlyOneEntry ? ', nur ein Raum-Eintrag im Kalender' : ''));
+  }
   return h.join('; ');
 }
 
@@ -618,7 +665,7 @@ function isFlagged_(r) {
   return !r.isTeam || r.art === ART_UNKNOWN || r.minutes === null;
 }
 
-function renderHtml_(year, month, rows, skipped, warnings, readCount) {
+function renderHtml_(year, month, rows, skipped, warnings, counts) {
   var th = 'style="text-align:left;padding:6px 10px;border-bottom:2px solid #888;background:#f3f3f3"';
   var td = 'style="padding:5px 10px;border-bottom:1px solid #ddd;vertical-align:top"';
   var out = [];
@@ -626,12 +673,12 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
   out.push('<h2 style="margin:0 0 6px">Monatsabrechnungsliste ' + MONTH_NAMES[month - 1] + ' ' + year + '</h2>');
   var totalMin = rows.reduce(function (s, r) { return s + (r.minutes || 0); }, 0);
   var noDur = rows.filter(function (r) { return r.minutes === null; }).length;
-  out.push('<p>' + rows.length + ' Termine, gesamt ' + fmtDuration_(totalMin) + ' (' + fmtDecimalHours_(totalMin) + ' Std.). ' +
+  out.push('<p>' + rows.length + ' Abrechnungszeilen, gesamt ' + fmtDuration_(totalMin) + ' (' + fmtDecimalHours_(totalMin) + ' Std.). ' +
     'Quelle: Raum 1–3 und Raum extern. CSV zur Übergabe an sevdesk im Anhang. ' +
     'Dauer = laut Titel bzw. Beschreibung (nicht die Kalender-Blockzeit mit Puffer). ' +
-    'Bei Terminen mit mehreren Teammitgliedern zählt die Dauer je Person in der Summe unten, in der Gesamtdauer nur einmal.</p>');
-  out.push('<p style="margin-top:0;color:#555"><b>Kontrolle:</b> ' + readCount + ' Kalendereinträge gelesen = ' +
-    rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt (siehe unten).</p>');
+    'Paare-Termine (mehrere Teammitglieder im Titel) zählen als eigener Termin je Person.</p>');
+  out.push('<p style="margin-top:0;color:#555"><b>Kontrolle:</b> ' + counts.read + ' Kalendereinträge gelesen = ' +
+    counts.consumed + ' berücksichtigt (ergibt ' + rows.length + ' Abrechnungszeilen) + ' + skipped.length + ' nicht berücksichtigt (siehe unten).</p>');
 
   var notes = warnings.slice();
   if (noDur) notes.push(noDur + ' Termin(e) ohne erkennbare Dauer in Titel/Beschreibung – in der Liste gelb markiert, zählen in der Summe 0.');
@@ -692,10 +739,10 @@ function renderHtml_(year, month, rows, skipped, warnings, readCount) {
   return out.join('\n');
 }
 
-function renderPlain_(year, month, rows, skipped, warnings, readCount) {
+function renderPlain_(year, month, rows, skipped, warnings, counts) {
   var lines = ['Monatsabrechnungsliste ' + MONTH_NAMES[month - 1] + ' ' + year, ''];
   if (warnings.length) lines.push('ACHTUNG, evtl. unvollständig:', warnings.join('\n'), '');
-  lines.push('Kontrolle: ' + readCount + ' gelesen = ' + rows.length + ' berücksichtigt + ' + skipped.length + ' nicht berücksichtigt', '');
+  lines.push('Kontrolle: ' + counts.read + ' gelesen = ' + counts.consumed + ' berücksichtigt (' + rows.length + ' Abrechnungszeilen) + ' + skipped.length + ' nicht berücksichtigt', '');
   rows.forEach(function (r) {
     lines.push(fmtDate_(r.start) + ' | ' + r.art + ' | ' + fmtDur_(r.minutes) + ' | ' + r.member + ' | ' + r.room);
   });

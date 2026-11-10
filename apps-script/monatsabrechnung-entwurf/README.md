@@ -67,8 +67,20 @@ Aufräumen und Essen, meist 1–1,5 Std. mehr).
   ergänzen“ (mit der Kalender-Blockzeit nur zur Info). Der Termin zählt in
   der Stundensumme 0 und die Mail nennt, wie viele Termine betroffen sind.
 
-Bei Terminen mit mehreren Teammitgliedern („Stephanie & Amila“) zählt die
-Dauer in der Personensumme für jede Person, in der Gesamtdauer nur einmal.
+**Paare-Termine:** Stehen im Titel mehrere Teammitglieder („Stephanie &
+Amila“), bekommt **jede Person eine eigene Zeile** mit der vollen Dauer —
+jede erhält ihre eigene Abrechnung. Die Einträge in den zwei Räumen gelten
+nicht als Doubletten (Raum-Spalte: „Raum 1 + Raum 2“). Gibt es nur einen
+Raum-Eintrag, zählt der Termin trotzdem für beide, mit Hinweis.
+Steht bei einem Paare-Termin nur **ein** Teammitglied im Titel und es gibt
+zwei Raum-Einträge, wird der zweite Eintrag als Doublette gelistet, mit dem
+Hinweis, die zweite Person zu ergänzen.
+
+**Von dir angelegte Termine:** Steht ein Teammitglied im Titel, zählt der
+Termin ganz normal (auch wenn du ihn angelegt hast). In „nicht
+berücksichtigt“ landen nur deine Termine **ohne** Teammitglied im Titel. Steht
+dort ein Name in Klammern, der nicht in `TEAM_MEMBERS` steht (neue Person?),
+nennt der Grund ihn ausdrücklich — dann dort ergänzen.
 
 **Art nicht erkannt:** Passt keine Regel aus `ART_RULES` (z. B. Titel nur
 aus Gastnamen wie „17:00 Elena 1h“), steht „(nicht erkannt)“ gelb markiert
